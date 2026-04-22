@@ -23,6 +23,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
@@ -39,7 +40,7 @@ struct TTCWithinBoundResult
 
 TTCWithinBoundResult calculate_ttc_within_bound(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const std::shared_ptr<PredictedObjects> & objects,
+  const std::vector<TimedPredictedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler = nullptr);
 

@@ -28,6 +28,7 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace autoware::planning_data_analyzer
 {
@@ -42,6 +43,12 @@ using TrafficLightGroupArray = autoware_perception_msgs::msg::TrafficLightGroupA
 using AccelWithCovarianceStamped = geometry_msgs::msg::AccelWithCovarianceStamped;
 using SteeringReport = autoware_vehicle_msgs::msg::SteeringReport;
 
+struct TimedPredictedObjects
+{
+  rclcpp::Time stamp;
+  std::shared_ptr<const PredictedObjects> objects;
+};
+
 // Synchronized data from multiple topics at a specific timestamp
 struct SynchronizedData
 {
@@ -52,6 +59,7 @@ struct SynchronizedData
   std::shared_ptr<AccelWithCovarianceStamped> acceleration;
   std::shared_ptr<SteeringReport> steering_status;
   std::shared_ptr<PredictedObjects> objects;
+  std::vector<TimedPredictedObjects> future_objects;
   std::shared_ptr<TrafficLightGroupArray> traffic_signals;
   rclcpp::Time timestamp;
   rclcpp::Time bag_timestamp;

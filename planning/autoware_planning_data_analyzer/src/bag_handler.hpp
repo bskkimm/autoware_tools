@@ -241,8 +241,25 @@ struct BagData
       const auto traj_stamp_ns =
         rclcpp::Time(synchronized_data->trajectory->header.stamp).nanoseconds();
       synchronized_data->objects = obj_buffer->get_closest(traj_stamp_ns, tolerance_ms);
+      rcutils_time_point_value_t horizon_end_ns = traj_stamp_ns;
+      if (!synchronized_data->trajectory->points.empty()) {
+        horizon_end_ns +=
+          rclcpp::Duration(synchronized_data->trajectory->points.back().time_from_start)
+            .nanoseconds();
+      }
+      constexpr rcutils_time_point_value_t kFutureObjectRangeMarginNs =
+        static_cast<rcutils_time_point_value_t>(200'000'000);
+      for (const auto & objects :
+           obj_buffer->get_range(traj_stamp_ns, horizon_end_ns + kFutureObjectRangeMarginNs)) {
+        synchronized_data->future_objects.push_back(
+          TimedPredictedObjects{message_stamp(*objects), objects});
+      }
     } else if (obj_buffer) {
       synchronized_data->objects = obj_buffer->get_closest(target_time, tolerance_ms);
+      if (synchronized_data->objects) {
+        synchronized_data->future_objects.push_back(TimedPredictedObjects{
+          message_stamp(*synchronized_data->objects), synchronized_data->objects});
+      }
     }
 
     // Get traffic signals

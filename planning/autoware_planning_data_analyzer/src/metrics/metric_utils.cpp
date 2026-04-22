@@ -15,6 +15,8 @@
 #include "metric_utils.hpp"
 
 #include <autoware/lanelet2_utils/intersection.hpp>
+#include <autoware/object_recognition_utils/object_classification.hpp>
+#include <autoware_utils_geometry/boost_polygon_utils.hpp>
 #include <autoware_utils_geometry/geometry.hpp>
 
 #include <boost/geometry.hpp>
@@ -22,8 +24,14 @@
 #include <lanelet2_core/utility/Utilities.h>
 #include <tf2/utils.h>
 
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstdlib>
+#include <map>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
@@ -144,16 +152,162 @@ double forward_offset_in_ego_frame(
 bool is_agent_behind(
   const geometry_msgs::msg::Pose & ego_pose, const geometry_msgs::msg::Pose & object_pose)
 {
-  return forward_offset_in_ego_frame(ego_pose, object_pose) < 0.0;
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double kBehindAngleThresholdRad = 5.0 * kPi / 6.0;
+
+  const double yaw = get_yaw(ego_pose.orientation);
+  const double dx = object_pose.position.x - ego_pose.position.x;
+  const double dy = object_pose.position.y - ego_pose.position.y;
+  const double distance = std::hypot(dx, dy);
+  if (distance <= 1.0e-6) {
+    return false;
+  }
+
+  const double cos_angle =
+    std::clamp((std::cos(yaw) * dx + std::sin(yaw) * dy) / distance, -1.0, 1.0);
+  return std::acos(cos_angle) > kBehindAngleThresholdRad;
 }
 
-const autoware_perception_msgs::msg::PredictedPath * highest_confidence_path(
-  const autoware_perception_msgs::msg::PredictedObject & object)
+bool has_valid_object_id(const unique_identifier_msgs::msg::UUID & object_id)
 {
-  const auto it = std::max_element(
-    object.kinematics.predicted_paths.begin(), object.kinematics.predicted_paths.end(),
-    [](const auto & lhs, const auto & rhs) { return lhs.confidence < rhs.confidence; });
-  return it == object.kinematics.predicted_paths.end() ? nullptr : &(*it);
+  return std::any_of(
+    object_id.uuid.begin(), object_id.uuid.end(), [](const auto byte) { return byte != 0U; });
+}
+
+std::array<uint8_t, 16> object_id_key(const unique_identifier_msgs::msg::UUID & object_id)
+{
+  return object_id.uuid;
+}
+
+bool is_agent_classification(
+  const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification)
+{
+  using autoware_perception_msgs::msg::ObjectClassification;
+  const auto label = autoware::object_recognition_utils::getHighestProbLabel(classification);
+  return autoware::object_recognition_utils::isVehicle(label) ||
+         label == ObjectClassification::PEDESTRIAN || label == ObjectClassification::ANIMAL;
+}
+
+std::vector<LoggedObjectTrack> build_logged_object_tracks(
+  const std::vector<TimedPredictedObjects> & future_objects)
+{
+  std::map<std::array<uint8_t, 16>, LoggedObjectTrack> keyed_tracks;
+  std::vector<LoggedObjectTrack> invalid_id_tracks;
+
+  for (const auto & timed_objects : future_objects) {
+    if (!timed_objects.objects) {
+      continue;
+    }
+    for (const auto & object : timed_objects.objects->objects) {
+      LoggedObjectState state;
+      state.stamp = timed_objects.stamp;
+      state.pose = object.kinematics.initial_pose_with_covariance.pose;
+      state.twist = object.kinematics.initial_twist_with_covariance.twist;
+      state.shape = object.shape;
+      state.classification = object.classification;
+
+      const bool valid_id = has_valid_object_id(object.object_id);
+      if (!valid_id) {
+        LoggedObjectTrack track;
+        track.has_valid_object_id = false;
+        track.states.push_back(state);
+        invalid_id_tracks.push_back(track);
+        continue;
+      }
+
+      const auto key = object_id_key(object.object_id);
+      auto & track = keyed_tracks[key];
+      track.object_id = key;
+      track.has_valid_object_id = true;
+      track.states.push_back(state);
+    }
+  }
+
+  std::vector<LoggedObjectTrack> tracks;
+  tracks.reserve(keyed_tracks.size() + invalid_id_tracks.size());
+  for (auto & [_, track] : keyed_tracks) {
+    std::sort(track.states.begin(), track.states.end(), [](const auto & lhs, const auto & rhs) {
+      return lhs.stamp.nanoseconds() < rhs.stamp.nanoseconds();
+    });
+    tracks.push_back(std::move(track));
+  }
+  for (auto & track : invalid_id_tracks) {
+    tracks.push_back(std::move(track));
+  }
+  return tracks;
+}
+
+std::optional<InterpolatedLoggedObject> interpolate_logged_object_state(
+  const LoggedObjectTrack & track, const rclcpp::Time & query_time)
+{
+  if (track.states.empty()) {
+    return std::nullopt;
+  }
+
+  auto make_object = [&](const LoggedObjectState & state, const double speed_mps) {
+    InterpolatedLoggedObject object;
+    object.object_id = track.object_id;
+    object.has_valid_object_id = track.has_valid_object_id;
+    object.pose = state.pose;
+    object.speed_mps = speed_mps;
+    object.shape = state.shape;
+    object.classification = state.classification;
+    object.polygon = autoware_utils_geometry::to_polygon2d(object.pose, object.shape);
+    return object;
+  };
+
+  if (track.states.size() == 1U) {
+    const auto & state = track.states.front();
+    constexpr int64_t kSingleStateToleranceNs = 50'000'000;
+    if (
+      std::llabs(query_time.nanoseconds() - state.stamp.nanoseconds()) > kSingleStateToleranceNs) {
+      return std::nullopt;
+    }
+    return make_object(state, std::hypot(state.twist.linear.x, state.twist.linear.y));
+  }
+
+  if (
+    query_time.nanoseconds() < track.states.front().stamp.nanoseconds() ||
+    query_time.nanoseconds() > track.states.back().stamp.nanoseconds()) {
+    return std::nullopt;
+  }
+
+  auto after = std::lower_bound(
+    track.states.begin(), track.states.end(), query_time,
+    [](const auto & state, const auto & time) {
+      return state.stamp.nanoseconds() < time.nanoseconds();
+    });
+  if (after == track.states.begin()) {
+    return make_object(*after, std::hypot(after->twist.linear.x, after->twist.linear.y));
+  }
+  if (after == track.states.end()) {
+    const auto & state = track.states.back();
+    return make_object(state, std::hypot(state.twist.linear.x, state.twist.linear.y));
+  }
+
+  const auto & previous = *(after - 1);
+  const auto & next = *after;
+  const double dt = (next.stamp - previous.stamp).seconds();
+  if (dt <= 0.0) {
+    return make_object(next, std::hypot(next.twist.linear.x, next.twist.linear.y));
+  }
+
+  const double ratio = std::clamp((query_time - previous.stamp).seconds() / dt, 0.0, 1.0);
+  InterpolatedLoggedObject object;
+  object.object_id = track.object_id;
+  object.has_valid_object_id = track.has_valid_object_id;
+  object.pose = autoware_utils_geometry::calc_interpolated_pose(previous.pose, next.pose, ratio);
+  const double logged_speed = std::hypot(previous.twist.linear.x, previous.twist.linear.y);
+  if (std::isfinite(logged_speed) && logged_speed > 1.0e-6) {
+    object.speed_mps = logged_speed;
+  } else {
+    object.speed_mps =
+      autoware_utils_geometry::calc_distance2d(previous.pose.position, next.pose.position) / dt;
+  }
+  object.shape = previous.shape;
+  object.classification = previous.classification;
+  object.polygon = autoware_utils_geometry::to_polygon2d(object.pose, object.shape);
+  return object;
 }
 
 }  // namespace autoware::planning_data_analyzer::metrics

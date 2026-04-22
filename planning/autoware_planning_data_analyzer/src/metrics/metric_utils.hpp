@@ -15,24 +15,60 @@
 #ifndef METRICS__METRIC_UTILS_HPP_
 #define METRICS__METRIC_UTILS_HPP_
 
+#include "../data_types.hpp"
+
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware/vehicle_info_utils/vehicle_info.hpp>
 #include <autoware_utils_geometry/boost_geometry.hpp>
 
+#include <autoware_perception_msgs/msg/object_classification.hpp>
 #include <autoware_perception_msgs/msg/predicted_object.hpp>
+#include <autoware_perception_msgs/msg/shape.hpp>
 #include <autoware_planning_msgs/msg/trajectory.hpp>
 #include <geometry_msgs/msg/pose.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <unique_identifier_msgs/msg/uuid.hpp>
 
 #include <lanelet2_core/primitives/Lanelet.h>
 
+#include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
 
 using autoware::route_handler::RouteHandler;
+
+struct LoggedObjectState
+{
+  rclcpp::Time stamp;
+  geometry_msgs::msg::Pose pose;
+  geometry_msgs::msg::Twist twist;
+  autoware_perception_msgs::msg::Shape shape;
+  std::vector<autoware_perception_msgs::msg::ObjectClassification> classification;
+};
+
+struct LoggedObjectTrack
+{
+  std::array<uint8_t, 16> object_id{};
+  bool has_valid_object_id{false};
+  std::vector<LoggedObjectState> states;
+};
+
+struct InterpolatedLoggedObject
+{
+  std::array<uint8_t, 16> object_id{};
+  bool has_valid_object_id{false};
+  geometry_msgs::msg::Pose pose;
+  double speed_mps{0.0};
+  autoware_perception_msgs::msg::Shape shape;
+  std::vector<autoware_perception_msgs::msg::ObjectClassification> classification;
+  autoware_utils_geometry::Polygon2d polygon;
+};
 
 bool is_vehicle_info_valid(const autoware::vehicle_info_utils::VehicleInfo & vehicle_info);
 
@@ -64,8 +100,18 @@ double forward_offset_in_ego_frame(
 bool is_agent_behind(
   const geometry_msgs::msg::Pose & ego_pose, const geometry_msgs::msg::Pose & object_pose);
 
-const autoware_perception_msgs::msg::PredictedPath * highest_confidence_path(
-  const autoware_perception_msgs::msg::PredictedObject & object);
+bool has_valid_object_id(const unique_identifier_msgs::msg::UUID & object_id);
+
+std::array<uint8_t, 16> object_id_key(const unique_identifier_msgs::msg::UUID & object_id);
+
+bool is_agent_classification(
+  const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification);
+
+std::vector<LoggedObjectTrack> build_logged_object_tracks(
+  const std::vector<TimedPredictedObjects> & future_objects);
+
+std::optional<InterpolatedLoggedObject> interpolate_logged_object_state(
+  const LoggedObjectTrack & track, const rclcpp::Time & query_time);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

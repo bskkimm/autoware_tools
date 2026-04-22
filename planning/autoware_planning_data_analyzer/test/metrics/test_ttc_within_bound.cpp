@@ -16,6 +16,7 @@
 
 #include <autoware_utils_geometry/geometry.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
+#include <builtin_interfaces/msg/time.hpp>
 
 #include <autoware_perception_msgs/msg/predicted_object.hpp>
 #include <autoware_perception_msgs/msg/predicted_objects.hpp>
@@ -25,7 +26,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
@@ -95,13 +98,32 @@ autoware_perception_msgs::msg::PredictedObject make_stationary_object(
   return object;
 }
 
+builtin_interfaces::msg::Time make_stamp(const double stamp_s)
+{
+  const auto stamp_ns = static_cast<int64_t>(std::llround(stamp_s * 1.0e9));
+  builtin_interfaces::msg::Time stamp;
+  stamp.sec = static_cast<int32_t>(stamp_ns / 1'000'000'000);
+  stamp.nanosec = static_cast<uint32_t>(stamp_ns % 1'000'000'000);
+  return stamp;
+}
+
+std::vector<TimedPredictedObjects> make_future_objects(
+  std::vector<autoware_perception_msgs::msg::PredictedObject> objects, const double stamp_s = 0.0)
+{
+  auto msg = std::make_shared<PredictedObjects>();
+  msg->header.stamp = make_stamp(stamp_s);
+  msg->objects = std::move(objects);
+  return {TimedPredictedObjects{rclcpp::Time(msg->header.stamp), msg}};
+}
+
 }  // namespace
 
 TEST(TTCWithinBound, EmptyObjectsPasses)
 {
   const auto trajectory = make_straight_trajectory(5.0);
   auto objects = std::make_shared<PredictedObjects>();
-  const auto result = calculate_ttc_within_bound(trajectory, objects, make_vehicle_info());
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
   EXPECT_TRUE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 1.0);
@@ -114,7 +136,8 @@ TEST(TTCWithinBound, AheadCollisionFails)
   auto objects = std::make_shared<PredictedObjects>();
   objects->objects.push_back(make_stationary_object(4.0, 0.0));
 
-  const auto result = calculate_ttc_within_bound(trajectory, objects, make_vehicle_info());
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
   EXPECT_TRUE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 0.0);
@@ -128,20 +151,21 @@ TEST(TTCWithinBound, BehindCollisionDoesNotFail)
   auto objects = std::make_shared<PredictedObjects>();
   objects->objects.push_back(make_stationary_object(-4.0, 0.0));
 
-  const auto result = calculate_ttc_within_bound(trajectory, objects, make_vehicle_info());
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
   EXPECT_TRUE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 1.0);
   EXPECT_EQ(result.reason, "available");
 }
 
-TEST(TTCWithinBound, UsesHighestConfidencePredictedPath)
+TEST(TTCWithinBound, IgnoresPredictedPathsAndUsesLoggedObjectPose)
 {
   const auto trajectory = make_straight_trajectory(5.0);
   auto objects = std::make_shared<PredictedObjects>();
 
   autoware_perception_msgs::msg::PredictedObject object;
-  object.kinematics.initial_pose_with_covariance.pose = make_pose(20.0, 0.0);
+  object.kinematics.initial_pose_with_covariance.pose = make_pose(4.0, 0.0);
   object.shape.type = autoware_perception_msgs::msg::Shape::BOUNDING_BOX;
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
@@ -164,11 +188,12 @@ TEST(TTCWithinBound, UsesHighestConfidencePredictedPath)
   object.kinematics.predicted_paths = {colliding_path, safe_path};
   objects->objects.push_back(object);
 
-  const auto result = calculate_ttc_within_bound(trajectory, objects, make_vehicle_info());
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
   EXPECT_TRUE(result.available);
-  EXPECT_DOUBLE_EQ(result.score, 1.0);
-  EXPECT_EQ(result.reason, "available");
+  EXPECT_DOUBLE_EQ(result.score, 0.0);
+  EXPECT_EQ(result.reason, "collision_within_bound");
 }
 
 }  // namespace autoware::planning_data_analyzer::metrics
