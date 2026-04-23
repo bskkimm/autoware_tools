@@ -27,16 +27,19 @@
 
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <std_msgs/msg/bool.hpp>
+#include <std_msgs/msg/color_rgba.hpp>
 #include <std_msgs/msg/float64.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <std_msgs/msg/string.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 #include <tf2_msgs/msg/tf_message.hpp>
+#include <visualization_msgs/msg/marker.hpp>
 
 #include <tf2/utils.h>
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <exception>
@@ -69,6 +72,432 @@ std::shared_ptr<SynchronizedData> clone_with_trajectory(
   cloned->trajectory = std::make_shared<autoware_planning_msgs::msg::Trajectory>(trajectory);
   cloned->candidate_trajectories.reset();
   return cloned;
+}
+
+double point_time_s(const autoware_planning_msgs::msg::TrajectoryPoint & point)
+{
+  return rclcpp::Duration(point.time_from_start).seconds();
+}
+
+double lerp(const double lhs, const double rhs, const double ratio)
+{
+  return lhs + (rhs - lhs) * ratio;
+}
+
+autoware_planning_msgs::msg::TrajectoryPoint interpolate_trajectory_point(
+  const autoware_planning_msgs::msg::TrajectoryPoint & previous,
+  const autoware_planning_msgs::msg::TrajectoryPoint & next, const double horizon_s)
+{
+  const double previous_t = point_time_s(previous);
+  const double next_t = point_time_s(next);
+  const double ratio = next_t > previous_t
+                         ? std::clamp((horizon_s - previous_t) / (next_t - previous_t), 0.0, 1.0)
+                         : 0.0;
+
+  auto interpolated = previous;
+  interpolated.pose =
+    autoware_utils_geometry::calc_interpolated_pose(previous.pose, next.pose, ratio);
+  interpolated.longitudinal_velocity_mps =
+    lerp(previous.longitudinal_velocity_mps, next.longitudinal_velocity_mps, ratio);
+  interpolated.lateral_velocity_mps =
+    lerp(previous.lateral_velocity_mps, next.lateral_velocity_mps, ratio);
+  interpolated.acceleration_mps2 = lerp(previous.acceleration_mps2, next.acceleration_mps2, ratio);
+  interpolated.heading_rate_rps = lerp(previous.heading_rate_rps, next.heading_rate_rps, ratio);
+  interpolated.front_wheel_angle_rad =
+    lerp(previous.front_wheel_angle_rad, next.front_wheel_angle_rad, ratio);
+  interpolated.rear_wheel_angle_rad =
+    lerp(previous.rear_wheel_angle_rad, next.rear_wheel_angle_rad, ratio);
+  interpolated.time_from_start = rclcpp::Duration::from_seconds(horizon_s);
+  return interpolated;
+}
+
+autoware_planning_msgs::msg::Trajectory truncate_trajectory_by_horizon(
+  const autoware_planning_msgs::msg::Trajectory & trajectory, const double horizon_s)
+{
+  constexpr double kTimeEpsilon = 1.0e-6;
+  if (horizon_s <= 0.0 || trajectory.points.empty()) {
+    return trajectory;
+  }
+
+  autoware_planning_msgs::msg::Trajectory truncated;
+  truncated.header = trajectory.header;
+  truncated.points.reserve(trajectory.points.size());
+
+  for (std::size_t i = 0; i < trajectory.points.size(); ++i) {
+    const auto & point = trajectory.points.at(i);
+    const double t = point_time_s(point);
+    if (t <= horizon_s + kTimeEpsilon) {
+      truncated.points.push_back(point);
+      continue;
+    }
+
+    if (!truncated.points.empty()) {
+      const double previous_t = point_time_s(truncated.points.back());
+      if (previous_t < horizon_s - kTimeEpsilon) {
+        truncated.points.push_back(
+          interpolate_trajectory_point(truncated.points.back(), point, horizon_s));
+      }
+    }
+    return truncated;
+  }
+
+  return truncated;
+}
+
+std::vector<TimedPredictedObjects> get_future_objects_for_trajectory(
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const std::vector<TimedPredictedObjects> & object_timeline, const double horizon_s)
+{
+  std::vector<TimedPredictedObjects> future_objects;
+  if (trajectory.points.empty() || object_timeline.empty()) {
+    return future_objects;
+  }
+
+  const auto trajectory_start_ns = rclcpp::Time(trajectory.header.stamp).nanoseconds();
+  auto trajectory_horizon_ns =
+    rclcpp::Duration(trajectory.points.back().time_from_start).nanoseconds();
+  if (horizon_s > 0.0) {
+    trajectory_horizon_ns = std::min(
+      trajectory_horizon_ns, rclcpp::Duration::from_seconds(horizon_s).nanoseconds());
+  }
+
+  constexpr rcutils_time_point_value_t kFutureObjectRangeMarginNs =
+    static_cast<rcutils_time_point_value_t>(200'000'000);
+  const auto range_end_ns =
+    trajectory_start_ns + trajectory_horizon_ns + kFutureObjectRangeMarginNs;
+
+  const auto first = std::lower_bound(
+    object_timeline.begin(), object_timeline.end(), trajectory_start_ns,
+    [](const TimedPredictedObjects & timed_objects, const rcutils_time_point_value_t stamp_ns) {
+      return timed_objects.stamp.nanoseconds() < stamp_ns;
+    });
+
+  for (auto itr = first; itr != object_timeline.end(); ++itr) {
+    if (itr->stamp.nanoseconds() > range_end_ns) {
+      break;
+    }
+    future_objects.push_back(*itr);
+  }
+  return future_objects;
+}
+
+std::string nc_debug_topic(const std::string & topic_name)
+{
+  return "/debug/nc/" + topic_name;
+}
+
+std_msgs::msg::ColorRGBA make_color(
+  const float red, const float green, const float blue, const float alpha = 1.0F)
+{
+  std_msgs::msg::ColorRGBA color;
+  color.r = red;
+  color.g = green;
+  color.b = blue;
+  color.a = alpha;
+  return color;
+}
+
+visualization_msgs::msg::Marker make_delete_all_marker(const rclcpp::Time & stamp)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = "map";
+  marker.header.stamp = stamp;
+  marker.action = visualization_msgs::msg::Marker::DELETEALL;
+  return marker;
+}
+
+visualization_msgs::msg::Marker make_marker_base(
+  const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
+  const std_msgs::msg::ColorRGBA & color)
+{
+  visualization_msgs::msg::Marker marker;
+  marker.header.frame_id = "map";
+  marker.header.stamp = stamp;
+  marker.ns = ns;
+  marker.id = id;
+  marker.action = visualization_msgs::msg::Marker::ADD;
+  marker.pose.orientation.w = 1.0;
+  marker.color = color;
+  return marker;
+}
+
+std::vector<geometry_msgs::msg::Point> closed_line_strip_points(
+  std::vector<geometry_msgs::msg::Point> points)
+{
+  if (points.size() < 2U) {
+    return points;
+  }
+  const auto & first = points.front();
+  const auto & last = points.back();
+  if (first.x != last.x || first.y != last.y || first.z != last.z) {
+    points.push_back(first);
+  }
+  return points;
+}
+
+visualization_msgs::msg::Marker make_line_strip_marker(
+  const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
+  std::vector<geometry_msgs::msg::Point> points, const std_msgs::msg::ColorRGBA & color,
+  const double width, const bool close_line)
+{
+  auto marker = make_marker_base(stamp, ns, id, color);
+  marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
+  marker.scale.x = width;
+  marker.points = close_line ? closed_line_strip_points(std::move(points)) : std::move(points);
+  return marker;
+}
+
+visualization_msgs::msg::Marker make_text_marker(
+  const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
+  const geometry_msgs::msg::Point & position, const std::string & text,
+  const std_msgs::msg::ColorRGBA & color)
+{
+  auto marker = make_marker_base(stamp, ns, id, color);
+  marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
+  marker.pose.position = position;
+  marker.pose.position.z += 2.0;
+  marker.scale.z = 0.7;
+  marker.text = text;
+  return marker;
+}
+
+std_msgs::msg::ColorRGBA nc_event_color(const metrics::NoAtFaultCollisionDebugEvent & event)
+{
+  if (!event.at_fault) {
+    return make_color(0.2F, 0.45F, 1.0F, 0.85F);
+  }
+  if (event.event_score <= 0.0) {
+    return make_color(1.0F, 0.05F, 0.05F, 1.0F);
+  }
+  return make_color(1.0F, 0.8F, 0.0F, 1.0F);
+}
+
+std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
+  const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
+{
+  if (footprint.at_fault) {
+    return make_color(1.0F, 0.05F, 0.05F, 1.0F);
+  }
+  if (footprint.collision) {
+    return make_color(1.0F, 0.8F, 0.0F, 0.9F);
+  }
+  return ego ? make_color(0.0F, 0.8F, 1.0F, 0.35F) : make_color(1.0F, 0.55F, 0.0F, 0.35F);
+}
+
+const metrics::NoAtFaultCollisionDebugEvent * find_worst_nc_event(
+  const metrics::NoAtFaultCollisionDebugInfo & debug_info)
+{
+  const metrics::NoAtFaultCollisionDebugEvent * worst_event = nullptr;
+  for (const auto & event : debug_info.events) {
+    if (!worst_event) {
+      worst_event = &event;
+      continue;
+    }
+    if (event.event_score < worst_event->event_score) {
+      worst_event = &event;
+      continue;
+    }
+    if (event.event_score == worst_event->event_score && event.at_fault && !worst_event->at_fault) {
+      worst_event = &event;
+    }
+  }
+  return worst_event;
+}
+
+nlohmann::json nc_debug_event_to_json(const metrics::NoAtFaultCollisionDebugEvent & event)
+{
+  return nlohmann::json{
+    {"time_s", event.time_s},
+    {"object_id", event.object_id},
+    {"object_label", event.object_label},
+    {"collision_type", event.collision_type},
+    {"reason", event.reason},
+    {"agent", event.agent},
+    {"at_fault", event.at_fault},
+    {"score", event.event_score},
+    {"ego_stopped", event.ego_stopped},
+    {"track_stopped", event.track_stopped},
+    {"behind", event.behind},
+    {"front_hit", event.front_hit},
+    {"multiple_lanes", event.multiple_lanes},
+    {"non_drivable_area", event.non_drivable_area}};
+}
+
+nlohmann::json nc_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::NoAtFaultCollisionDebugInfo & debug_info,
+  const metrics::NoAtFaultCollisionDebugEvent * worst_event, const rclcpp::Time & timestamp)
+{
+  nlohmann::json objects = nlohmann::json::array();
+  std::set<std::string> seen_objects;
+  for (const auto & event : debug_info.events) {
+    if (!seen_objects.insert(event.object_id).second) {
+      continue;
+    }
+    objects.push_back(
+      {{"object_id", event.object_id},
+       {"label", event.object_label},
+       {"collision_type", event.collision_type},
+       {"first_collision_time_s", event.time_s}});
+  }
+
+  nlohmann::json events = nlohmann::json::array();
+  for (const auto & event : debug_info.events) {
+    auto event_json = nc_debug_event_to_json(event);
+    event_json["trajectory_stamp_sec"] = timestamp.seconds();
+    event_json["event_stamp_sec"] = timestamp.seconds() + event.time_s;
+    events.push_back(std::move(event_json));
+  }
+
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.no_at_fault_collision},
+    {"reason", metrics.no_at_fault_collision_reason},
+    {"worst_time_s", metrics.time_to_at_fault_collision_s},
+    {"worst_event_stamp_sec",
+     std::isfinite(metrics.time_to_at_fault_collision_s)
+       ? timestamp.seconds() + metrics.time_to_at_fault_collision_s
+       : std::numeric_limits<double>::quiet_NaN()},
+    {"event_count", debug_info.events.size()},
+    {"at_fault_event_count",
+     std::count_if(debug_info.events.begin(), debug_info.events.end(), [](const auto & event) {
+       return event.at_fault;
+     })},
+    {"worst_object_id", worst_event ? worst_event->object_id : "invalid"},
+    {"worst_object_label", worst_event ? worst_event->object_label : "UNKNOWN"},
+    {"worst_collision_type", worst_event ? worst_event->collision_type : "NONE"},
+    {"objects", std::move(objects)},
+    {"events", std::move(events)}};
+}
+
+void write_nc_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp)
+{
+  const auto & debug_info = metrics.no_at_fault_collision_debug;
+  const auto * worst_event = find_worst_nc_event(debug_info);
+
+  if (!debug_info.events.empty()) {
+    std_msgs::msg::String summary_msg;
+    summary_msg.data =
+      nc_debug_summary_to_json(metrics, debug_info, worst_event, timestamp).dump();
+    bag_writer.write(summary_msg, nc_debug_topic("collision_summary"), timestamp);
+  }
+
+  visualization_msgs::msg::MarkerArray horizon_ego_footprints;
+  visualization_msgs::msg::MarkerArray horizon_object_footprints;
+  visualization_msgs::msg::MarkerArray horizon_overlap_areas;
+  visualization_msgs::msg::MarkerArray horizon_labels;
+  horizon_ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  horizon_object_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  horizon_overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
+  horizon_labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (const auto & footprint : debug_info.ego_horizon_footprints) {
+    const double width = footprint.collision ? 0.14 : 0.04;
+    horizon_ego_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "nc_horizon_ego_footprints", marker_id++, footprint.footprint,
+      nc_horizon_footprint_color(footprint, true), width, true));
+  }
+
+  marker_id = 0;
+  for (const auto & footprint : debug_info.object_horizon_footprints) {
+    const double width = footprint.collision ? 0.14 : 0.04;
+    horizon_object_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "nc_horizon_object_footprints", marker_id++, footprint.footprint,
+      nc_horizon_footprint_color(footprint, false), width, true));
+  }
+
+  marker_id = 0;
+  for (const auto & overlap : debug_info.overlap_areas) {
+    horizon_overlap_areas.markers.push_back(make_line_strip_marker(
+      timestamp, "nc_horizon_overlap_areas", marker_id++, overlap.polygon,
+      overlap.at_fault ? make_color(1.0F, 0.0F, 0.8F, 1.0F)
+                       : make_color(1.0F, 0.6F, 0.0F, 1.0F),
+      0.22, true));
+  }
+
+  marker_id = 0;
+  for (const auto & event : debug_info.events) {
+    std::ostringstream label;
+    label << "NC=" << metrics.no_at_fault_collision << "\ndt=" << std::fixed
+          << std::setprecision(1) << event.time_s << "s\n" << event.collision_type << "\n"
+          << event.object_label;
+    horizon_labels.markers.push_back(make_text_marker(
+      timestamp, "nc_horizon_labels", marker_id++, event.ego_center, label.str(),
+      nc_event_color(event)));
+  }
+
+  bag_writer.write(horizon_ego_footprints, nc_debug_topic("horizon_ego_footprints"), timestamp);
+  bag_writer.write(
+    horizon_object_footprints, nc_debug_topic("horizon_object_footprints"), timestamp);
+  bag_writer.write(horizon_overlap_areas, nc_debug_topic("horizon_overlap_areas"), timestamp);
+  bag_writer.write(horizon_labels, nc_debug_topic("horizon_labels"), timestamp);
+}
+
+std::string normalize_metric_name(std::string name)
+{
+  std::transform(name.begin(), name.end(), name.begin(), [](const unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return name;
+}
+
+metrics::EnabledMetrics make_disabled_metrics()
+{
+  metrics::EnabledMetrics metrics;
+  metrics.trajectory_errors = false;
+  metrics.history_comfort = false;
+  metrics.extended_comfort = false;
+  metrics.time_to_collision_within_bound = false;
+  metrics.lane_keeping = false;
+  metrics.ego_progress = false;
+  metrics.drivable_area_compliance = false;
+  metrics.no_at_fault_collision = false;
+  metrics.driving_direction_compliance = false;
+  metrics.traffic_light_compliance = false;
+  metrics.synthetic_epdms = false;
+  return metrics;
+}
+
+void enable_metric_name(metrics::EnabledMetrics & metrics, const std::string & raw_name)
+{
+  const auto name = normalize_metric_name(raw_name);
+  if (name == "trajectory" || name == "trajectory_errors" || name == "base") {
+    metrics.trajectory_errors = true;
+  } else if (name == "hc" || name == "history_comfort") {
+    metrics.history_comfort = true;
+  } else if (name == "ec" || name == "extended_comfort") {
+    metrics.extended_comfort = true;
+  } else if (name == "ttc" || name == "time_to_collision_within_bound") {
+    metrics.time_to_collision_within_bound = true;
+  } else if (name == "lk" || name == "lane_keeping") {
+    metrics.lane_keeping = true;
+  } else if (name == "ep" || name == "ego_progress") {
+    metrics.ego_progress = true;
+  } else if (name == "dac" || name == "drivable_area_compliance") {
+    metrics.drivable_area_compliance = true;
+  } else if (name == "nc" || name == "no_at_fault_collision") {
+    metrics.no_at_fault_collision = true;
+  } else if (name == "ddc" || name == "driving_direction_compliance") {
+    metrics.driving_direction_compliance = true;
+  } else if (name == "tlc" || name == "traffic_light_compliance") {
+    metrics.traffic_light_compliance = true;
+  } else if (name == "epdms" || name == "synthetic_epdms") {
+    metrics.synthetic_epdms = true;
+  } else {
+    throw std::invalid_argument("Unknown open_loop.enabled_metrics entry: " + raw_name);
+  }
+}
+
+bool all_epdms_inputs_enabled(const metrics::EnabledMetrics & enabled_metrics)
+{
+  return enabled_metrics.history_comfort && enabled_metrics.extended_comfort &&
+         enabled_metrics.time_to_collision_within_bound && enabled_metrics.lane_keeping &&
+         enabled_metrics.ego_progress && enabled_metrics.drivable_area_compliance &&
+         enabled_metrics.no_at_fault_collision && enabled_metrics.driving_direction_compliance &&
+         enabled_metrics.traffic_light_compliance;
 }
 
 metrics::EpdmsMetricSnapshot build_epdms_snapshot(const OpenLoopTrajectoryMetrics & metrics)
@@ -134,13 +563,15 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   const metrics::HistoryComfortParameters & history_comfort_params,
   const metrics::LaneKeepingParameters & lane_keeping_params,
   const metrics::DrivingDirectionComplianceParameters & driving_direction_params,
-  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const metrics::EnabledMetrics & enabled_metrics,
+  const std::vector<TimedPredictedObjects> & future_objects)
 {
   const auto human_sync_data =
     clone_with_trajectory(eval_data.synchronized_data, eval_data.ground_truth_trajectory);
   const auto human_point_metrics = metrics::calculate_trajectory_point_metrics(
     human_sync_data, route_handler, history_comfort_params, lane_keeping_params,
-    driving_direction_params, vehicle_info);
+    driving_direction_params, vehicle_info, enabled_metrics, future_objects);
 
   metrics::EpdmsMetricSnapshot human_snapshot;
   human_snapshot.history_comfort = human_point_metrics.history_comfort;
@@ -149,7 +580,8 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   human_snapshot.extended_comfort_available = false;
   human_snapshot.ego_progress = 1.0;
   human_snapshot.ego_progress_available = false;
-  human_snapshot.time_to_collision_within_bound = human_point_metrics.time_to_collision_within_bound;
+  human_snapshot.time_to_collision_within_bound =
+    human_point_metrics.time_to_collision_within_bound;
   human_snapshot.time_to_collision_within_bound_available =
     human_point_metrics.time_to_collision_within_bound_available;
   human_snapshot.lane_keeping = human_point_metrics.lane_keeping;
@@ -262,6 +694,28 @@ static std::string result_summary(bool has_frame, size_t num_points)
 
 // Constructor implementation moved to header file
 
+void OpenLoopEvaluator::set_enabled_metrics(const std::vector<std::string> & enabled_metric_names)
+{
+  if (enabled_metric_names.empty()) {
+    enabled_metrics_ = metrics::EnabledMetrics{};
+    return;
+  }
+
+  for (const auto & name : enabled_metric_names) {
+    const auto normalized_name = normalize_metric_name(name);
+    if (normalized_name == "all") {
+      enabled_metrics_ = metrics::EnabledMetrics{};
+      return;
+    }
+  }
+
+  auto enabled_metrics = make_disabled_metrics();
+  for (const auto & name : enabled_metric_names) {
+    enable_metric_name(enabled_metrics, name);
+  }
+  enabled_metrics_ = enabled_metrics;
+}
+
 void OpenLoopEvaluator::evaluate(
   const std::vector<std::shared_ptr<SynchronizedData>> & synchronized_data_list,
   rosbag2_cpp::Writer * bag_writer)
@@ -333,9 +787,16 @@ void OpenLoopEvaluator::evaluate(
 
       try {
         const auto & eval_data = evaluation_data_list.at(i);
+        const auto future_objects =
+          eval_data.synchronized_data && eval_data.synchronized_data->trajectory
+            ? get_future_objects_for_trajectory(
+                *eval_data.synchronized_data->trajectory, object_timeline_,
+                trajectory_evaluation_horizon_s_)
+            : std::vector<TimedPredictedObjects>{};
         auto trajectory_metrics = metrics::calculate_trajectory_point_metrics(
           eval_data.synchronized_data, route_handler_, history_comfort_params_,
-          lane_keeping_params_, driving_direction_params_, vehicle_info_);
+          lane_keeping_params_, driving_direction_params_, vehicle_info_, enabled_metrics_,
+          future_objects);
         auto metrics = evaluate_trajectory(eval_data);
         metrics.history_comfort = trajectory_metrics.history_comfort;
         metrics.time_to_collision_within_bound = trajectory_metrics.time_to_collision_within_bound;
@@ -348,16 +809,20 @@ void OpenLoopEvaluator::evaluate(
         metrics.lane_keeping = trajectory_metrics.lane_keeping;
         metrics.lane_keeping_available = trajectory_metrics.lane_keeping_available;
         metrics.lane_keeping_reason = trajectory_metrics.lane_keeping_reason;
-        const auto ego_progress = metrics::calculate_ego_progress(
-          eval_data.synchronized_data ? eval_data.synchronized_data->trajectory : nullptr,
-          eval_data.synchronized_data ? eval_data.synchronized_data->candidate_trajectories
-                                      : nullptr,
-          route_handler_);
-        metrics.ego_progress = ego_progress.score;
-        metrics.ego_progress_available = ego_progress.available;
-        metrics.ego_progress_reason = ego_progress.reason;
-        metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
-        metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
+        if (enabled_metrics_.ego_progress) {
+          const auto ego_progress = metrics::calculate_ego_progress(
+            eval_data.synchronized_data ? eval_data.synchronized_data->trajectory : nullptr,
+            eval_data.synchronized_data ? eval_data.synchronized_data->candidate_trajectories
+                                        : nullptr,
+            route_handler_);
+          metrics.ego_progress = ego_progress.score;
+          metrics.ego_progress_available = ego_progress.available;
+          metrics.ego_progress_reason = ego_progress.reason;
+          metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
+          metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
+        } else {
+          metrics.ego_progress_reason = "disabled";
+        }
         metrics.drivable_area_compliance = trajectory_metrics.drivable_area_compliance;
         metrics.drivable_area_compliance_available =
           trajectory_metrics.drivable_area_compliance_available;
@@ -380,9 +845,12 @@ void OpenLoopEvaluator::evaluate(
         metrics.traffic_light_compliance_reason =
           trajectory_metrics.traffic_light_compliance_reason;
 
-        auto human_snapshot = calculate_human_reference_snapshot(
-          eval_data, route_handler_, history_comfort_params_, lane_keeping_params_,
-          driving_direction_params_, vehicle_info_);
+        metrics::EpdmsMetricSnapshot human_snapshot;
+        if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
+          human_snapshot = calculate_human_reference_snapshot(
+            eval_data, route_handler_, history_comfort_params_, lane_keeping_params_,
+            driving_direction_params_, vehicle_info_, enabled_metrics_, future_objects);
+        }
 
         auto & result = parallel_results.at(i);
         result.metrics = std::move(metrics);
@@ -445,7 +913,11 @@ void OpenLoopEvaluator::evaluate(
         auto & metrics = result.metrics;
         auto human_snapshot = result.human_snapshot;
 
-        if (i == 0U) {
+        if (!enabled_metrics_.extended_comfort) {
+          metrics.extended_comfort = 0.0;
+          metrics.extended_comfort_available = false;
+          metrics.extended_comfort_reason = "disabled";
+        } else if (i == 0U) {
           metrics.extended_comfort = 0.0;
           metrics.extended_comfort_available = false;
           metrics.extended_comfort_reason = "unavailable_no_previous_trajectory";
@@ -466,7 +938,10 @@ void OpenLoopEvaluator::evaluate(
           }
         }
 
-        if (i == 0U) {
+        if (!(enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_))) {
+          human_snapshot.extended_comfort = 0.0;
+          human_snapshot.extended_comfort_available = false;
+        } else if (i == 0U) {
           human_snapshot.extended_comfort = 0.0;
           human_snapshot.extended_comfort_available = false;
         } else {
@@ -477,11 +952,13 @@ void OpenLoopEvaluator::evaluate(
           human_snapshot.extended_comfort_available = human_extended_comfort.available;
         }
 
-        const auto agent_snapshot = build_epdms_snapshot(metrics);
-        result.human_filter_metrics =
-          metrics::calculate_human_filter_metrics(agent_snapshot, human_snapshot);
-        result.synthetic_epdms =
-          metrics::calculate_synthetic_epdms(agent_snapshot, result.human_filter_metrics);
+        if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
+          const auto agent_snapshot = build_epdms_snapshot(metrics);
+          result.human_filter_metrics =
+            metrics::calculate_human_filter_metrics(agent_snapshot, human_snapshot);
+          result.synthetic_epdms =
+            metrics::calculate_synthetic_epdms(agent_snapshot, result.human_filter_metrics);
+        }
 
         const auto processed = phase2_processed.fetch_add(1U) + 1U;
         if (processed % kProgressLogInterval == 0U || processed == evaluation_data_list.size()) {
@@ -556,10 +1033,14 @@ std::vector<OpenLoopEvaluator::EvaluationData> OpenLoopEvaluator::prepare_evalua
       continue;
     }
 
-    const size_t num_pts = data->trajectory->points.size();
+    const auto truncated_trajectory =
+      truncate_trajectory_by_horizon(*data->trajectory, trajectory_evaluation_horizon_s_);
+    const auto evaluation_data = clone_with_trajectory(data, truncated_trajectory);
+
+    const size_t num_pts = evaluation_data->trajectory->points.size();
     if (num_pts <= 1u) {
       // Include frame in output as failure (no metrics); do not skip.
-      result.push_back({data, autoware_planning_msgs::msg::Trajectory{}});
+      result.push_back({evaluation_data, autoware_planning_msgs::msg::Trajectory{}});
       continue;
     }
 
@@ -567,15 +1048,17 @@ std::vector<OpenLoopEvaluator::EvaluationData> OpenLoopEvaluator::prepare_evalua
     if (gt_source_mode_ == GTSourceMode::GT_TRAJECTORY) {
       // In gt_trajectory mode, tolerate short startup timing gaps by skipping frames
       // where GT topic is missing/empty, instead of aborting the whole evaluation.
-      if (!data->ground_truth_trajectory_msg || data->ground_truth_trajectory_msg->points.empty()) {
+      if (
+        !evaluation_data->ground_truth_trajectory_msg ||
+        evaluation_data->ground_truth_trajectory_msg->points.empty()) {
         RCLCPP_WARN(
           logger_,
           "Skipping trajectory at time %f in gt_trajectory mode - GT topic message was "
           "missing or empty.",
-          data->timestamp.seconds());
+          evaluation_data->timestamp.seconds());
         continue;
       }
-      ground_truth_opt = generate_ground_truth_trajectory_from_topic(data);
+      ground_truth_opt = generate_ground_truth_trajectory_from_topic(evaluation_data);
       if (!ground_truth_opt.has_value()) {
         // For per-trajectory prediction issues (e.g., too few predicted points, invalid timing,
         // out-of-tolerance alignment), skip this frame and continue evaluating others.
@@ -583,22 +1066,22 @@ std::vector<OpenLoopEvaluator::EvaluationData> OpenLoopEvaluator::prepare_evalua
           logger_,
           "Skipping trajectory at time %f in gt_trajectory mode - predicted trajectory was "
           "invalid for evaluation (GT topic exists).",
-          data->timestamp.seconds());
+          evaluation_data->timestamp.seconds());
         continue;
       }
     } else {
-      ground_truth_opt = generate_ground_truth_trajectory(data, synchronized_data_list);
+      ground_truth_opt = generate_ground_truth_trajectory(evaluation_data, synchronized_data_list);
     }
 
     if (!ground_truth_opt.has_value()) {
       RCLCPP_WARN(
         logger_, "Skipping trajectory at time %f - ground truth generation failed",
-        data->timestamp.seconds());
+        evaluation_data->timestamp.seconds());
       continue;
     }
 
     // Add valid evaluation data
-    result.push_back({data, ground_truth_opt.value()});
+    result.push_back({evaluation_data, ground_truth_opt.value()});
   }
 
   return result;
@@ -1117,110 +1600,161 @@ void OpenLoopEvaluator::save_metrics_to_bag(
   // Write point-wise metrics as Float64MultiArray
   std_msgs::msg::Float64MultiArray array_msg;
 
-  // ADE
-  array_msg.data = metrics.ade;
-  bag_writer.write(array_msg, metric_topic("ade"), message_timestamp);
+  if (enabled_metrics_.trajectory_errors) {
+    array_msg.data = metrics.ade;
+    bag_writer.write(array_msg, metric_topic("ade"), message_timestamp);
+    array_msg.data = metrics.displacement_errors;
+    bag_writer.write(array_msg, metric_topic("fde"), message_timestamp);
+    array_msg.data = metrics.ahe;
+    bag_writer.write(array_msg, metric_topic("ahe"), message_timestamp);
+    array_msg.data = metrics.heading_errors;
+    bag_writer.write(array_msg, metric_topic("fhe"), message_timestamp);
+    array_msg.data = metrics.lateral_deviations;
+    bag_writer.write(array_msg, metric_topic("lateral_deviation"), message_timestamp);
+    array_msg.data = metrics.longitudinal_deviations;
+    bag_writer.write(array_msg, metric_topic("longitudinal_deviation"), message_timestamp);
+  }
 
-  // FDE
-  array_msg.data = metrics.displacement_errors;
-  bag_writer.write(array_msg, metric_topic("fde"), message_timestamp);
-
-  // AHE
-  array_msg.data = metrics.ahe;
-  bag_writer.write(array_msg, metric_topic("ahe"), message_timestamp);
-
-  // FHE
-  array_msg.data = metrics.heading_errors;
-  bag_writer.write(array_msg, metric_topic("fhe"), message_timestamp);
-
-  // Lateral deviations array
-  array_msg.data = metrics.lateral_deviations;
-  bag_writer.write(array_msg, metric_topic("lateral_deviation"), message_timestamp);
-
-  // Longitudinal deviations array
-  array_msg.data = metrics.longitudinal_deviations;
-  bag_writer.write(array_msg, metric_topic("longitudinal_deviation"), message_timestamp);
-
-  // TTC values array
-  array_msg.data = metrics.ttc;
-  bag_writer.write(array_msg, metric_topic("ttc"), message_timestamp);
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    array_msg.data = metrics.ttc;
+    bag_writer.write(array_msg, metric_topic("ttc"), message_timestamp);
+  }
 
   std_msgs::msg::Float64 scalar_msg;
-  scalar_msg.data = metrics.history_comfort;
-  bag_writer.write(scalar_msg, metric_topic("history_comfort"), message_timestamp);
-  scalar_msg.data = metrics.extended_comfort;
-  bag_writer.write(scalar_msg, metric_topic("extended_comfort"), message_timestamp);
-  scalar_msg.data = metrics.time_to_collision_within_bound;
-  bag_writer.write(scalar_msg, metric_topic("time_to_collision_within_bound"), message_timestamp);
-  scalar_msg.data = metrics.lane_keeping;
-  bag_writer.write(scalar_msg, metric_topic("lane_keeping"), message_timestamp);
-  scalar_msg.data = metrics.ego_progress;
-  bag_writer.write(scalar_msg, metric_topic("ego_progress"), message_timestamp);
-  scalar_msg.data = metrics.drivable_area_compliance;
-  bag_writer.write(scalar_msg, metric_topic("drivable_area_compliance"), message_timestamp);
-  scalar_msg.data = metrics.no_at_fault_collision;
-  bag_writer.write(scalar_msg, metric_topic("no_at_fault_collision"), message_timestamp);
-  scalar_msg.data = metrics.time_to_at_fault_collision_s;
-  bag_writer.write(scalar_msg, metric_topic("time_to_at_fault_collision_s"), message_timestamp);
-  scalar_msg.data = metrics.driving_direction_compliance;
-  bag_writer.write(scalar_msg, metric_topic("driving_direction_compliance"), message_timestamp);
-  scalar_msg.data = metrics.max_oncoming_progress_m;
-  bag_writer.write(scalar_msg, metric_topic("max_oncoming_progress_m"), message_timestamp);
-  scalar_msg.data = metrics.traffic_light_compliance;
-  bag_writer.write(scalar_msg, metric_topic("traffic_light_compliance"), message_timestamp);
-  scalar_msg.data = synthetic_epdms.raw.epdms;
-  bag_writer.write(scalar_msg, metric_topic("synthetic_epdms_raw"), message_timestamp);
-  scalar_msg.data = synthetic_epdms.human_filtered.epdms;
-  bag_writer.write(scalar_msg, metric_topic("synthetic_epdms_human_filtered"), message_timestamp);
+  if (enabled_metrics_.history_comfort) {
+    scalar_msg.data = metrics.history_comfort;
+    bag_writer.write(scalar_msg, metric_topic("history_comfort"), message_timestamp);
+  }
+  if (enabled_metrics_.extended_comfort) {
+    scalar_msg.data = metrics.extended_comfort;
+    bag_writer.write(scalar_msg, metric_topic("extended_comfort"), message_timestamp);
+  }
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    scalar_msg.data = metrics.time_to_collision_within_bound;
+    bag_writer.write(scalar_msg, metric_topic("time_to_collision_within_bound"), message_timestamp);
+  }
+  if (enabled_metrics_.lane_keeping) {
+    scalar_msg.data = metrics.lane_keeping;
+    bag_writer.write(scalar_msg, metric_topic("lane_keeping"), message_timestamp);
+  }
+  if (enabled_metrics_.ego_progress) {
+    scalar_msg.data = metrics.ego_progress;
+    bag_writer.write(scalar_msg, metric_topic("ego_progress"), message_timestamp);
+  }
+  if (enabled_metrics_.drivable_area_compliance) {
+    scalar_msg.data = metrics.drivable_area_compliance;
+    bag_writer.write(scalar_msg, metric_topic("drivable_area_compliance"), message_timestamp);
+  }
+  if (enabled_metrics_.no_at_fault_collision) {
+    scalar_msg.data = metrics.no_at_fault_collision;
+    bag_writer.write(scalar_msg, metric_topic("no_at_fault_collision"), message_timestamp);
+    scalar_msg.data = metrics.time_to_at_fault_collision_s;
+    bag_writer.write(scalar_msg, metric_topic("time_to_at_fault_collision_s"), message_timestamp);
+  }
+  if (enabled_metrics_.driving_direction_compliance) {
+    scalar_msg.data = metrics.driving_direction_compliance;
+    bag_writer.write(scalar_msg, metric_topic("driving_direction_compliance"), message_timestamp);
+    scalar_msg.data = metrics.max_oncoming_progress_m;
+    bag_writer.write(scalar_msg, metric_topic("max_oncoming_progress_m"), message_timestamp);
+  }
+  if (enabled_metrics_.traffic_light_compliance) {
+    scalar_msg.data = metrics.traffic_light_compliance;
+    bag_writer.write(scalar_msg, metric_topic("traffic_light_compliance"), message_timestamp);
+  }
+  if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
+    scalar_msg.data = synthetic_epdms.raw.epdms;
+    bag_writer.write(scalar_msg, metric_topic("synthetic_epdms_raw"), message_timestamp);
+    scalar_msg.data = synthetic_epdms.human_filtered.epdms;
+    bag_writer.write(scalar_msg, metric_topic("synthetic_epdms_human_filtered"), message_timestamp);
+  }
   std_msgs::msg::Bool availability_msg;
-  availability_msg.data = metrics.extended_comfort_available;
-  bag_writer.write(availability_msg, metric_topic("extended_comfort_available"), message_timestamp);
-  availability_msg.data = metrics.lane_keeping_available;
-  bag_writer.write(availability_msg, metric_topic("lane_keeping_available"), message_timestamp);
-  availability_msg.data = metrics.time_to_collision_within_bound_available;
-  bag_writer.write(
-    availability_msg, metric_topic("time_to_collision_within_bound_available"), message_timestamp);
-  availability_msg.data = metrics.ego_progress_available;
-  bag_writer.write(availability_msg, metric_topic("ego_progress_available"), message_timestamp);
-  availability_msg.data = metrics.drivable_area_compliance_available;
-  bag_writer.write(
-    availability_msg, metric_topic("drivable_area_compliance_available"), message_timestamp);
-  availability_msg.data = metrics.no_at_fault_collision_available;
-  bag_writer.write(
-    availability_msg, metric_topic("no_at_fault_collision_available"), message_timestamp);
-  availability_msg.data = metrics.driving_direction_compliance_available;
-  bag_writer.write(
-    availability_msg, metric_topic("driving_direction_compliance_available"), message_timestamp);
-  availability_msg.data = metrics.traffic_light_compliance_available;
-  bag_writer.write(
-    availability_msg, metric_topic("traffic_light_compliance_available"), message_timestamp);
-  availability_msg.data = synthetic_epdms.raw.available;
-  bag_writer.write(
-    availability_msg, metric_topic("synthetic_epdms_raw_available"), message_timestamp);
-  availability_msg.data = synthetic_epdms.human_filtered.available;
-  bag_writer.write(
-    availability_msg, metric_topic("synthetic_epdms_human_filtered_available"), message_timestamp);
+  if (enabled_metrics_.extended_comfort) {
+    availability_msg.data = metrics.extended_comfort_available;
+    bag_writer.write(
+      availability_msg, metric_topic("extended_comfort_available"), message_timestamp);
+  }
+  if (enabled_metrics_.lane_keeping) {
+    availability_msg.data = metrics.lane_keeping_available;
+    bag_writer.write(availability_msg, metric_topic("lane_keeping_available"), message_timestamp);
+  }
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    availability_msg.data = metrics.time_to_collision_within_bound_available;
+    bag_writer.write(
+      availability_msg, metric_topic("time_to_collision_within_bound_available"),
+      message_timestamp);
+  }
+  if (enabled_metrics_.ego_progress) {
+    availability_msg.data = metrics.ego_progress_available;
+    bag_writer.write(availability_msg, metric_topic("ego_progress_available"), message_timestamp);
+  }
+  if (enabled_metrics_.drivable_area_compliance) {
+    availability_msg.data = metrics.drivable_area_compliance_available;
+    bag_writer.write(
+      availability_msg, metric_topic("drivable_area_compliance_available"), message_timestamp);
+  }
+  if (enabled_metrics_.no_at_fault_collision) {
+    availability_msg.data = metrics.no_at_fault_collision_available;
+    bag_writer.write(
+      availability_msg, metric_topic("no_at_fault_collision_available"), message_timestamp);
+  }
+  if (enabled_metrics_.driving_direction_compliance) {
+    availability_msg.data = metrics.driving_direction_compliance_available;
+    bag_writer.write(
+      availability_msg, metric_topic("driving_direction_compliance_available"), message_timestamp);
+  }
+  if (enabled_metrics_.traffic_light_compliance) {
+    availability_msg.data = metrics.traffic_light_compliance_available;
+    bag_writer.write(
+      availability_msg, metric_topic("traffic_light_compliance_available"), message_timestamp);
+  }
+  if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
+    availability_msg.data = synthetic_epdms.raw.available;
+    bag_writer.write(
+      availability_msg, metric_topic("synthetic_epdms_raw_available"), message_timestamp);
+    availability_msg.data = synthetic_epdms.human_filtered.available;
+    bag_writer.write(
+      availability_msg, metric_topic("synthetic_epdms_human_filtered_available"),
+      message_timestamp);
+  }
   std_msgs::msg::String reason_msg;
-  reason_msg.data = metrics.extended_comfort_reason;
-  bag_writer.write(reason_msg, metric_topic("extended_comfort_reason"), message_timestamp);
-  reason_msg.data = metrics.time_to_collision_within_bound_reason;
-  bag_writer.write(
-    reason_msg, metric_topic("time_to_collision_within_bound_reason"), message_timestamp);
-  reason_msg.data = metrics.ego_progress_reason;
-  bag_writer.write(reason_msg, metric_topic("ego_progress_reason"), message_timestamp);
-  reason_msg.data = metrics.lane_keeping_reason;
-  bag_writer.write(reason_msg, metric_topic("lane_keeping_reason"), message_timestamp);
-  reason_msg.data = metrics.drivable_area_compliance_reason;
-  bag_writer.write(reason_msg, metric_topic("drivable_area_compliance_reason"), message_timestamp);
-  reason_msg.data = metrics.no_at_fault_collision_reason;
-  bag_writer.write(reason_msg, metric_topic("no_at_fault_collision_reason"), message_timestamp);
-  reason_msg.data = metrics.driving_direction_compliance_reason;
-  bag_writer.write(
-    reason_msg, metric_topic("driving_direction_compliance_reason"), message_timestamp);
-  reason_msg.data = metrics.traffic_light_compliance_reason;
-  bag_writer.write(reason_msg, metric_topic("traffic_light_compliance_reason"), message_timestamp);
+  if (enabled_metrics_.extended_comfort) {
+    reason_msg.data = metrics.extended_comfort_reason;
+    bag_writer.write(reason_msg, metric_topic("extended_comfort_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    reason_msg.data = metrics.time_to_collision_within_bound_reason;
+    bag_writer.write(
+      reason_msg, metric_topic("time_to_collision_within_bound_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.ego_progress) {
+    reason_msg.data = metrics.ego_progress_reason;
+    bag_writer.write(reason_msg, metric_topic("ego_progress_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.lane_keeping) {
+    reason_msg.data = metrics.lane_keeping_reason;
+    bag_writer.write(reason_msg, metric_topic("lane_keeping_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.drivable_area_compliance) {
+    reason_msg.data = metrics.drivable_area_compliance_reason;
+    bag_writer.write(reason_msg, metric_topic("drivable_area_compliance_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.no_at_fault_collision) {
+    reason_msg.data = metrics.no_at_fault_collision_reason;
+    bag_writer.write(reason_msg, metric_topic("no_at_fault_collision_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.driving_direction_compliance) {
+    reason_msg.data = metrics.driving_direction_compliance_reason;
+    bag_writer.write(
+      reason_msg, metric_topic("driving_direction_compliance_reason"), message_timestamp);
+  }
+  if (enabled_metrics_.traffic_light_compliance) {
+    reason_msg.data = metrics.traffic_light_compliance_reason;
+    bag_writer.write(reason_msg, metric_topic("traffic_light_compliance_reason"), message_timestamp);
+  }
 
-  save_dlr_style_result_to_bag(metrics, eval_data, bag_writer);
+  if (enabled_metrics_.trajectory_errors) {
+    save_dlr_style_result_to_bag(metrics, eval_data, bag_writer);
+  }
 
   // Save the precomputed ground truth trajectory directly
   autoware_planning_msgs::msg::Trajectory gt_traj_msg = ground_truth_trajectory;
@@ -1235,59 +1769,45 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
   const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
   const rclcpp::Time & normalized_timestamp) const
 {
-  {
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    std_msgs::msg::Float64MultiArray msg;
+    msg.data = metrics.ttc_values;
+    bag_writer.write(msg, trajectory_metric_topic("ttc_values"), normalized_timestamp);
+  }
+
+  if (enabled_metrics_.history_comfort) {
     std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.longitudinal_accelerations;
     bag_writer.write(
       msg, trajectory_metric_topic("longitudinal_accelerations"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.lateral_accelerations;
     bag_writer.write(msg, trajectory_metric_topic("lateral_accelerations"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.lateral_jerks;
     bag_writer.write(msg, trajectory_metric_topic("lateral_jerks"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.jerk_magnitudes;
     bag_writer.write(msg, trajectory_metric_topic("jerk_magnitudes"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.longitudinal_jerks;
     bag_writer.write(msg, trajectory_metric_topic("longitudinal_jerks"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.yaw_rates;
     bag_writer.write(msg, trajectory_metric_topic("yaw_rates"), normalized_timestamp);
-  }
-
-  {
-    std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.yaw_accelerations;
     bag_writer.write(msg, trajectory_metric_topic("yaw_accelerations"), normalized_timestamp);
   }
 
-  {
+  if (enabled_metrics_.lane_keeping) {
     std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.lateral_deviations;
     bag_writer.write(msg, trajectory_metric_topic("lateral_deviations"), normalized_timestamp);
   }
 
-  {
+  if (enabled_metrics_.trajectory_errors) {
     std_msgs::msg::Float64MultiArray msg;
     msg.data = metrics.travel_distances;
     bag_writer.write(msg, trajectory_metric_topic("travel_distances"), normalized_timestamp);
+  }
+
+  if (enabled_metrics_.no_at_fault_collision) {
+    write_nc_debug_topics_to_bag(metrics, bag_writer, normalized_timestamp);
   }
 }
 
@@ -2039,61 +2559,96 @@ void OpenLoopEvaluator::save_dlr_style_result_to_bag(
 
 std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_topics() const
 {
-  return {
-    {dlr_result_topic(), "std_msgs/msg/String"},
-    {metric_topic("ade"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("fde"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("ahe"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("fhe"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("ttc"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("history_comfort"), "std_msgs/msg/Float64"},
-    {metric_topic("extended_comfort"), "std_msgs/msg/Float64"},
-    {metric_topic("extended_comfort_available"), "std_msgs/msg/Bool"},
-    {metric_topic("extended_comfort_reason"), "std_msgs/msg/String"},
-    {metric_topic("time_to_collision_within_bound"), "std_msgs/msg/Float64"},
-    {metric_topic("time_to_collision_within_bound_available"), "std_msgs/msg/Bool"},
-    {metric_topic("time_to_collision_within_bound_reason"), "std_msgs/msg/String"},
-    {metric_topic("lane_keeping"), "std_msgs/msg/Float64"},
-    {metric_topic("ego_progress"), "std_msgs/msg/Float64"},
-    {metric_topic("ego_progress_available"), "std_msgs/msg/Bool"},
-    {metric_topic("ego_progress_reason"), "std_msgs/msg/String"},
-    {metric_topic("lane_keeping_available"), "std_msgs/msg/Bool"},
-    {metric_topic("lane_keeping_reason"), "std_msgs/msg/String"},
-    {metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64"},
-    {metric_topic("no_at_fault_collision"), "std_msgs/msg/Float64"},
-    {metric_topic("time_to_at_fault_collision_s"), "std_msgs/msg/Float64"},
-    {metric_topic("drivable_area_compliance_available"), "std_msgs/msg/Bool"},
-    {metric_topic("drivable_area_compliance_reason"), "std_msgs/msg/String"},
-    {metric_topic("no_at_fault_collision_available"), "std_msgs/msg/Bool"},
-    {metric_topic("no_at_fault_collision_reason"), "std_msgs/msg/String"},
-    {metric_topic("driving_direction_compliance"), "std_msgs/msg/Float64"},
-    {metric_topic("max_oncoming_progress_m"), "std_msgs/msg/Float64"},
-    {metric_topic("driving_direction_compliance_available"), "std_msgs/msg/Bool"},
-    {metric_topic("driving_direction_compliance_reason"), "std_msgs/msg/String"},
-    {metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64"},
-    {metric_topic("traffic_light_compliance_available"), "std_msgs/msg/Bool"},
-    {metric_topic("traffic_light_compliance_reason"), "std_msgs/msg/String"},
-    {metric_topic("synthetic_epdms_raw"), "std_msgs/msg/Float64"},
-    {metric_topic("synthetic_epdms_raw_available"), "std_msgs/msg/Bool"},
-    {metric_topic("synthetic_epdms_human_filtered"), "std_msgs/msg/Float64"},
-    {metric_topic("synthetic_epdms_human_filtered_available"), "std_msgs/msg/Bool"},
-    {metric_topic("lateral_deviation"), "std_msgs/msg/Float64MultiArray"},
-    {metric_topic("longitudinal_deviation"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("jerk_magnitudes"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("longitudinal_jerks"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("yaw_rates"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("yaw_accelerations"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("ttc_values"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("lateral_deviations"), "std_msgs/msg/Float64MultiArray"},
-    {trajectory_metric_topic("travel_distances"), "std_msgs/msg/Float64MultiArray"},
-    {"/planning/trajectory", "autoware_planning_msgs/msg/Trajectory"},
-    {compared_trajectory_topic(), "autoware_planning_msgs/msg/Trajectory"},
-    {"/perception/object_recognition/objects", "autoware_perception_msgs/msg/PredictedObjects"},
-    {"/tf", "tf2_msgs/msg/TFMessage"},
-    {"/tf_static", "tf2_msgs/msg/TFMessage"}};
+  std::vector<std::pair<std::string, std::string>> topics;
+  const auto add_topic = [&topics](const std::string & name, const std::string & type) {
+    topics.emplace_back(name, type);
+  };
+
+  if (enabled_metrics_.trajectory_errors) {
+    add_topic(dlr_result_topic(), "std_msgs/msg/String");
+    add_topic(metric_topic("ade"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("fde"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("ahe"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("fhe"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("lateral_deviation"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("longitudinal_deviation"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("travel_distances"), "std_msgs/msg/Float64MultiArray");
+  }
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    add_topic(metric_topic("ttc"), "std_msgs/msg/Float64MultiArray");
+    add_topic(metric_topic("time_to_collision_within_bound"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("time_to_collision_within_bound_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("time_to_collision_within_bound_reason"), "std_msgs/msg/String");
+    add_topic(trajectory_metric_topic("ttc_values"), "std_msgs/msg/Float64MultiArray");
+  }
+  if (enabled_metrics_.history_comfort) {
+    add_topic(metric_topic("history_comfort"), "std_msgs/msg/Float64");
+    add_topic(trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("jerk_magnitudes"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("longitudinal_jerks"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("yaw_rates"), "std_msgs/msg/Float64MultiArray");
+    add_topic(trajectory_metric_topic("yaw_accelerations"), "std_msgs/msg/Float64MultiArray");
+  }
+  if (enabled_metrics_.extended_comfort) {
+    add_topic(metric_topic("extended_comfort"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("extended_comfort_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("extended_comfort_reason"), "std_msgs/msg/String");
+  }
+  if (enabled_metrics_.lane_keeping) {
+    add_topic(metric_topic("lane_keeping"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("lane_keeping_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("lane_keeping_reason"), "std_msgs/msg/String");
+    add_topic(trajectory_metric_topic("lateral_deviations"), "std_msgs/msg/Float64MultiArray");
+  }
+  if (enabled_metrics_.ego_progress) {
+    add_topic(metric_topic("ego_progress"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("ego_progress_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("ego_progress_reason"), "std_msgs/msg/String");
+  }
+  if (enabled_metrics_.drivable_area_compliance) {
+    add_topic(metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("drivable_area_compliance_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("drivable_area_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (enabled_metrics_.no_at_fault_collision) {
+    add_topic(metric_topic("no_at_fault_collision"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("time_to_at_fault_collision_s"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("no_at_fault_collision_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("no_at_fault_collision_reason"), "std_msgs/msg/String");
+    add_topic(nc_debug_topic("collision_summary"), "std_msgs/msg/String");
+    add_topic(nc_debug_topic("horizon_ego_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(nc_debug_topic("horizon_object_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(nc_debug_topic("horizon_overlap_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(nc_debug_topic("horizon_labels"), "visualization_msgs/msg/MarkerArray");
+  }
+  if (enabled_metrics_.driving_direction_compliance) {
+    add_topic(metric_topic("driving_direction_compliance"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("max_oncoming_progress_m"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("driving_direction_compliance_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("driving_direction_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (enabled_metrics_.traffic_light_compliance) {
+    add_topic(metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("traffic_light_compliance_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("traffic_light_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
+    add_topic(metric_topic("synthetic_epdms_raw"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("synthetic_epdms_raw_available"), "std_msgs/msg/Bool");
+    add_topic(metric_topic("synthetic_epdms_human_filtered"), "std_msgs/msg/Float64");
+    add_topic(metric_topic("synthetic_epdms_human_filtered_available"), "std_msgs/msg/Bool");
+  }
+
+  add_topic("/planning/trajectory", "autoware_planning_msgs/msg/Trajectory");
+  if (enabled_metrics_.trajectory_errors) {
+    add_topic(compared_trajectory_topic(), "autoware_planning_msgs/msg/Trajectory");
+  }
+  add_topic("/perception/object_recognition/objects", "autoware_perception_msgs/msg/PredictedObjects");
+  add_topic("/tf", "tf2_msgs/msg/TFMessage");
+  add_topic("/tf_static", "tf2_msgs/msg/TFMessage");
+  return topics;
 }
 
 std::pair<rclcpp::Time, rclcpp::Time> OpenLoopEvaluator::run_evaluation_from_bag(
@@ -2104,6 +2659,7 @@ std::pair<rclcpp::Time, rclcpp::Time> OpenLoopEvaluator::run_evaluation_from_bag
 
   // Use base class method to process bag and get synchronized data
   auto bag_result = process_bag_common(bag_path, evaluation_bag_writer, topic_names);
+  object_timeline_ = std::move(bag_result.object_timeline);
 
   if (gt_source_mode_ == GTSourceMode::GT_TRAJECTORY) {
     if (!bag_result.gt_trajectory_topic_seen || bag_result.gt_trajectory_message_count == 0) {

@@ -85,6 +85,8 @@ private:
   std::string candidate_trajectories_topic_name_;
   double evaluation_interval_ms_ = 100.0;
   double sync_tolerance_ms_ = 100.0;
+  double trajectory_evaluation_horizon_s_ = 0.0;
+  std::vector<std::string> enabled_metric_names_;
   std::string gt_source_mode_;
   std::string gt_trajectory_topic_name_;
   double gt_sync_tolerance_ms_ = 200.0;

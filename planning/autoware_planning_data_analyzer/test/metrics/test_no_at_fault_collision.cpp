@@ -216,7 +216,7 @@ TEST(NoAtFaultCollision, FrontCollisionWithAgentFails)
   const auto trajectory = make_straight_trajectory(5.0);
   auto objects = std::make_shared<PredictedObjects>();
   objects->objects.push_back(
-    make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR));
+    make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
 
   const auto result = calculate_no_at_fault_collision(
     trajectory, make_future_objects(objects->objects), make_vehicle_info());
@@ -225,6 +225,26 @@ TEST(NoAtFaultCollision, FrontCollisionWithAgentFails)
   EXPECT_DOUBLE_EQ(result.score, 0.0);
   EXPECT_EQ(result.reason, "at_fault_collision_with_agent");
   EXPECT_GE(result.infraction_time_s, 0.0);
+  ASSERT_EQ(result.debug_info.events.size(), 1U);
+  const auto & event = result.debug_info.events.front();
+  EXPECT_DOUBLE_EQ(event.time_s, 0.0);
+  EXPECT_EQ(event.object_label, "CAR");
+  EXPECT_EQ(event.collision_type, "ACTIVE_FRONT");
+  EXPECT_TRUE(event.agent);
+  EXPECT_TRUE(event.at_fault);
+  EXPECT_TRUE(event.front_hit);
+  EXPECT_FALSE(event.behind);
+  EXPECT_DOUBLE_EQ(event.event_score, 0.0);
+  EXPECT_FALSE(event.ego_footprint.empty());
+  EXPECT_FALSE(event.object_footprint.empty());
+  EXPECT_EQ(event.front_bumper.size(), 2U);
+  EXPECT_EQ(result.debug_info.ego_horizon_footprints.size(), trajectory.points.size());
+  EXPECT_FALSE(result.debug_info.object_horizon_footprints.empty());
+  EXPECT_FALSE(result.debug_info.overlap_areas.empty());
+  EXPECT_TRUE(std::any_of(
+    result.debug_info.ego_horizon_footprints.begin(),
+    result.debug_info.ego_horizon_footprints.end(),
+    [](const auto & footprint) { return footprint.collision && footprint.at_fault; }));
 }
 
 TEST(NoAtFaultCollision, FrontCollisionWithNonAgentGetsHalfPenalty)

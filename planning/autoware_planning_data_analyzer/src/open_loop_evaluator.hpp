@@ -181,9 +181,16 @@ public:
 
   void set_metric_variant(const std::string & metric_variant) { metric_variant_ = metric_variant; }
 
+  void set_enabled_metrics(const std::vector<std::string> & enabled_metric_names);
+
   void set_evaluation_horizons(const std::vector<double> & horizons)
   {
     evaluation_horizons_ = horizons;
+  }
+
+  void set_trajectory_evaluation_horizon(const double horizon_s)
+  {
+    trajectory_evaluation_horizon_s_ = horizon_s;
   }
 
   void set_extended_comfort_parameters(const metrics::ExtendedComfortParameters & parameters)
@@ -354,11 +361,14 @@ private:
   metrics::ExtendedComfortParameters extended_comfort_parameters_{};
   metrics::LaneKeepingParameters lane_keeping_params_;
   metrics::DrivingDirectionComplianceParameters driving_direction_params_;
+  metrics::EnabledMetrics enabled_metrics_;
   autoware::vehicle_info_utils::VehicleInfo vehicle_info_;
+  std::vector<TimedPredictedObjects> object_timeline_;
   OpenLoopEvaluationSummary summary_;
   std::string metric_variant_;
   GTSourceMode gt_source_mode_;
   double gt_sync_tolerance_ms_;
+  double trajectory_evaluation_horizon_s_{0.0};
   std::vector<double> evaluation_horizons_;
 };
 

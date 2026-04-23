@@ -24,6 +24,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -98,6 +99,27 @@ TEST_F(OpenLoopGTSourceModeTest, GTTrajectoryModeSucceedsWithValidGTTopic)
   EXPECT_GT(metrics.front().displacement_errors.front(), 0.0);
 }
 
+TEST_F(OpenLoopGTSourceModeTest, TrajectoryEvaluationHorizonTruncatesAndInterpolatesEndpoint)
+{
+  const rclcpp::Time start_time(15, 0);
+  const auto prediction = make_trajectory(start_time, {0.0, 1.0, 2.0, 3.0, 4.0});
+  const auto gt =
+    std::make_shared<Trajectory>(make_trajectory(start_time, {0.0, 1.0, 2.0, 3.0, 4.0}));
+  std::vector<std::shared_ptr<SynchronizedData>> sync_data_list{make_sync_data(prediction, gt)};
+
+  OpenLoopEvaluator evaluator(
+    rclcpp::get_logger("open_loop_gt_source_test"), nullptr,
+    OpenLoopEvaluator::GTSourceMode::GT_TRAJECTORY, 200.0);
+  evaluator.set_trajectory_evaluation_horizon(0.25);
+
+  EXPECT_NO_THROW(evaluator.evaluate(sync_data_list, nullptr));
+  const auto metrics = evaluator.get_metrics();
+  ASSERT_EQ(metrics.size(), 1u);
+  EXPECT_EQ(metrics.front().num_points, 4u);
+  EXPECT_NEAR(metrics.front().trajectory_duration, 0.25, 1e-9);
+  ASSERT_EQ(metrics.front().displacement_errors.size(), 4u);
+}
+
 TEST_F(OpenLoopGTSourceModeTest, GTTrajectoryModeSkipsWhenGTIsMissing)
 {
   const rclcpp::Time start_time(20, 0);
@@ -160,6 +182,61 @@ TEST_F(OpenLoopGTSourceModeTest, VariantsNamespaceOpenLoopResultTopics)
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw_available"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered_available"));
+  EXPECT_TRUE(has_topic("/debug/nc/collision_summary"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_ego_footprints"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_object_footprints"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_overlap_areas"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_labels"));
+  EXPECT_FALSE(has_topic("/debug/nc/score"));
+  EXPECT_FALSE(has_topic("/debug/nc/events"));
+  EXPECT_FALSE(has_topic("/debug/nc/worst_event/collision_type"));
+  EXPECT_FALSE(has_topic("/debug/nc/ego_footprints"));
+}
+
+TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
+{
+  OpenLoopEvaluator evaluator(
+    rclcpp::get_logger("open_loop_gt_source_test"), nullptr,
+    OpenLoopEvaluator::GTSourceMode::GT_TRAJECTORY, 200.0);
+
+  evaluator.set_metric_variant("raw");
+  evaluator.set_enabled_metrics({"nc"});
+
+  const auto topics = evaluator.get_result_topics();
+  const auto has_topic = [&topics](const std::string & topic_name) {
+    return std::any_of(topics.begin(), topics.end(), [&topic_name](const auto & topic) {
+      return topic.first == topic_name;
+    });
+  };
+
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/time_to_at_fault_collision_s"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision_available"));
+  EXPECT_TRUE(has_topic("/debug/nc/collision_summary"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_ego_footprints"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_object_footprints"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_overlap_areas"));
+  EXPECT_TRUE(has_topic("/debug/nc/horizon_labels"));
+  EXPECT_FALSE(has_topic("/debug/nc/score"));
+  EXPECT_FALSE(has_topic("/debug/nc/events"));
+  EXPECT_TRUE(has_topic("/planning/trajectory"));
+  EXPECT_TRUE(has_topic("/perception/object_recognition/objects"));
+
+  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/time_to_collision_within_bound"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
+  EXPECT_FALSE(has_topic("/trajectory/raw/longitudinal_accelerations"));
+  EXPECT_FALSE(has_topic("/trajectory/raw/travel_distances"));
+  EXPECT_FALSE(has_topic("/evaluation/compared_trajectory/raw"));
+}
+
+TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsRejectsUnknownNames)
+{
+  OpenLoopEvaluator evaluator(
+    rclcpp::get_logger("open_loop_gt_source_test"), nullptr,
+    OpenLoopEvaluator::GTSourceMode::GT_TRAJECTORY, 200.0);
+
+  EXPECT_THROW(evaluator.set_enabled_metrics({"nc", "unknown_metric"}), std::invalid_argument);
 }
 
 TEST_F(OpenLoopGTSourceModeTest, HistoryComfortIsReportedForComfortableAndUncomfortableTrajectories)
@@ -288,7 +365,7 @@ TEST_F(OpenLoopGTSourceModeTest, MissingInputsUnavailableReasonsAreReported)
     "unavailable_no_route_handler");
   EXPECT_EQ(
     full_json["trajectories"][0]["no_at_fault_collision_reason"].get<std::string>(),
-    "unavailable_no_objects_message");
+    "unavailable_no_future_objects");
 }
 
 TEST_F(OpenLoopGTSourceModeTest, ExtendedComfortAvailabilityIsReportedAcrossConsecutivePlans)

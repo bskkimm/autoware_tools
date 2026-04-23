@@ -18,6 +18,7 @@
 #include "../data_types.hpp"
 #include "driving_direction_compliance.hpp"
 #include "lane_keeping.hpp"
+#include "no_at_fault_collision.hpp"
 #include "traffic_light_compliance.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
@@ -43,6 +44,21 @@ struct HistoryComfortParameters
   double max_longitudinal_jerk{4.13};
   double max_yaw_rate{0.95};
   double max_yaw_acceleration{1.93};
+};
+
+struct EnabledMetrics
+{
+  bool trajectory_errors{true};
+  bool history_comfort{true};
+  bool extended_comfort{true};
+  bool time_to_collision_within_bound{true};
+  bool lane_keeping{true};
+  bool ego_progress{true};
+  bool drivable_area_compliance{true};
+  bool no_at_fault_collision{true};
+  bool driving_direction_compliance{true};
+  bool traffic_light_compliance{true};
+  bool synthetic_epdms{true};
 };
 
 // Structure for trajectory point-wise metrics
@@ -73,6 +89,7 @@ struct TrajectoryPointMetrics
   bool no_at_fault_collision_available{false};
   std::string no_at_fault_collision_reason{"unavailable"};
   double time_to_at_fault_collision_s{std::numeric_limits<double>::infinity()};
+  NoAtFaultCollisionDebugInfo no_at_fault_collision_debug;
   double driving_direction_compliance{0.0};
   bool driving_direction_compliance_available{false};
   std::string driving_direction_compliance_reason{"unavailable"};
@@ -96,7 +113,9 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const DrivingDirectionComplianceParameters & driving_direction_params =
     DrivingDirectionComplianceParameters{},
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info =
-    autoware::vehicle_info_utils::VehicleInfo{});
+    autoware::vehicle_info_utils::VehicleInfo{},
+  const EnabledMetrics & enabled_metrics = EnabledMetrics{},
+  const std::vector<TimedPredictedObjects> & future_objects = {});
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

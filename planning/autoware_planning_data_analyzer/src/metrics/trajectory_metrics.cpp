@@ -136,7 +136,9 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const HistoryComfortParameters & history_comfort_params,
   const LaneKeepingParameters & lane_keeping_params,
   const DrivingDirectionComplianceParameters & driving_direction_params,
-  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const EnabledMetrics & enabled_metrics,
+  const std::vector<TimedPredictedObjects> & future_objects)
 {
   TrajectoryPointMetrics metrics;
 
@@ -145,6 +147,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   }
 
   const auto & trajectory = *sync_data->trajectory;
+  const auto & logged_future_objects =
+    future_objects.empty() ? sync_data->future_objects : future_objects;
   const size_t num_points = trajectory.points.size();
 
   // Initialize vectors
@@ -156,21 +160,36 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     return metrics;
   }
 
-  calculate_history_comfort_metrics(trajectory, history_comfort_params, metrics);
+  if (enabled_metrics.history_comfort) {
+    calculate_history_comfort_metrics(trajectory, history_comfort_params, metrics);
+  }
 
-  const auto ttc_within_bound =
-    calculate_ttc_within_bound(trajectory, sync_data->future_objects, vehicle_info, route_handler);
-  metrics.time_to_collision_within_bound = ttc_within_bound.score;
-  metrics.time_to_collision_within_bound_available = ttc_within_bound.available;
-  metrics.time_to_collision_within_bound_reason = ttc_within_bound.reason;
-  metrics.time_to_collision_infraction_time_s = ttc_within_bound.infraction_time_s;
-  const auto no_at_fault_collision = calculate_no_at_fault_collision(
-    trajectory, sync_data->future_objects, vehicle_info, route_handler);
-  metrics.no_at_fault_collision = no_at_fault_collision.score;
-  metrics.no_at_fault_collision_available = no_at_fault_collision.available;
-  metrics.no_at_fault_collision_reason = no_at_fault_collision.reason;
-  metrics.time_to_at_fault_collision_s = no_at_fault_collision.infraction_time_s;
-  if (!route_handler) {
+  if (enabled_metrics.time_to_collision_within_bound) {
+    const auto ttc_within_bound = calculate_ttc_within_bound(
+      trajectory, logged_future_objects, vehicle_info, route_handler);
+    metrics.time_to_collision_within_bound = ttc_within_bound.score;
+    metrics.time_to_collision_within_bound_available = ttc_within_bound.available;
+    metrics.time_to_collision_within_bound_reason = ttc_within_bound.reason;
+    metrics.time_to_collision_infraction_time_s = ttc_within_bound.infraction_time_s;
+  } else {
+    metrics.time_to_collision_within_bound_reason = "disabled";
+  }
+
+  if (enabled_metrics.no_at_fault_collision) {
+    const auto no_at_fault_collision = calculate_no_at_fault_collision(
+      trajectory, logged_future_objects, vehicle_info, route_handler);
+    metrics.no_at_fault_collision = no_at_fault_collision.score;
+    metrics.no_at_fault_collision_available = no_at_fault_collision.available;
+    metrics.no_at_fault_collision_reason = no_at_fault_collision.reason;
+    metrics.time_to_at_fault_collision_s = no_at_fault_collision.infraction_time_s;
+    metrics.no_at_fault_collision_debug = no_at_fault_collision.debug_info;
+  } else {
+    metrics.no_at_fault_collision_reason = "disabled";
+  }
+
+  if (!enabled_metrics.driving_direction_compliance) {
+    metrics.driving_direction_compliance_reason = "disabled";
+  } else if (!route_handler) {
     metrics.driving_direction_compliance_reason = "unavailable_no_route_handler";
   } else if (!route_handler->isHandlerReady()) {
     metrics.driving_direction_compliance_reason = "unavailable_route_handler_not_ready";
@@ -198,31 +217,56 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     metrics.max_oncoming_progress_m = ddc_result.max_oncoming_progress_m;
   }
 
-  if (!route_handler) {
-    metrics.drivable_area_compliance_reason = "unavailable_no_route_handler";
-    metrics.traffic_light_compliance_reason = "unavailable_no_route_handler";
-  } else if (!route_handler->isHandlerReady()) {
-    metrics.drivable_area_compliance_reason = "unavailable_route_handler_not_ready";
-    metrics.traffic_light_compliance_reason = "unavailable_route_handler_not_ready";
-  } else {
-    const auto drivable_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
-    const auto drivable_area_compliance =
-      calculate_drivable_area_compliance(trajectory, drivable_lanelets, vehicle_info);
-    metrics.drivable_area_compliance = drivable_area_compliance.score;
-    metrics.drivable_area_compliance_available = drivable_area_compliance.available;
-    metrics.drivable_area_compliance_reason = drivable_area_compliance.reason;
+  if (!enabled_metrics.drivable_area_compliance) {
+    metrics.drivable_area_compliance_reason = "disabled";
+  }
+  if (!enabled_metrics.traffic_light_compliance) {
+    metrics.traffic_light_compliance_reason = "disabled";
+  }
 
-    const auto traffic_light_compliance = calculate_traffic_light_compliance(
-      trajectory, sync_data->traffic_signals, route_handler, vehicle_info);
-    metrics.traffic_light_compliance = traffic_light_compliance.score;
-    metrics.traffic_light_compliance_available = traffic_light_compliance.available;
-    metrics.traffic_light_compliance_reason = traffic_light_compliance.reason;
+  if (
+    (enabled_metrics.drivable_area_compliance || enabled_metrics.traffic_light_compliance) &&
+    !route_handler) {
+    if (enabled_metrics.drivable_area_compliance) {
+      metrics.drivable_area_compliance_reason = "unavailable_no_route_handler";
+    }
+    if (enabled_metrics.traffic_light_compliance) {
+      metrics.traffic_light_compliance_reason = "unavailable_no_route_handler";
+    }
+  } else if (
+    (enabled_metrics.drivable_area_compliance || enabled_metrics.traffic_light_compliance) &&
+    !route_handler->isHandlerReady()) {
+    if (enabled_metrics.drivable_area_compliance) {
+      metrics.drivable_area_compliance_reason = "unavailable_route_handler_not_ready";
+    }
+    if (enabled_metrics.traffic_light_compliance) {
+      metrics.traffic_light_compliance_reason = "unavailable_route_handler_not_ready";
+    }
+  } else if (enabled_metrics.drivable_area_compliance || enabled_metrics.traffic_light_compliance) {
+    const auto drivable_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
+    if (enabled_metrics.drivable_area_compliance) {
+      const auto drivable_area_compliance =
+        calculate_drivable_area_compliance(trajectory, drivable_lanelets, vehicle_info);
+      metrics.drivable_area_compliance = drivable_area_compliance.score;
+      metrics.drivable_area_compliance_available = drivable_area_compliance.available;
+      metrics.drivable_area_compliance_reason = drivable_area_compliance.reason;
+    }
+
+    if (enabled_metrics.traffic_light_compliance) {
+      const auto traffic_light_compliance = calculate_traffic_light_compliance(
+        trajectory, sync_data->traffic_signals, route_handler, vehicle_info);
+      metrics.traffic_light_compliance = traffic_light_compliance.score;
+      metrics.traffic_light_compliance_available = traffic_light_compliance.available;
+      metrics.traffic_light_compliance_reason = traffic_light_compliance.reason;
+    }
   }
 
   // Calculate TTC for each point (based on autoware_trajectory_ranker implementation)
   constexpr double max_ttc_value = 10.0;  // Maximum TTC value in seconds
-  const auto object_tracks = build_logged_object_tracks(sync_data->future_objects);
-  if (!object_tracks.empty()) {
+  const auto object_tracks =
+    enabled_metrics.time_to_collision_within_bound ? build_logged_object_tracks(logged_future_objects)
+                                                   : std::vector<LoggedObjectTrack>{};
+  if (enabled_metrics.time_to_collision_within_bound && !object_tracks.empty()) {
     const auto trajectory_start_time = rclcpp::Time(trajectory.header.stamp);
     for (size_t i = 0; i < num_points; ++i) {
       double min_ttc = std::numeric_limits<double>::max();
@@ -258,7 +302,9 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   lane_keeping_evaluation_points.reserve(num_points);
 
   // Calculate lateral deviation from the local route lane at each pose.
-  if (!route_handler) {
+  if (!enabled_metrics.lane_keeping) {
+    metrics.lane_keeping_reason = "disabled";
+  } else if (!route_handler) {
     metrics.lane_keeping_reason = "unavailable_no_route_handler";
   } else if (!route_handler->isHandlerReady()) {
     metrics.lane_keeping_reason = "unavailable_route_handler_not_ready";
@@ -280,18 +326,20 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       }
     }
   }
-  const auto has_finite_lane_keeping_sample = std::any_of(
-    lane_keeping_evaluation_points.begin(), lane_keeping_evaluation_points.end(),
-    [](const auto & evaluation_point) {
-      return std::isfinite(evaluation_point.lateral_deviation);
-    });
-  if (has_finite_lane_keeping_sample) {
-    metrics.lane_keeping =
-      calculate_lane_keeping_score(lane_keeping_evaluation_points, lane_keeping_params);
-    metrics.lane_keeping_available = true;
-    metrics.lane_keeping_reason = "available";
-  } else if (metrics.lane_keeping_reason == "unavailable") {
-    metrics.lane_keeping_reason = "unavailable_no_reference_lanelet";
+  if (enabled_metrics.lane_keeping) {
+    const auto has_finite_lane_keeping_sample = std::any_of(
+      lane_keeping_evaluation_points.begin(), lane_keeping_evaluation_points.end(),
+      [](const auto & evaluation_point) {
+        return std::isfinite(evaluation_point.lateral_deviation);
+      });
+    if (has_finite_lane_keeping_sample) {
+      metrics.lane_keeping =
+        calculate_lane_keeping_score(lane_keeping_evaluation_points, lane_keeping_params);
+      metrics.lane_keeping_available = true;
+      metrics.lane_keeping_reason = "available";
+    } else if (metrics.lane_keeping_reason == "unavailable") {
+      metrics.lane_keeping_reason = "unavailable_no_reference_lanelet";
+    }
   }
 
   // Calculate travel distances using motion_utils

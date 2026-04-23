@@ -36,6 +36,7 @@ struct BagData
   std::string trajectory_topic_key{};
   std::string candidate_trajectories_topic_key{};
   std::string gt_trajectory_topic_key{};
+  double trajectory_evaluation_horizon_s{0.0};
   // Template helper to create and configure buffer
   template <typename MessageType>
   void create_buffer(
@@ -76,7 +77,8 @@ struct BagData
   explicit BagData(
     const rcutils_time_point_value_t timestamp, const TopicNames & topic_names,
     const double buffer_duration_sec = 20.0, const size_t max_buffer_msgs = 10000)
-  : timestamp{timestamp}
+  : trajectory_evaluation_horizon_s{topic_names.trajectory_evaluation_horizon_s},
+    timestamp{timestamp}
   {
     // Create buffers using provided topic names
     create_buffer<TFMessage>(topic_names.tf_topic, buffer_duration_sec, max_buffer_msgs);
@@ -241,25 +243,8 @@ struct BagData
       const auto traj_stamp_ns =
         rclcpp::Time(synchronized_data->trajectory->header.stamp).nanoseconds();
       synchronized_data->objects = obj_buffer->get_closest(traj_stamp_ns, tolerance_ms);
-      rcutils_time_point_value_t horizon_end_ns = traj_stamp_ns;
-      if (!synchronized_data->trajectory->points.empty()) {
-        horizon_end_ns +=
-          rclcpp::Duration(synchronized_data->trajectory->points.back().time_from_start)
-            .nanoseconds();
-      }
-      constexpr rcutils_time_point_value_t kFutureObjectRangeMarginNs =
-        static_cast<rcutils_time_point_value_t>(200'000'000);
-      for (const auto & objects :
-           obj_buffer->get_range(traj_stamp_ns, horizon_end_ns + kFutureObjectRangeMarginNs)) {
-        synchronized_data->future_objects.push_back(
-          TimedPredictedObjects{message_stamp(*objects), objects});
-      }
     } else if (obj_buffer) {
       synchronized_data->objects = obj_buffer->get_closest(target_time, tolerance_ms);
-      if (synchronized_data->objects) {
-        synchronized_data->future_objects.push_back(TimedPredictedObjects{
-          message_stamp(*synchronized_data->objects), synchronized_data->objects});
-      }
     }
 
     // Get traffic signals

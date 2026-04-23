@@ -80,6 +80,7 @@ struct TopicNames
   std::string steering_topic;
   double evaluation_interval_ms = 100.0;
   double sync_tolerance_ms = 100.0;
+  double trajectory_evaluation_horizon_s = 0.0;
 };
 
 }  // namespace autoware::planning_data_analyzer

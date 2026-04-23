@@ -16,6 +16,7 @@
 
 #include "metric_utils.hpp"
 
+#include <autoware/object_recognition_utils/object_classification.hpp>
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
 #include <autoware_utils_geometry/boost_polygon_utils.hpp>
 #include <autoware_utils_geometry/geometry.hpp>
@@ -28,11 +29,14 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <iomanip>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <set>
+#include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -71,13 +75,98 @@ struct AtFaultCollision
   std::string reason{"available"};
 };
 
+struct CollisionClassification
+{
+  CollisionType type{CollisionType::ActiveLateral};
+  bool ego_stopped{false};
+  bool track_stopped{false};
+  bool behind{false};
+  bool front_hit{false};
+  std::vector<geometry_msgs::msg::Point> front_bumper;
+};
+
+std::string collision_type_to_string(const CollisionType type)
+{
+  switch (type) {
+    case CollisionType::StoppedEgo:
+      return "STOPPED_EGO";
+    case CollisionType::StoppedTrack:
+      return "STOPPED_TRACK";
+    case CollisionType::ActiveRear:
+      return "ACTIVE_REAR";
+    case CollisionType::ActiveFront:
+      return "ACTIVE_FRONT";
+    case CollisionType::ActiveLateral:
+      return "ACTIVE_LATERAL";
+  }
+  return "NONE";
+}
+
+std::string object_id_to_string(const std::array<uint8_t, 16> & object_id, const bool valid)
+{
+  if (!valid) {
+    return "invalid";
+  }
+
+  std::ostringstream oss;
+  oss << std::hex << std::setfill('0');
+  for (const auto byte : object_id) {
+    oss << std::setw(2) << static_cast<int>(byte);
+  }
+  return oss.str();
+}
+
+geometry_msgs::msg::Point to_msg_point(const Point2d & point)
+{
+  geometry_msgs::msg::Point msg;
+  msg.x = point.x();
+  msg.y = point.y();
+  msg.z = 0.0;
+  return msg;
+}
+
+geometry_msgs::msg::Point to_msg_point(const geometry_msgs::msg::Pose & pose)
+{
+  geometry_msgs::msg::Point msg;
+  msg.x = pose.position.x;
+  msg.y = pose.position.y;
+  msg.z = pose.position.z;
+  return msg;
+}
+
+std::vector<geometry_msgs::msg::Point> polygon_to_points(const Polygon2d & polygon)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  points.reserve(polygon.outer().size());
+  for (const auto & point : polygon.outer()) {
+    points.push_back(to_msg_point(point));
+  }
+  return points;
+}
+
+std::vector<std::vector<geometry_msgs::msg::Point>> overlap_polygons_to_points(
+  const Polygon2d & ego_polygon, const Polygon2d & object_polygon)
+{
+  std::vector<Polygon2d> intersections;
+  bg::intersection(ego_polygon, object_polygon, intersections);
+
+  std::vector<std::vector<geometry_msgs::msg::Point>> polygons;
+  polygons.reserve(intersections.size());
+  for (const auto & intersection : intersections) {
+    if (intersection.outer().size() >= 4U && bg::area(intersection) > 1.0e-6) {
+      polygons.push_back(polygon_to_points(intersection));
+    }
+  }
+  return polygons;
+}
+
 double ego_speed(const autoware_planning_msgs::msg::TrajectoryPoint & point)
 {
   return std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps);
 }
 
-bool front_bumper_intersects(
-  const geometry_msgs::msg::Pose & ego_pose, const Polygon2d & object_polygon,
+std::vector<geometry_msgs::msg::Point> front_bumper_points(
+  const geometry_msgs::msg::Pose & ego_pose,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
 {
   const double yaw = get_yaw(ego_pose.orientation);
@@ -89,11 +178,24 @@ bool front_bumper_intersects(
       ego_pose.position.y + s * x_local + c * y_local};
   };
 
+  return {
+    to_msg_point(
+      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.min_lateral_offset_m)),
+    to_msg_point(
+      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.max_lateral_offset_m))};
+}
+
+bool front_bumper_intersects(
+  const std::vector<geometry_msgs::msg::Point> & front_bumper_points,
+  const Polygon2d & object_polygon)
+{
+  if (front_bumper_points.size() < 2U) {
+    return false;
+  }
+
   bg::model::linestring<Point2d> front_bumper;
-  front_bumper.push_back(
-    transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.min_lateral_offset_m));
-  front_bumper.push_back(
-    transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.max_lateral_offset_m));
+  front_bumper.push_back(Point2d{front_bumper_points.at(0).x, front_bumper_points.at(0).y});
+  front_bumper.push_back(Point2d{front_bumper_points.at(1).x, front_bumper_points.at(1).y});
   return bg::intersects(front_bumper, object_polygon);
 }
 
@@ -103,24 +205,37 @@ bool is_track_stopped(const InterpolatedLoggedObject & object_state)
          object_state.speed_mps <= kStoppedSpeedThreshold;
 }
 
-CollisionType classify_collision(
+CollisionClassification classify_collision(
   const autoware_planning_msgs::msg::TrajectoryPoint & ego_point,
   const InterpolatedLoggedObject & object_state,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
 {
-  if (ego_speed(ego_point) <= kStoppedSpeedThreshold) {
-    return CollisionType::StoppedEgo;
+  CollisionClassification classification;
+  classification.ego_stopped = ego_speed(ego_point) <= kStoppedSpeedThreshold;
+  classification.track_stopped = is_track_stopped(object_state);
+  classification.behind = is_agent_behind(ego_point.pose, object_state.pose);
+  classification.front_bumper = front_bumper_points(ego_point.pose, vehicle_info);
+  classification.front_hit = front_bumper_intersects(
+    classification.front_bumper, object_state.polygon);
+
+  if (classification.ego_stopped) {
+    classification.type = CollisionType::StoppedEgo;
+    return classification;
   }
-  if (is_track_stopped(object_state)) {
-    return CollisionType::StoppedTrack;
+  if (classification.track_stopped) {
+    classification.type = CollisionType::StoppedTrack;
+    return classification;
   }
-  if (is_agent_behind(ego_point.pose, object_state.pose)) {
-    return CollisionType::ActiveRear;
+  if (classification.behind) {
+    classification.type = CollisionType::ActiveRear;
+    return classification;
   }
-  if (front_bumper_intersects(ego_point.pose, object_state.polygon, vehicle_info)) {
-    return CollisionType::ActiveFront;
+  if (classification.front_hit) {
+    classification.type = CollisionType::ActiveFront;
+    return classification;
   }
-  return CollisionType::ActiveLateral;
+  classification.type = CollisionType::ActiveLateral;
+  return classification;
 }
 
 bool footprint_intersects_lanelet(
@@ -316,6 +431,110 @@ AtFaultCollision make_at_fault_collision(
                                                   : "at_fault_collision_with_non_agent")};
 }
 
+NoAtFaultCollisionDebugEvent make_debug_event(
+  const double query_time_s, const autoware_planning_msgs::msg::TrajectoryPoint & ego_point,
+  const Polygon2d & ego_polygon, const InterpolatedLoggedObject & object_state,
+  const CollisionClassification & collision)
+{
+  NoAtFaultCollisionDebugEvent event;
+  event.time_s = query_time_s;
+  event.object_id = object_id_to_string(object_state.object_id, object_state.has_valid_object_id);
+  event.object_label =
+    autoware::object_recognition_utils::convertLabelToString(object_state.classification);
+  event.collision_type = collision_type_to_string(collision.type);
+  event.agent = is_agent_classification(object_state.classification);
+  event.ego_stopped = collision.ego_stopped;
+  event.track_stopped = collision.track_stopped;
+  event.behind = collision.behind;
+  event.front_hit = collision.front_hit;
+  event.ego_center = to_msg_point(ego_point.pose);
+  event.object_center = to_msg_point(object_state.pose);
+  event.ego_footprint = polygon_to_points(ego_polygon);
+  event.object_footprint = polygon_to_points(object_state.polygon);
+  event.front_bumper = collision.front_bumper;
+  return event;
+}
+
+void fill_horizon_debug_footprints(
+  NoAtFaultCollisionDebugInfo & debug_info,
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const std::vector<LoggedObjectTrack> & object_tracks,
+  const LinearRing2d & local_footprint)
+{
+  if (debug_info.events.empty()) {
+    return;
+  }
+
+  std::unordered_map<std::string, bool> engaged_objects;
+  for (const auto & event : debug_info.events) {
+    engaged_objects[event.object_id] = engaged_objects[event.object_id] || event.at_fault;
+  }
+  if (engaged_objects.empty()) {
+    return;
+  }
+
+  const auto trajectory_start_time = rclcpp::Time(trajectory.header.stamp);
+  for (const auto & point : trajectory.points) {
+    const auto query_time = trajectory_start_time + rclcpp::Duration(point.time_from_start);
+    const auto query_time_s = rclcpp::Duration(point.time_from_start).seconds();
+    const auto ego_polygon = create_pose_footprint(point.pose, local_footprint);
+
+    bool ego_collision = false;
+    bool ego_at_fault = false;
+    for (const auto & object_track : object_tracks) {
+      const auto object_id =
+        object_id_to_string(object_track.object_id, object_track.has_valid_object_id);
+      const auto object_it = engaged_objects.find(object_id);
+      if (object_it == engaged_objects.end()) {
+        continue;
+      }
+
+      const auto object_state = interpolate_logged_object_state(object_track, query_time);
+      if (!object_state.has_value()) {
+        continue;
+      }
+
+      const bool intersects = bg::intersects(ego_polygon, object_state->polygon);
+      const bool object_at_fault = object_it->second;
+      ego_collision = ego_collision || intersects;
+      ego_at_fault = ego_at_fault || (intersects && object_at_fault);
+
+      NoAtFaultCollisionHorizonFootprint object_footprint;
+      object_footprint.time_s = query_time_s;
+      object_footprint.object_id = object_id;
+      object_footprint.object_label =
+        autoware::object_recognition_utils::convertLabelToString(object_state->classification);
+      object_footprint.collision = intersects;
+      object_footprint.at_fault = intersects && object_at_fault;
+      object_footprint.footprint = polygon_to_points(object_state->polygon);
+      debug_info.object_horizon_footprints.push_back(std::move(object_footprint));
+
+      if (intersects) {
+        for (const auto & overlap_polygon :
+             overlap_polygons_to_points(ego_polygon, object_state->polygon)) {
+          NoAtFaultCollisionOverlapArea overlap_area;
+          overlap_area.time_s = query_time_s;
+          overlap_area.object_id = object_id;
+          overlap_area.object_label =
+            autoware::object_recognition_utils::convertLabelToString(object_state->classification);
+          overlap_area.at_fault = object_at_fault;
+          overlap_area.polygon = overlap_polygon;
+          debug_info.overlap_areas.push_back(std::move(overlap_area));
+        }
+      }
+    }
+
+    NoAtFaultCollisionHorizonFootprint ego_footprint;
+    ego_footprint.time_s = query_time_s;
+    ego_footprint.object_id = "ego";
+    ego_footprint.object_label = "EGO";
+    ego_footprint.collision = ego_collision;
+    ego_footprint.at_fault = ego_at_fault;
+    ego_footprint.footprint = polygon_to_points(ego_polygon);
+    debug_info.ego_horizon_footprints.push_back(std::move(ego_footprint));
+  }
+}
+
 }  // namespace
 
 NoAtFaultCollisionResult calculate_no_at_fault_collision(
@@ -375,21 +594,23 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
         collided_object_ids.insert(object_state->object_id);
       }
 
-      const auto collision_type = classify_collision(point, *object_state, vehicle_info);
+      const auto collision = classify_collision(point, *object_state, vehicle_info);
+      auto debug_event = make_debug_event(query_time_s, point, ego_polygon, *object_state, collision);
 
-      const bool front_or_stopped_track = collision_type == CollisionType::ActiveFront ||
-                                          collision_type == CollisionType::StoppedTrack;
-      const bool lateral_collision = collision_type == CollisionType::ActiveLateral;
+      const bool front_or_stopped_track = collision.type == CollisionType::ActiveFront ||
+                                          collision.type == CollisionType::StoppedTrack;
+      const bool lateral_collision = collision.type == CollisionType::ActiveLateral;
 
       if (front_or_stopped_track) {
         const auto at_fault_collision = make_at_fault_collision(*object_state, false);
+        debug_event.at_fault = true;
+        debug_event.event_score = at_fault_collision.score;
+        debug_event.reason = at_fault_collision.reason;
+        result.debug_info.events.push_back(debug_event);
         if (at_fault_collision.score < result.score) {
           result.score = at_fault_collision.score;
           result.reason = at_fault_collision.reason;
           result.infraction_time_s = query_time_s;
-        }
-        if (result.score <= 0.0) {
-          return result;
         }
         continue;
       }
@@ -397,6 +618,10 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
       if (lateral_collision) {
         const auto ego_area_flags = compute_ego_area_flags(point.pose, ego_polygon, route_handler);
         if (!ego_area_flags.has_value()) {
+          debug_event.reason = !route_handler
+                                 ? "unavailable_no_route_handler_for_lateral_assessment"
+                                 : "unavailable_route_handler_not_ready_for_lateral_assessment";
+          result.debug_info.events.push_back(debug_event);
           result.available = false;
           result.score = 0.0;
           result.reason = !route_handler
@@ -405,20 +630,28 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
           return result;
         }
 
+        debug_event.multiple_lanes = ego_area_flags->multiple_lanes;
+        debug_event.non_drivable_area = ego_area_flags->non_drivable_area;
         if (ego_area_flags->multiple_lanes || ego_area_flags->non_drivable_area) {
           const auto at_fault_collision = make_at_fault_collision(*object_state, true);
+          debug_event.at_fault = true;
+          debug_event.event_score = at_fault_collision.score;
+          debug_event.reason = at_fault_collision.reason;
           if (at_fault_collision.score < result.score) {
             result.score = at_fault_collision.score;
             result.reason = at_fault_collision.reason;
             result.infraction_time_s = query_time_s;
           }
-          if (result.score <= 0.0) {
-            return result;
-          }
         }
+        result.debug_info.events.push_back(debug_event);
+        continue;
       }
+
+      result.debug_info.events.push_back(debug_event);
     }
   }
+
+  fill_horizon_debug_footprints(result.debug_info, trajectory, object_tracks, local_footprint);
 
   return result;
 }

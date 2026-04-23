@@ -117,6 +117,10 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
     get_or_declare_parameter<std::string>(*this, "candidate_trajectories_topic");
   evaluation_interval_ms_ = get_or_declare_parameter<double>(*this, "evaluation_interval_ms");
   sync_tolerance_ms_ = get_or_declare_parameter<double>(*this, "sync_tolerance_ms");
+  trajectory_evaluation_horizon_s_ =
+    get_or_declare_parameter<double>(*this, "open_loop.trajectory_evaluation_horizon");
+  enabled_metric_names_ =
+    get_or_declare_parameter<std::vector<std::string>>(*this, "open_loop.enabled_metrics");
   gt_source_mode_ = get_or_declare_parameter<std::string>(*this, "open_loop.gt_source_mode");
   gt_trajectory_topic_name_ =
     get_or_declare_parameter<std::string>(*this, "open_loop.gt_trajectory_topic");
@@ -166,6 +170,11 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   if (sync_tolerance_ms_ < 0.0) {
     throw std::runtime_error(
       "Invalid sync_tolerance_ms: " + std::to_string(sync_tolerance_ms_) + ". Expected >= 0.");
+  }
+  if (trajectory_evaluation_horizon_s_ < 0.0) {
+    throw std::runtime_error(
+      "Invalid open_loop.trajectory_evaluation_horizon: " +
+      std::to_string(trajectory_evaluation_horizon_s_) + ". Expected >= 0.");
   }
   if (gt_sync_tolerance_ms_ < 0.0) {
     throw std::runtime_error(
@@ -470,6 +479,7 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
   topic_names.steering_topic = steering_topic_name_;
   topic_names.evaluation_interval_ms = evaluation_interval_ms_;
   topic_names.sync_tolerance_ms = sync_tolerance_ms_;
+  topic_names.trajectory_evaluation_horizon_s = trajectory_evaluation_horizon_s_;
   auto output_dir = get_or_declare_parameter<std::string>(*this, "output_dir");
   const std::filesystem::path output_dir_path(output_dir);
   if (output_dir.empty() || !output_dir_path.is_absolute()) {
@@ -495,7 +505,9 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
         lane_keeping_params_, metrics::DrivingDirectionComplianceParameters{}, vehicle_info_);
       evaluator.set_json_output_dir(output_dir_path.string());
       evaluator.set_metric_variant(open_loop_metric_variant);
+      evaluator.set_enabled_metrics(enabled_metric_names_);
       evaluator.set_evaluation_horizons(evaluation_horizons);
+      evaluator.set_trajectory_evaluation_horizon(trajectory_evaluation_horizon_s_);
       evaluator.set_extended_comfort_parameters(extended_comfort_parameters_);
       auto times =
         evaluator.run_evaluation_from_bag(bag_path_, evaluation_bag_writer_.get(), topic_names);

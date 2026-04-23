@@ -107,6 +107,18 @@ BaseEvaluator::BagProcessingResult BaseEvaluator::process_bag_common(
   auto kinematic_states =
     bag_data->get_kinematic_states_at_interval(topic_names.evaluation_interval_ms);
 
+  if (const auto object_itr = bag_data->buffers.find(topic_names.objects_topic);
+      object_itr != bag_data->buffers.end()) {
+    if (const auto object_buffer =
+          std::dynamic_pointer_cast<Buffer<PredictedObjects>>(object_itr->second)) {
+      result.object_timeline.reserve(object_buffer->msgs.size());
+      for (const auto & objects : object_buffer->msgs) {
+        result.object_timeline.push_back(
+          TimedPredictedObjects{message_stamp(objects), std::make_shared<PredictedObjects>(objects)});
+      }
+    }
+  }
+
   if (kinematic_states.empty()) {
     RCLCPP_ERROR(logger_, "No kinematic states found in the rosbag");
     result.evaluation_start_time = rclcpp::Clock{RCL_ROS_TIME}.now();

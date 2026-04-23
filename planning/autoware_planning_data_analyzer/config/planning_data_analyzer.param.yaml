@@ -47,6 +47,12 @@
         max_yaw_rate: 0.95
         max_yaw_acceleration: 1.93
       metric_variant: ""
+      # Maximum planned trajectory duration to evaluate [s].
+      # 0.0 means use the full trajectory from the bag.
+      trajectory_evaluation_horizon: 4.0
+      # Metrics to calculate and write. ["all"] keeps full behavior.
+      # Aliases: trajectory, hc, ec, ttc, lk, ep, dac, nc, ddc, tlc, epdms.
+      enabled_metrics: ["all"]
       # DLR result horizon checkpoints in seconds.
       # ADE/FDE are reported at these horizons plus "full" (entire trajectory).
       # Trajectories shorter than a horizon are excluded from that horizon with 0.1s tolerance.
