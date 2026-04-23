@@ -218,6 +218,7 @@ visualization_msgs::msg::Marker make_marker_base(
   marker.action = visualization_msgs::msg::Marker::ADD;
   marker.pose.orientation.w = 1.0;
   marker.color = color;
+  marker.lifetime = rclcpp::Duration::from_seconds(0.6);
   return marker;
 }
 
@@ -266,7 +267,7 @@ visualization_msgs::msg::Marker make_text_marker(
   marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
   marker.pose.position = position;
   marker.pose.position.z += 2.0;
-  marker.scale.z = 0.7;
+  marker.scale.z = 1.0;
   marker.text = text;
   return marker;
 }
@@ -289,9 +290,9 @@ std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
     return make_color(1.0F, 0.05F, 0.05F, 1.0F);
   }
   if (footprint.collision) {
-    return make_color(1.0F, 0.8F, 0.0F, 0.9F);
+    return make_color(1.0F, 0.8F, 0.0F, 1.0F);
   }
-  return ego ? make_color(0.0F, 0.8F, 1.0F, 0.35F) : make_color(1.0F, 0.55F, 0.0F, 0.35F);
+  return ego ? make_color(0.0F, 0.8F, 1.0F, 0.65F) : make_color(1.0F, 0.55F, 0.0F, 0.65F);
 }
 
 const metrics::NoAtFaultCollisionDebugEvent * find_worst_nc_event(
@@ -386,6 +387,9 @@ void write_nc_debug_topics_to_bag(
 {
   const auto & debug_info = metrics.no_at_fault_collision_debug;
   const auto * worst_event = find_worst_nc_event(debug_info);
+  const bool has_horizon_debug =
+    !debug_info.ego_horizon_footprints.empty() || !debug_info.object_horizon_footprints.empty() ||
+    !debug_info.overlap_areas.empty() || !debug_info.events.empty();
 
   if (!debug_info.events.empty()) {
     std_msgs::msg::String summary_msg;
@@ -394,12 +398,16 @@ void write_nc_debug_topics_to_bag(
     bag_writer.write(summary_msg, nc_debug_topic("collision_summary"), timestamp);
   }
 
+  if (!has_horizon_debug) {
+    return;
+  }
+
   visualization_msgs::msg::MarkerArray horizon_markers;
   horizon_markers.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
-    const double width = footprint.collision ? 0.14 : 0.04;
+    const double width = footprint.collision ? 0.28 : 0.12;
     horizon_markers.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_ego_footprints", marker_id++, footprint.footprint,
       nc_horizon_footprint_color(footprint, true), width, true, 0.12));
@@ -407,7 +415,7 @@ void write_nc_debug_topics_to_bag(
 
   marker_id = 0;
   for (const auto & footprint : debug_info.object_horizon_footprints) {
-    const double width = footprint.collision ? 0.14 : 0.04;
+    const double width = footprint.collision ? 0.28 : 0.12;
     horizon_markers.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_object_footprints", marker_id++, footprint.footprint,
       nc_horizon_footprint_color(footprint, false), width, true, 0.18));
@@ -419,7 +427,7 @@ void write_nc_debug_topics_to_bag(
       timestamp, "nc_horizon_overlap_areas", marker_id++, overlap.polygon,
       overlap.at_fault ? make_color(1.0F, 0.0F, 0.8F, 1.0F)
                        : make_color(1.0F, 0.6F, 0.0F, 1.0F),
-      overlap.at_fault ? 0.45 : 0.32, true, 0.28));
+      overlap.at_fault ? 0.6 : 0.4, true, 0.28));
   }
 
   marker_id = 0;
