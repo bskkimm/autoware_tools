@@ -116,12 +116,12 @@ std::string object_id_to_string(const std::array<uint8_t, 16> & object_id, const
   return oss.str();
 }
 
-geometry_msgs::msg::Point to_msg_point(const Point2d & point)
+geometry_msgs::msg::Point to_msg_point(const Point2d & point, const double z = 0.0)
 {
   geometry_msgs::msg::Point msg;
   msg.x = point.x();
   msg.y = point.y();
-  msg.z = 0.0;
+  msg.z = z;
   return msg;
 }
 
@@ -134,18 +134,18 @@ geometry_msgs::msg::Point to_msg_point(const geometry_msgs::msg::Pose & pose)
   return msg;
 }
 
-std::vector<geometry_msgs::msg::Point> polygon_to_points(const Polygon2d & polygon)
+std::vector<geometry_msgs::msg::Point> polygon_to_points(const Polygon2d & polygon, const double z)
 {
   std::vector<geometry_msgs::msg::Point> points;
   points.reserve(polygon.outer().size());
   for (const auto & point : polygon.outer()) {
-    points.push_back(to_msg_point(point));
+    points.push_back(to_msg_point(point, z));
   }
   return points;
 }
 
 std::vector<std::vector<geometry_msgs::msg::Point>> overlap_polygons_to_points(
-  const Polygon2d & ego_polygon, const Polygon2d & object_polygon)
+  const Polygon2d & ego_polygon, const Polygon2d & object_polygon, const double z)
 {
   std::vector<Polygon2d> intersections;
   bg::intersection(ego_polygon, object_polygon, intersections);
@@ -154,7 +154,7 @@ std::vector<std::vector<geometry_msgs::msg::Point>> overlap_polygons_to_points(
   polygons.reserve(intersections.size());
   for (const auto & intersection : intersections) {
     if (intersection.outer().size() >= 4U && bg::area(intersection) > 1.0e-6) {
-      polygons.push_back(polygon_to_points(intersection));
+      polygons.push_back(polygon_to_points(intersection, z));
     }
   }
   return polygons;
@@ -180,9 +180,11 @@ std::vector<geometry_msgs::msg::Point> front_bumper_points(
 
   return {
     to_msg_point(
-      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.min_lateral_offset_m)),
+      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.min_lateral_offset_m),
+      ego_pose.position.z),
     to_msg_point(
-      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.max_lateral_offset_m))};
+      transform(vehicle_info.max_longitudinal_offset_m, vehicle_info.max_lateral_offset_m),
+      ego_pose.position.z)};
 }
 
 bool front_bumper_intersects(
@@ -449,8 +451,8 @@ NoAtFaultCollisionDebugEvent make_debug_event(
   event.front_hit = collision.front_hit;
   event.ego_center = to_msg_point(ego_point.pose);
   event.object_center = to_msg_point(object_state.pose);
-  event.ego_footprint = polygon_to_points(ego_polygon);
-  event.object_footprint = polygon_to_points(object_state.polygon);
+  event.ego_footprint = polygon_to_points(ego_polygon, ego_point.pose.position.z);
+  event.object_footprint = polygon_to_points(object_state.polygon, object_state.pose.position.z);
   event.front_bumper = collision.front_bumper;
   return event;
 }
@@ -506,12 +508,14 @@ void fill_horizon_debug_footprints(
         autoware::object_recognition_utils::convertLabelToString(object_state->classification);
       object_footprint.collision = intersects;
       object_footprint.at_fault = intersects && object_at_fault;
-      object_footprint.footprint = polygon_to_points(object_state->polygon);
+      object_footprint.footprint =
+        polygon_to_points(object_state->polygon, object_state->pose.position.z);
       debug_info.object_horizon_footprints.push_back(std::move(object_footprint));
 
       if (intersects) {
+        const double overlap_z = 0.5 * (point.pose.position.z + object_state->pose.position.z);
         for (const auto & overlap_polygon :
-             overlap_polygons_to_points(ego_polygon, object_state->polygon)) {
+             overlap_polygons_to_points(ego_polygon, object_state->polygon, overlap_z)) {
           NoAtFaultCollisionOverlapArea overlap_area;
           overlap_area.time_s = query_time_s;
           overlap_area.object_id = object_id;
@@ -530,7 +534,7 @@ void fill_horizon_debug_footprints(
     ego_footprint.object_label = "EGO";
     ego_footprint.collision = ego_collision;
     ego_footprint.at_fault = ego_at_fault;
-    ego_footprint.footprint = polygon_to_points(ego_polygon);
+    ego_footprint.footprint = polygon_to_points(ego_polygon, point.pose.position.z);
     debug_info.ego_horizon_footprints.push_back(std::move(ego_footprint));
   }
 }

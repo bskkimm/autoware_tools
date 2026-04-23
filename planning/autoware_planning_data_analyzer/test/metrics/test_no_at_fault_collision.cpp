@@ -247,6 +247,46 @@ TEST(NoAtFaultCollision, FrontCollisionWithAgentFails)
     [](const auto & footprint) { return footprint.collision && footprint.at_fault; }));
 }
 
+TEST(NoAtFaultCollision, DebugFootprintsPreserveMapZ)
+{
+  auto trajectory = make_single_point_trajectory(0.0, 0.0);
+  trajectory.points.front().pose.position.z = 12.3;
+
+  auto object =
+    make_object(3.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 0.0);
+  object.kinematics.initial_pose_with_covariance.pose.position.z = 40.5;
+  for (auto & path : object.kinematics.predicted_paths) {
+    for (auto & pose : path.path) {
+      pose.position.z = 40.5;
+    }
+  }
+
+  const auto result =
+    calculate_no_at_fault_collision(trajectory, make_future_objects({object}), make_vehicle_info());
+
+  ASSERT_TRUE(result.available);
+  ASSERT_FALSE(result.debug_info.events.empty());
+  ASSERT_FALSE(result.debug_info.ego_horizon_footprints.empty());
+  ASSERT_FALSE(result.debug_info.object_horizon_footprints.empty());
+  ASSERT_FALSE(result.debug_info.overlap_areas.empty());
+
+  for (const auto & point : result.debug_info.events.front().ego_footprint) {
+    EXPECT_DOUBLE_EQ(point.z, 12.3);
+  }
+  for (const auto & point : result.debug_info.events.front().object_footprint) {
+    EXPECT_DOUBLE_EQ(point.z, 40.5);
+  }
+  for (const auto & point : result.debug_info.ego_horizon_footprints.front().footprint) {
+    EXPECT_DOUBLE_EQ(point.z, 12.3);
+  }
+  for (const auto & point : result.debug_info.object_horizon_footprints.front().footprint) {
+    EXPECT_DOUBLE_EQ(point.z, 40.5);
+  }
+  for (const auto & point : result.debug_info.overlap_areas.front().polygon) {
+    EXPECT_DOUBLE_EQ(point.z, 0.5 * (12.3 + 40.5));
+  }
+}
+
 TEST(NoAtFaultCollision, FrontCollisionWithNonAgentGetsHalfPenalty)
 {
   const auto trajectory = make_straight_trajectory(5.0);
