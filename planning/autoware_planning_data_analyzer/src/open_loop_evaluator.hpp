@@ -144,6 +144,7 @@ class OpenLoopEvaluator : public BaseEvaluator
 {
 public:
   enum class GTSourceMode { KINEMATIC_STATE, GT_TRAJECTORY };
+  enum class NCDebugMode { OFF, FAILURES_ONLY, ALL_COLLISIONS };
   explicit OpenLoopEvaluator(
     rclcpp::Logger logger, std::shared_ptr<RouteHandler> route_handler = nullptr,
     GTSourceMode gt_source_mode = GTSourceMode::KINEMATIC_STATE,
@@ -191,6 +192,13 @@ public:
   void set_trajectory_evaluation_horizon(const double horizon_s)
   {
     trajectory_evaluation_horizon_s_ = horizon_s;
+  }
+
+  void set_nc_debug_mode(const std::string & mode);
+
+  void set_nc_debug_marker_lifetime(const double lifetime_s)
+  {
+    nc_debug_marker_lifetime_s_ = lifetime_s;
   }
 
   void set_extended_comfort_parameters(const metrics::ExtendedComfortParameters & parameters)
@@ -369,6 +377,8 @@ private:
   GTSourceMode gt_source_mode_;
   double gt_sync_tolerance_ms_;
   double trajectory_evaluation_horizon_s_{0.0};
+  NCDebugMode nc_debug_mode_{NCDebugMode::FAILURES_ONLY};
+  double nc_debug_marker_lifetime_s_{0.2};
   std::vector<double> evaluation_horizons_;
 };
 

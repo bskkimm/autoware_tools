@@ -86,6 +86,8 @@ private:
   double evaluation_interval_ms_ = 100.0;
   double sync_tolerance_ms_ = 100.0;
   double trajectory_evaluation_horizon_s_ = 0.0;
+  std::string nc_debug_mode_{"failures_only"};
+  double nc_debug_marker_lifetime_s_ = 0.2;
   std::vector<std::string> enabled_metric_names_;
   std::string gt_source_mode_;
   std::string gt_trajectory_topic_name_;

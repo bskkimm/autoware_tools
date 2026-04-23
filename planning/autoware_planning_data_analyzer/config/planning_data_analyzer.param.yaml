@@ -50,6 +50,10 @@
       # Maximum planned trajectory duration to evaluate [s].
       # 0.0 means use the full trajectory from the bag.
       trajectory_evaluation_horizon: 4.0
+      # NC debug marker output mode: "off", "failures_only", or "all_collisions".
+      nc_debug_mode: "failures_only"
+      # NC debug marker lifetime [s]. Keep short so seeking to one t0 does not show stale t0 labels.
+      nc_debug_marker_lifetime: 0.2
       # Metrics to calculate and write. ["all"] keeps full behavior.
       # Aliases: trajectory, hc, ec, ttc, lk, ep, dac, nc, ddc, tlc, epdms.
       enabled_metrics: ["all"]

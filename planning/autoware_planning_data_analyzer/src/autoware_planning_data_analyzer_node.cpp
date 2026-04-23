@@ -119,6 +119,9 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   sync_tolerance_ms_ = get_or_declare_parameter<double>(*this, "sync_tolerance_ms");
   trajectory_evaluation_horizon_s_ =
     get_or_declare_parameter<double>(*this, "open_loop.trajectory_evaluation_horizon");
+  nc_debug_mode_ = get_or_declare_parameter<std::string>(*this, "open_loop.nc_debug_mode");
+  nc_debug_marker_lifetime_s_ =
+    get_or_declare_parameter<double>(*this, "open_loop.nc_debug_marker_lifetime");
   enabled_metric_names_ =
     get_or_declare_parameter<std::vector<std::string>>(*this, "open_loop.enabled_metrics");
   gt_source_mode_ = get_or_declare_parameter<std::string>(*this, "open_loop.gt_source_mode");
@@ -175,6 +178,11 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
     throw std::runtime_error(
       "Invalid open_loop.trajectory_evaluation_horizon: " +
       std::to_string(trajectory_evaluation_horizon_s_) + ". Expected >= 0.");
+  }
+  if (nc_debug_marker_lifetime_s_ < 0.0) {
+    throw std::runtime_error(
+      "Invalid open_loop.nc_debug_marker_lifetime: " +
+      std::to_string(nc_debug_marker_lifetime_s_) + ". Expected >= 0.");
   }
   if (gt_sync_tolerance_ms_ < 0.0) {
     throw std::runtime_error(
@@ -508,6 +516,8 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
       evaluator.set_enabled_metrics(enabled_metric_names_);
       evaluator.set_evaluation_horizons(evaluation_horizons);
       evaluator.set_trajectory_evaluation_horizon(trajectory_evaluation_horizon_s_);
+      evaluator.set_nc_debug_mode(nc_debug_mode_);
+      evaluator.set_nc_debug_marker_lifetime(nc_debug_marker_lifetime_s_);
       evaluator.set_extended_comfort_parameters(extended_comfort_parameters_);
       auto times =
         evaluator.run_evaluation_from_bag(bag_path_, evaluation_bag_writer_.get(), topic_names);
