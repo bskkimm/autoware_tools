@@ -235,15 +235,25 @@ std::vector<geometry_msgs::msg::Point> closed_line_strip_points(
   return points;
 }
 
+std::vector<geometry_msgs::msg::Point> lift_points(
+  std::vector<geometry_msgs::msg::Point> points, const double z_offset)
+{
+  for (auto & point : points) {
+    point.z += z_offset;
+  }
+  return points;
+}
+
 visualization_msgs::msg::Marker make_line_strip_marker(
   const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
   std::vector<geometry_msgs::msg::Point> points, const std_msgs::msg::ColorRGBA & color,
-  const double width, const bool close_line)
+  const double width, const bool close_line, const double z_offset = 0.0)
 {
   auto marker = make_marker_base(stamp, ns, id, color);
   marker.type = visualization_msgs::msg::Marker::LINE_STRIP;
   marker.scale.x = width;
   marker.points = close_line ? closed_line_strip_points(std::move(points)) : std::move(points);
+  marker.points = lift_points(std::move(marker.points), z_offset);
   return marker;
 }
 
@@ -384,38 +394,32 @@ void write_nc_debug_topics_to_bag(
     bag_writer.write(summary_msg, nc_debug_topic("collision_summary"), timestamp);
   }
 
-  visualization_msgs::msg::MarkerArray horizon_ego_footprints;
-  visualization_msgs::msg::MarkerArray horizon_object_footprints;
-  visualization_msgs::msg::MarkerArray horizon_overlap_areas;
-  visualization_msgs::msg::MarkerArray horizon_labels;
-  horizon_ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
-  horizon_object_footprints.markers.push_back(make_delete_all_marker(timestamp));
-  horizon_overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
-  horizon_labels.markers.push_back(make_delete_all_marker(timestamp));
+  visualization_msgs::msg::MarkerArray horizon_markers;
+  horizon_markers.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
     const double width = footprint.collision ? 0.14 : 0.04;
-    horizon_ego_footprints.markers.push_back(make_line_strip_marker(
+    horizon_markers.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_ego_footprints", marker_id++, footprint.footprint,
-      nc_horizon_footprint_color(footprint, true), width, true));
+      nc_horizon_footprint_color(footprint, true), width, true, 0.12));
   }
 
   marker_id = 0;
   for (const auto & footprint : debug_info.object_horizon_footprints) {
     const double width = footprint.collision ? 0.14 : 0.04;
-    horizon_object_footprints.markers.push_back(make_line_strip_marker(
+    horizon_markers.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_object_footprints", marker_id++, footprint.footprint,
-      nc_horizon_footprint_color(footprint, false), width, true));
+      nc_horizon_footprint_color(footprint, false), width, true, 0.18));
   }
 
   marker_id = 0;
   for (const auto & overlap : debug_info.overlap_areas) {
-    horizon_overlap_areas.markers.push_back(make_line_strip_marker(
+    horizon_markers.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_overlap_areas", marker_id++, overlap.polygon,
       overlap.at_fault ? make_color(1.0F, 0.0F, 0.8F, 1.0F)
                        : make_color(1.0F, 0.6F, 0.0F, 1.0F),
-      0.22, true));
+      overlap.at_fault ? 0.45 : 0.32, true, 0.28));
   }
 
   marker_id = 0;
@@ -424,16 +428,12 @@ void write_nc_debug_topics_to_bag(
     label << "NC=" << metrics.no_at_fault_collision << "\ndt=" << std::fixed
           << std::setprecision(1) << event.time_s << "s\n" << event.collision_type << "\n"
           << event.object_label;
-    horizon_labels.markers.push_back(make_text_marker(
+    horizon_markers.markers.push_back(make_text_marker(
       timestamp, "nc_horizon_labels", marker_id++, event.ego_center, label.str(),
       nc_event_color(event)));
   }
 
-  bag_writer.write(horizon_ego_footprints, nc_debug_topic("horizon_ego_footprints"), timestamp);
-  bag_writer.write(
-    horizon_object_footprints, nc_debug_topic("horizon_object_footprints"), timestamp);
-  bag_writer.write(horizon_overlap_areas, nc_debug_topic("horizon_overlap_areas"), timestamp);
-  bag_writer.write(horizon_labels, nc_debug_topic("horizon_labels"), timestamp);
+  bag_writer.write(horizon_markers, nc_debug_topic("horizon_markers"), timestamp);
 }
 
 std::string normalize_metric_name(std::string name)
@@ -2618,10 +2618,7 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("no_at_fault_collision_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("no_at_fault_collision_reason"), "std_msgs/msg/String");
     add_topic(nc_debug_topic("collision_summary"), "std_msgs/msg/String");
-    add_topic(nc_debug_topic("horizon_ego_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(nc_debug_topic("horizon_object_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(nc_debug_topic("horizon_overlap_areas"), "visualization_msgs/msg/MarkerArray");
-    add_topic(nc_debug_topic("horizon_labels"), "visualization_msgs/msg/MarkerArray");
+    add_topic(nc_debug_topic("horizon_markers"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.driving_direction_compliance) {
     add_topic(metric_topic("driving_direction_compliance"), "std_msgs/msg/Float64");
