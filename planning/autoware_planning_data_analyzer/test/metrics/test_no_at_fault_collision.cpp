@@ -266,6 +266,36 @@ TEST(NoAtFaultCollision, LoggedObjectInterpolationUsesObjectYawNotPositionJitter
   EXPECT_NEAR(get_yaw(object_state->pose.orientation), kYaw, 1.0e-3);
 }
 
+TEST(NoAtFaultCollision, SlowLongTrailerYawJumpIsHeldWhenTranslationIsTiny)
+{
+  constexpr double kFirstYaw = 14.0 * M_PI / 180.0;
+  constexpr double kSecondYaw = -28.0 * M_PI / 180.0;
+
+  auto first =
+    make_object(10.0, 1.0, autoware_perception_msgs::msg::ObjectClassification::TRAILER, 0.3);
+  first.shape.dimensions.x = 17.8;
+  first.shape.dimensions.y = 2.8;
+  first.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(kFirstYaw);
+  set_object_id(first, 12U);
+
+  auto second = first;
+  second.kinematics.initial_pose_with_covariance.pose.position.x += 0.2;
+  second.kinematics.initial_pose_with_covariance.pose.position.y += 0.02;
+  second.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(kSecondYaw);
+
+  auto future_objects = make_future_objects({first}, 0.0);
+  future_objects = append_future_objects(std::move(future_objects), {second}, 1.0);
+  const auto tracks = build_logged_object_tracks(future_objects);
+
+  ASSERT_EQ(tracks.size(), 1U);
+  const auto object_state =
+    interpolate_logged_object_state(tracks.front(), rclcpp::Time(make_stamp(0.5)));
+  ASSERT_TRUE(object_state.has_value());
+  EXPECT_NEAR(get_yaw(object_state->pose.orientation), kFirstYaw, 1.0e-3);
+}
+
 TEST(NoAtFaultCollision, EmptyObjectsPasses)
 {
   const auto trajectory = make_straight_trajectory(5.0);

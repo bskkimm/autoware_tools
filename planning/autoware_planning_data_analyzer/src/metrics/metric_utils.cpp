@@ -65,6 +65,51 @@ double closest_pi_symmetric_yaw(const double reference_yaw, const double yaw)
   return best_yaw;
 }
 
+double normalize_angle(const double angle)
+{
+  return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+double planar_speed_mps(const geometry_msgs::msg::Twist & twist)
+{
+  return std::hypot(twist.linear.x, twist.linear.y);
+}
+
+double planar_displacement_m(
+  const geometry_msgs::msg::Pose & lhs, const geometry_msgs::msg::Pose & rhs)
+{
+  return autoware_utils_geometry::calc_distance2d(lhs.position, rhs.position);
+}
+
+bool should_hold_long_object_yaw(
+  const LoggedObjectState & previous_state, const LoggedObjectState & current_state,
+  const double previous_yaw, const double current_yaw)
+{
+  constexpr double kLongObjectLengthThresholdM = 8.0;
+  constexpr double kSlowObjectSpeedThresholdMps = 2.0;
+  constexpr double kSmallDisplacementThresholdM = 0.75;
+  constexpr double kLargeYawJumpThresholdRad = 10.0 * M_PI / 180.0;
+
+  const double object_length = std::max(previous_state.shape.dimensions.x, current_state.shape.dimensions.x);
+  if (object_length < kLongObjectLengthThresholdM) {
+    return false;
+  }
+
+  const double max_speed =
+    std::max(planar_speed_mps(previous_state.twist), planar_speed_mps(current_state.twist));
+  if (max_speed > kSlowObjectSpeedThresholdMps) {
+    return false;
+  }
+
+  const double displacement = planar_displacement_m(previous_state.pose, current_state.pose);
+  if (displacement > kSmallDisplacementThresholdM) {
+    return false;
+  }
+
+  const double yaw_delta = std::abs(normalize_angle(current_yaw - previous_yaw));
+  return yaw_delta > kLargeYawJumpThresholdRad;
+}
+
 void canonicalize_bounding_box_yaws(LoggedObjectTrack & track)
 {
   if (track.states.size() < 2U) {
@@ -73,18 +118,26 @@ void canonicalize_bounding_box_yaws(LoggedObjectTrack & track)
 
   bool has_reference_yaw = false;
   double reference_yaw = 0.0;
+  const LoggedObjectState * previous_state = nullptr;
   for (auto & state : track.states) {
     if (state.shape.type != autoware_perception_msgs::msg::Shape::BOUNDING_BOX) {
       has_reference_yaw = false;
+      previous_state = nullptr;
       continue;
     }
 
     const double raw_yaw = get_yaw(state.pose.orientation);
-    const double canonical_yaw =
+    double canonical_yaw =
       has_reference_yaw ? closest_pi_symmetric_yaw(reference_yaw, raw_yaw) : raw_yaw;
+    if (
+      has_reference_yaw && previous_state &&
+      should_hold_long_object_yaw(*previous_state, state, reference_yaw, canonical_yaw)) {
+      canonical_yaw = reference_yaw;
+    }
     state.pose.orientation = autoware_utils_geometry::create_quaternion_from_yaw(canonical_yaw);
     reference_yaw = canonical_yaw;
     has_reference_yaw = true;
+    previous_state = &state;
   }
 }
 
