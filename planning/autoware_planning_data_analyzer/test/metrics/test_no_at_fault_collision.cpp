@@ -35,6 +35,7 @@
 #include <lanelet2_core/primitives/Point.h>
 
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -197,6 +198,47 @@ TEST(NoAtFaultCollision, BehindPredicateUsesNuPlanStyleAngleThreshold)
   EXPECT_FALSE(is_agent_behind(ego_pose, make_pose(-0.5, std::sqrt(3.0) / 2.0)));
   EXPECT_TRUE(is_agent_behind(
     ego_pose, make_pose(std::cos(170.0 * kPi / 180.0), std::sin(170.0 * kPi / 180.0))));
+}
+
+TEST(NoAtFaultCollision, LoggedBoundingBoxYawFlipDoesNotInterpolateThroughSidewaysPose)
+{
+  constexpr double kPi = 3.14159265358979323846;
+
+  auto first = make_object(5.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR);
+  first.shape.dimensions.x = 4.0;
+  first.shape.dimensions.y = 2.0;
+  first.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(0.0);
+  set_object_id(first, 10U);
+
+  auto second = first;
+  second.kinematics.initial_pose_with_covariance.pose.position.x = 5.1;
+  second.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(kPi);
+
+  auto future_objects = make_future_objects({first}, 0.0);
+  future_objects = append_future_objects(std::move(future_objects), {second}, 1.0);
+  const auto tracks = build_logged_object_tracks(future_objects);
+
+  ASSERT_EQ(tracks.size(), 1U);
+  const auto object_state =
+    interpolate_logged_object_state(tracks.front(), rclcpp::Time(make_stamp(0.5)));
+  ASSERT_TRUE(object_state.has_value());
+  EXPECT_NEAR(get_yaw(object_state->pose.orientation), 0.0, 1.0e-3);
+
+  const auto & outer = object_state->polygon.outer();
+  ASSERT_GE(outer.size(), 4U);
+  double min_x = std::numeric_limits<double>::infinity();
+  double max_x = -std::numeric_limits<double>::infinity();
+  double min_y = std::numeric_limits<double>::infinity();
+  double max_y = -std::numeric_limits<double>::infinity();
+  for (const auto & point : outer) {
+    min_x = std::min(min_x, point.x());
+    max_x = std::max(max_x, point.x());
+    min_y = std::min(min_y, point.y());
+    max_y = std::max(max_y, point.y());
+  }
+  EXPECT_GT(max_x - min_x, max_y - min_y);
 }
 
 TEST(NoAtFaultCollision, EmptyObjectsPasses)

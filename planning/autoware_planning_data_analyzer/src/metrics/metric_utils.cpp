@@ -50,6 +50,44 @@ void append_unique_lanelet(
   }
 }
 
+double closest_pi_symmetric_yaw(const double reference_yaw, const double yaw)
+{
+  double best_yaw = yaw;
+  double best_error = std::abs(yaw - reference_yaw);
+  for (int multiplier = -2; multiplier <= 2; ++multiplier) {
+    const double candidate_yaw = yaw + static_cast<double>(multiplier) * M_PI;
+    const double candidate_error = std::abs(candidate_yaw - reference_yaw);
+    if (candidate_error < best_error) {
+      best_yaw = candidate_yaw;
+      best_error = candidate_error;
+    }
+  }
+  return best_yaw;
+}
+
+void canonicalize_bounding_box_yaws(LoggedObjectTrack & track)
+{
+  if (track.states.size() < 2U) {
+    return;
+  }
+
+  bool has_reference_yaw = false;
+  double reference_yaw = 0.0;
+  for (auto & state : track.states) {
+    if (state.shape.type != autoware_perception_msgs::msg::Shape::BOUNDING_BOX) {
+      has_reference_yaw = false;
+      continue;
+    }
+
+    const double raw_yaw = get_yaw(state.pose.orientation);
+    const double canonical_yaw =
+      has_reference_yaw ? closest_pi_symmetric_yaw(reference_yaw, raw_yaw) : raw_yaw;
+    state.pose.orientation = autoware_utils_geometry::create_quaternion_from_yaw(canonical_yaw);
+    reference_yaw = canonical_yaw;
+    has_reference_yaw = true;
+  }
+}
+
 }  // namespace
 
 bool is_vehicle_info_valid(const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
@@ -229,6 +267,7 @@ std::vector<LoggedObjectTrack> build_logged_object_tracks(
     std::sort(track.states.begin(), track.states.end(), [](const auto & lhs, const auto & rhs) {
       return lhs.stamp.nanoseconds() < rhs.stamp.nanoseconds();
     });
+    canonicalize_bounding_box_yaws(track);
     tracks.push_back(std::move(track));
   }
   for (auto & track : invalid_id_tracks) {
