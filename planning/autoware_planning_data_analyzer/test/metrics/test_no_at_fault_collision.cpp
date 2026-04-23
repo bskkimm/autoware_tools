@@ -241,6 +241,31 @@ TEST(NoAtFaultCollision, LoggedBoundingBoxYawFlipDoesNotInterpolateThroughSidewa
   EXPECT_GT(max_x - min_x, max_y - min_y);
 }
 
+TEST(NoAtFaultCollision, LoggedObjectInterpolationUsesObjectYawNotPositionJitterDirection)
+{
+  constexpr double kYaw = 10.0 * M_PI / 180.0;
+
+  auto first = make_object(5.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR);
+  first.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(kYaw);
+  set_object_id(first, 11U);
+
+  auto second = first;
+  second.kinematics.initial_pose_with_covariance.pose.position.y = 0.02;
+  second.kinematics.initial_pose_with_covariance.pose.orientation =
+    autoware_utils_geometry::create_quaternion_from_yaw(kYaw);
+
+  auto future_objects = make_future_objects({first}, 0.0);
+  future_objects = append_future_objects(std::move(future_objects), {second}, 1.0);
+  const auto tracks = build_logged_object_tracks(future_objects);
+
+  ASSERT_EQ(tracks.size(), 1U);
+  const auto object_state =
+    interpolate_logged_object_state(tracks.front(), rclcpp::Time(make_stamp(0.5)));
+  ASSERT_TRUE(object_state.has_value());
+  EXPECT_NEAR(get_yaw(object_state->pose.orientation), kYaw, 1.0e-3);
+}
+
 TEST(NoAtFaultCollision, EmptyObjectsPasses)
 {
   const auto trajectory = make_straight_trajectory(5.0);

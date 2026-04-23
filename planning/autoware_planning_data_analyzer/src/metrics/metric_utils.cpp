@@ -335,7 +335,8 @@ std::optional<InterpolatedLoggedObject> interpolate_logged_object_state(
   InterpolatedLoggedObject object;
   object.object_id = track.object_id;
   object.has_valid_object_id = track.has_valid_object_id;
-  object.pose = autoware_utils_geometry::calc_interpolated_pose(previous.pose, next.pose, ratio);
+  object.pose =
+    autoware_utils_geometry::calc_interpolated_pose(previous.pose, next.pose, ratio, false);
   const double logged_speed = std::hypot(previous.twist.linear.x, previous.twist.linear.y);
   if (std::isfinite(logged_speed) && logged_speed > 1.0e-6) {
     object.speed_mps = logged_speed;
