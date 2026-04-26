@@ -63,12 +63,6 @@ enum class CollisionType {
   ActiveLateral,
 };
 
-struct EgoAreaFlags
-{
-  bool multiple_lanes{false};
-  bool non_drivable_area{false};
-};
-
 struct AtFaultCollision
 {
   double score{1.0};
@@ -240,188 +234,6 @@ CollisionClassification classify_collision(
   return classification;
 }
 
-bool footprint_intersects_lanelet(
-  const Polygon2d & footprint, const lanelet::ConstLanelet & lanelet)
-{
-  return !bg::disjoint(footprint, lanelet.polygon2d().basicPolygon());
-}
-
-std::vector<Point2d> footprint_vertices(const Polygon2d & footprint)
-{
-  std::vector<Point2d> vertices;
-  for (const auto & point : footprint.outer()) {
-    if (vertices.empty() || !bg::equals(vertices.front(), point)) {
-      vertices.push_back(point);
-    }
-  }
-  return vertices;
-}
-
-lanelet::BoundingBox2d footprint_bounding_box(const Polygon2d & footprint)
-{
-  double min_x = std::numeric_limits<double>::max();
-  double min_y = std::numeric_limits<double>::max();
-  double max_x = std::numeric_limits<double>::lowest();
-  double max_y = std::numeric_limits<double>::lowest();
-
-  for (const auto & point : footprint.outer()) {
-    min_x = std::min(min_x, point.x());
-    min_y = std::min(min_y, point.y());
-    max_x = std::max(max_x, point.x());
-    max_y = std::max(max_y, point.y());
-  }
-
-  constexpr double kSearchMargin = 1.0e-3;
-  return lanelet::BoundingBox2d{
-    lanelet::BasicPoint2d{min_x - kSearchMargin, min_y - kSearchMargin},
-    lanelet::BasicPoint2d{max_x + kSearchMargin, max_y + kSearchMargin}};
-}
-
-lanelet::ConstLanelets collect_candidate_road_lanelets(
-  const Polygon2d & ego_polygon, const std::shared_ptr<RouteHandler> & route_handler)
-{
-  lanelet::ConstLanelets road_lanelets;
-  if (!route_handler || !route_handler->isMapMsgReady()) {
-    return road_lanelets;
-  }
-
-  std::unordered_set<lanelet::Id> seen_ids;
-  const auto map = route_handler->getLaneletMapPtr();
-  for (const auto & lanelet : map->laneletLayer.search(footprint_bounding_box(ego_polygon))) {
-    if (!route_handler->isRoadLanelet(lanelet)) {
-      continue;
-    }
-    if (seen_ids.insert(lanelet.id()).second) {
-      road_lanelets.push_back(lanelet);
-    }
-  }
-
-  return road_lanelets;
-}
-
-std::vector<lanelet::ConstPolygon3d> collect_candidate_parking_lots(
-  const Polygon2d & ego_polygon, const std::shared_ptr<RouteHandler> & route_handler)
-{
-  std::vector<lanelet::ConstPolygon3d> parking_lots;
-  if (!route_handler || !route_handler->isMapMsgReady()) {
-    return parking_lots;
-  }
-
-  const auto map = route_handler->getLaneletMapPtr();
-  for (const auto & polygon : map->polygonLayer.search(footprint_bounding_box(ego_polygon))) {
-    const std::string type = polygon.attributeOr(lanelet::AttributeName::Type, "none");
-    if (type == "parking_lot") {
-      parking_lots.push_back(polygon);
-    }
-  }
-
-  return parking_lots;
-}
-
-bool point_in_lanelet(const Point2d & point, const lanelet::ConstLanelet & lanelet)
-{
-  return bg::covered_by(
-    lanelet::BasicPoint2d{point.x(), point.y()}, lanelet.polygon2d().basicPolygon());
-}
-
-bool point_in_parking_lot(const Point2d & point, const lanelet::ConstPolygon3d & parking_lot)
-{
-  return bg::covered_by(
-    lanelet::BasicPoint2d{point.x(), point.y()}, lanelet::utils::to2D(parking_lot).basicPolygon());
-}
-
-bool detect_multiple_lanes(
-  const std::vector<Point2d> & footprint_points, const lanelet::ConstLanelets & road_lanelets)
-{
-  if (footprint_points.empty() || road_lanelets.empty()) {
-    return false;
-  }
-
-  std::size_t occupied_lanelets = 0;
-  bool single_lane_contains_all_points = false;
-  for (const auto & lanelet : road_lanelets) {
-    std::size_t contained_points = 0;
-    for (const auto & point : footprint_points) {
-      if (point_in_lanelet(point, lanelet)) {
-        ++contained_points;
-      }
-    }
-
-    if (contained_points > 0U) {
-      ++occupied_lanelets;
-    }
-    if (contained_points == footprint_points.size()) {
-      single_lane_contains_all_points = true;
-    }
-  }
-
-  return occupied_lanelets > 1U && !single_lane_contains_all_points;
-}
-
-bool detect_non_drivable_area(
-  const std::vector<Point2d> & footprint_points, const lanelet::ConstLanelets & road_lanelets,
-  const std::vector<lanelet::ConstPolygon3d> & parking_lots)
-{
-  if (footprint_points.empty()) {
-    return false;
-  }
-
-  for (const auto & point : footprint_points) {
-    bool corner_drivable = false;
-    for (const auto & lanelet : road_lanelets) {
-      if (point_in_lanelet(point, lanelet)) {
-        corner_drivable = true;
-        break;
-      }
-    }
-    if (!corner_drivable) {
-      for (const auto & parking_lot : parking_lots) {
-        if (point_in_parking_lot(point, parking_lot)) {
-          corner_drivable = true;
-          break;
-        }
-      }
-    }
-    if (!corner_drivable) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-std::optional<EgoAreaFlags> compute_ego_area_flags(
-  const geometry_msgs::msg::Pose & pose, const Polygon2d & ego_polygon,
-  const std::shared_ptr<RouteHandler> & route_handler)
-{
-  if (!route_handler) {
-    return std::nullopt;
-  }
-  if (!route_handler->isMapMsgReady()) {
-    return std::nullopt;
-  }
-
-  auto road_lanelets = collect_candidate_road_lanelets(ego_polygon, route_handler);
-  for (const auto & lanelet : route_handler->getRoadLaneletsAtPose(pose)) {
-    if (
-      route_handler->isRoadLanelet(lanelet) && footprint_intersects_lanelet(ego_polygon, lanelet)) {
-      const auto duplicate = std::any_of(
-        road_lanelets.begin(), road_lanelets.end(),
-        [&lanelet](const auto & candidate) { return candidate.id() == lanelet.id(); });
-      if (!duplicate) {
-        road_lanelets.push_back(lanelet);
-      }
-    }
-  }
-  const auto parking_lots = collect_candidate_parking_lots(ego_polygon, route_handler);
-  const auto points = footprint_vertices(ego_polygon);
-
-  EgoAreaFlags flags;
-  flags.multiple_lanes = detect_multiple_lanes(points, road_lanelets);
-  flags.non_drivable_area = detect_non_drivable_area(points, road_lanelets, parking_lots);
-  return flags;
-}
-
 AtFaultCollision make_at_fault_collision(
   const InterpolatedLoggedObject & object, const bool lateral_collision)
 {
@@ -461,7 +273,8 @@ void fill_horizon_debug_footprints(
   NoAtFaultCollisionDebugInfo & debug_info,
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const std::vector<LoggedObjectTrack> & object_tracks,
-  const LinearRing2d & local_footprint)
+  const LinearRing2d & local_footprint,
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations = nullptr)
 {
   if (debug_info.events.empty()) {
     return;
@@ -476,10 +289,14 @@ void fill_horizon_debug_footprints(
   }
 
   const auto trajectory_start_time = rclcpp::Time(trajectory.header.stamp);
-  for (const auto & point : trajectory.points) {
+  for (size_t index = 0; index < trajectory.points.size(); ++index) {
+    const auto & point = trajectory.points.at(index);
     const auto query_time = trajectory_start_time + rclcpp::Duration(point.time_from_start);
     const auto query_time_s = rclcpp::Duration(point.time_from_start).seconds();
-    const auto ego_polygon = create_pose_footprint(point.pose, local_footprint);
+    const auto ego_polygon =
+      footprint_evaluations && index < footprint_evaluations->size()
+        ? footprint_evaluations->at(index).ego_polygon
+        : create_pose_footprint(point.pose, local_footprint);
 
     bool ego_collision = false;
     bool ego_at_fault = false;
@@ -545,7 +362,8 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const std::vector<TimedPredictedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
-  const std::shared_ptr<RouteHandler> & route_handler)
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations)
 {
   NoAtFaultCollisionResult result;
 
@@ -572,13 +390,24 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
   }
 
   const auto local_footprint = vehicle_info.createFootprint(0.0);
+  const auto local_evaluations =
+    footprint_evaluations ? std::vector<TrajectoryFootprintEvaluation>{}
+                          : evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler);
+  const auto & evaluations = footprint_evaluations ? *footprint_evaluations : local_evaluations;
+  if (evaluations.size() != trajectory.points.size()) {
+    result.available = false;
+    result.reason = "unavailable_invalid_footprint";
+    result.score = 0.0;
+    return result;
+  }
   std::set<std::array<uint8_t, 16>> collided_object_ids;
   const auto trajectory_start_time = rclcpp::Time(trajectory.header.stamp);
 
-  for (const auto & point : trajectory.points) {
+  for (size_t index = 0; index < trajectory.points.size(); ++index) {
+    const auto & point = trajectory.points.at(index);
     const auto query_time = trajectory_start_time + rclcpp::Duration(point.time_from_start);
     const auto query_time_s = rclcpp::Duration(point.time_from_start).seconds();
-    const auto ego_polygon = create_pose_footprint(point.pose, local_footprint);
+    const auto & ego_polygon = evaluations.at(index).ego_polygon;
 
     for (const auto & object_track : object_tracks) {
       if (
@@ -620,8 +449,8 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
       }
 
       if (lateral_collision) {
-        const auto ego_area_flags = compute_ego_area_flags(point.pose, ego_polygon, route_handler);
-        if (!ego_area_flags.has_value()) {
+        const auto & ego_area_evaluation = evaluations.at(index).ego_area_evaluation;
+        if (!ego_area_evaluation.has_value()) {
           debug_event.reason = !route_handler
                                  ? "unavailable_no_route_handler_for_lateral_assessment"
                                  : "unavailable_route_handler_not_ready_for_lateral_assessment";
@@ -634,9 +463,11 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
           return result;
         }
 
-        debug_event.multiple_lanes = ego_area_flags->multiple_lanes;
-        debug_event.non_drivable_area = ego_area_flags->non_drivable_area;
-        if (ego_area_flags->multiple_lanes || ego_area_flags->non_drivable_area) {
+        debug_event.multiple_lanes = ego_area_evaluation->flags.multiple_lanes;
+        debug_event.non_drivable_area = ego_area_evaluation->flags.non_drivable_area;
+        if (
+          ego_area_evaluation->flags.multiple_lanes ||
+          ego_area_evaluation->flags.non_drivable_area) {
           const auto at_fault_collision = make_at_fault_collision(*object_state, true);
           debug_event.at_fault = true;
           debug_event.event_score = at_fault_collision.score;
@@ -655,7 +486,8 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
     }
   }
 
-  fill_horizon_debug_footprints(result.debug_info, trajectory, object_tracks, local_footprint);
+  fill_horizon_debug_footprints(
+    result.debug_info, trajectory, object_tracks, local_footprint, &evaluations);
 
   return result;
 }

@@ -16,6 +16,7 @@
 #define METRICS__TRAJECTORY_METRICS_HPP_
 
 #include "../data_types.hpp"
+#include "drivable_area_compliance.hpp"
 #include "driving_direction_compliance.hpp"
 #include "lane_keeping.hpp"
 #include "no_at_fault_collision.hpp"
@@ -85,6 +86,7 @@ struct TrajectoryPointMetrics
   double drivable_area_compliance{0.0};
   bool drivable_area_compliance_available{false};
   std::string drivable_area_compliance_reason{"unavailable"};
+  DrivableAreaComplianceDebugInfo drivable_area_compliance_debug;
   double no_at_fault_collision{0.0};
   bool no_at_fault_collision_available{false};
   std::string no_at_fault_collision_reason{"unavailable"};

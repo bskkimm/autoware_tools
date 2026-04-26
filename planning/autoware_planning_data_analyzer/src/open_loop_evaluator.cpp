@@ -186,6 +186,11 @@ std::string nc_debug_topic(const std::string & topic_name)
   return "/debug/nc/" + topic_name;
 }
 
+std::string dac_debug_topic(const std::string & topic_name)
+{
+  return "/debug/dac/" + topic_name;
+}
+
 std_msgs::msg::ColorRGBA make_color(
   const float red, const float green, const float blue, const float alpha = 1.0F)
 {
@@ -245,6 +250,24 @@ std::vector<geometry_msgs::msg::Point> lift_points(
   return points;
 }
 
+std::vector<geometry_msgs::msg::Point> square_marker_points(
+  const geometry_msgs::msg::Point & center, const double half_extent)
+{
+  geometry_msgs::msg::Point p0 = center;
+  geometry_msgs::msg::Point p1 = center;
+  geometry_msgs::msg::Point p2 = center;
+  geometry_msgs::msg::Point p3 = center;
+  p0.x -= half_extent;
+  p0.y -= half_extent;
+  p1.x += half_extent;
+  p1.y -= half_extent;
+  p2.x += half_extent;
+  p2.y += half_extent;
+  p3.x -= half_extent;
+  p3.y += half_extent;
+  return {p0, p1, p2, p3, p0};
+}
+
 visualization_msgs::msg::Marker make_line_strip_marker(
   const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
   std::vector<geometry_msgs::msg::Point> points, const std_msgs::msg::ColorRGBA & color,
@@ -296,6 +319,11 @@ bool should_write_nc_debug(
   return metrics.no_at_fault_collision < 1.0;
 }
 
+bool should_write_dac_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return metrics.drivable_area_compliance_available && metrics.drivable_area_compliance < 1.0;
+}
+
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
 {
@@ -326,6 +354,26 @@ const metrics::NoAtFaultCollisionDebugEvent * find_worst_nc_event(
     }
   }
   return worst_event;
+}
+
+nlohmann::json dac_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::DrivableAreaComplianceDebugInfo & debug_info, const rclcpp::Time & timestamp)
+{
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.drivable_area_compliance},
+    {"reason", metrics.drivable_area_compliance_reason},
+    {"first_failure_time_s", debug_info.first_failure_time_s},
+    {"failure_stamp_sec",
+     std::isfinite(debug_info.first_failure_time_s)
+       ? timestamp.seconds() + debug_info.first_failure_time_s
+       : std::numeric_limits<double>::quiet_NaN()},
+    {"failing_corner_indices", debug_info.failing_corner_indices},
+    {"corner_count_inside", debug_info.corner_count_inside},
+    {"route_candidate_count", debug_info.route_candidate_count},
+    {"road_candidate_count", debug_info.road_candidate_count},
+    {"parking_candidate_count", debug_info.parking_candidate_count}};
 }
 
 nlohmann::json nc_debug_event_to_json(const metrics::NoAtFaultCollisionDebugEvent & event)
@@ -469,6 +517,81 @@ void write_nc_debug_topics_to_bag(
   bag_writer.write(object_footprints, nc_debug_topic("object_footprints"), timestamp);
   bag_writer.write(overlap_areas, nc_debug_topic("overlap_areas"), timestamp);
   bag_writer.write(labels, nc_debug_topic("labels"), timestamp);
+}
+
+void write_dac_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_dac_debug(metrics)) {
+    return;
+  }
+
+  const auto & debug_info = metrics.drivable_area_compliance_debug;
+  if (!std::isfinite(debug_info.first_failure_time_s)) {
+    return;
+  }
+
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = dac_debug_summary_to_json(metrics, debug_info, timestamp).dump();
+  bag_writer.write(summary_msg, dac_debug_topic("violation_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray ego_footprints;
+  visualization_msgs::msg::MarkerArray admissible_road_areas;
+  visualization_msgs::msg::MarkerArray admissible_parking_areas;
+  visualization_msgs::msg::MarkerArray failing_corners;
+  visualization_msgs::msg::MarkerArray labels;
+  ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  admissible_road_areas.markers.push_back(make_delete_all_marker(timestamp));
+  admissible_parking_areas.markers.push_back(make_delete_all_marker(timestamp));
+  failing_corners.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (const auto & footprint : debug_info.ego_horizon_footprints) {
+    ego_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_ego_footprints", marker_id++, footprint.footprint,
+      footprint.non_drivable_area ? make_color(1.0F, 0.35F, 0.0F, 1.0F)
+                                  : make_color(0.0F, 0.8F, 1.0F, 0.6F),
+      footprint.non_drivable_area ? 0.22 : 0.12, true, marker_lifetime_s, 0.10));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.admissible_road_areas) {
+    admissible_road_areas.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_admissible_road_areas", marker_id++, polygon.polygon,
+      make_color(0.0F, 0.9F, 1.0F, 0.8F), 0.12, true, marker_lifetime_s, 0.02));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.admissible_parking_areas) {
+    admissible_parking_areas.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_admissible_parking_areas", marker_id++, polygon.polygon,
+      make_color(0.2F, 1.0F, 0.4F, 0.8F), 0.12, true, marker_lifetime_s, 0.04));
+  }
+
+  marker_id = 0;
+  for (const auto & corner : debug_info.failing_corners) {
+    failing_corners.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_failing_corners", marker_id++,
+      square_marker_points(corner.point, 0.18), make_color(1.0F, 0.0F, 0.8F, 1.0F), 0.16, false,
+      marker_lifetime_s, 0.16));
+  }
+
+  std::ostringstream label;
+  label << "DAC=" << metrics.drivable_area_compliance << "\ndt=" << std::fixed
+        << std::setprecision(1) << debug_info.first_failure_time_s << "s\ninside corners="
+        << debug_info.corner_count_inside << "/4";
+  labels.markers.push_back(make_text_marker(
+    timestamp, "dac_horizon_labels", 0, debug_info.label_anchor, label.str(),
+    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+
+  bag_writer.write(ego_footprints, dac_debug_topic("ego_footprints"), timestamp);
+  bag_writer.write(admissible_road_areas, dac_debug_topic("admissible_road_areas"), timestamp);
+  bag_writer.write(
+    admissible_parking_areas, dac_debug_topic("admissible_parking_areas"), timestamp);
+  bag_writer.write(failing_corners, dac_debug_topic("failing_corners"), timestamp);
+  bag_writer.write(labels, dac_debug_topic("labels"), timestamp);
 }
 
 std::string normalize_metric_name(std::string name)
@@ -1867,6 +1990,10 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     write_nc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_mode_, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.drivable_area_compliance) {
+    write_dac_debug_topics_to_bag(
+      metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 std::string OpenLoopEvaluator::metric_topic(const std::string & metric_name) const
@@ -2669,6 +2796,13 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64");
     add_topic(metric_topic("drivable_area_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("drivable_area_compliance_reason"), "std_msgs/msg/String");
+    add_topic(dac_debug_topic("violation_summary"), "std_msgs/msg/String");
+    add_topic(dac_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("admissible_road_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(
+      dac_debug_topic("admissible_parking_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("failing_corners"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.no_at_fault_collision) {
     add_topic(metric_topic("no_at_fault_collision"), "std_msgs/msg/Float64");

@@ -17,15 +17,12 @@
 #include "metric_utils.hpp"
 
 #include <autoware_utils_geometry/boost_geometry.hpp>
-#include <autoware_utils_geometry/geometry.hpp>
 
 #include <boost/geometry.hpp>
+#include <lanelet2_core/utility/Utilities.h>
 
-#include <lanelet2_core/geometry/Lanelet.h>
-
-#include <cstddef>
-#include <optional>
-#include <vector>
+#include <algorithm>
+#include <cmath>
 
 namespace autoware::planning_data_analyzer::metrics
 {
@@ -33,120 +30,128 @@ namespace autoware::planning_data_analyzer::metrics
 namespace
 {
 
-using autoware_utils_geometry::LinearRing2d;
-using autoware_utils_geometry::MultiPolygon2d;
-using autoware_utils_geometry::Point2d;
-using autoware_utils_geometry::Polygon2d;
-
-std::vector<LinearRing2d> create_vehicle_footprints(
-  const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
+autoware_utils_geometry::Polygon2d to_polygon_2d(const lanelet::BasicPolygon2d & polygon)
 {
-  const auto base_footprint = vehicle_info.createFootprint(0.0);
-
-  std::vector<LinearRing2d> vehicle_footprints;
-  vehicle_footprints.reserve(trajectory.points.size());
-  for (const auto & point : trajectory.points) {
-    vehicle_footprints.push_back(
-      autoware_utils_geometry::transform_vector(
-        base_footprint, autoware_utils_geometry::pose2transform(point.pose)));
-  }
-
-  return vehicle_footprints;
-}
-
-LinearRing2d create_hull_from_footprints(const std::vector<LinearRing2d> & footprints)
-{
-  boost::geometry::model::multi_point<Point2d> combined;
-  for (const auto & footprint : footprints) {
-    for (const auto & point : footprint) {
-      combined.push_back(point);
-    }
-  }
-
-  LinearRing2d hull;
-  boost::geometry::convex_hull(combined, hull);
-  boost::geometry::correct(hull);
-  return hull;
-}
-
-lanelet::ConstLanelets collect_candidate_lanelets(
-  const lanelet::ConstLanelets & drivable_lanelets,
-  const std::vector<LinearRing2d> & vehicle_footprints)
-{
-  const auto footprint_hull = create_hull_from_footprints(vehicle_footprints);
-
-  lanelet::ConstLanelets candidate_lanelets;
-  for (const auto & lanelet : drivable_lanelets) {
-    if (!boost::geometry::disjoint(lanelet.polygon2d().basicPolygon(), footprint_hull)) {
-      candidate_lanelets.push_back(lanelet);
-    }
-  }
-
-  return candidate_lanelets;
-}
-
-Polygon2d to_polygon_2d(const lanelet::BasicPolygon2d & polygon)
-{
-  Polygon2d converted;
+  autoware_utils_geometry::Polygon2d converted;
   for (const auto & point : polygon) {
-    converted.outer().push_back(Point2d(point.x(), point.y()));
+    converted.outer().push_back({point.x(), point.y()});
   }
   boost::geometry::correct(converted);
   return converted;
 }
 
-std::optional<MultiPolygon2d> fuse_lanelet_polygons(
-  const lanelet::ConstLanelets & candidate_lanelets)
+geometry_msgs::msg::Point to_msg_point(
+  const autoware_utils_geometry::Point2d & point, const double z = 0.0)
 {
-  if (candidate_lanelets.empty()) {
-    return std::nullopt;
-  }
-
-  MultiPolygon2d lanelet_unions;
-  MultiPolygon2d result;
-
-  for (const auto & lanelet : candidate_lanelets) {
-    const auto polygon = to_polygon_2d(lanelet.polygon2d().basicPolygon());
-    boost::geometry::union_(lanelet_unions, polygon, result);
-    lanelet_unions = result;
-    result.clear();
-  }
-
-  if (lanelet_unions.empty()) {
-    return std::nullopt;
-  }
-
-  for (auto & polygon : lanelet_unions) {
-    boost::geometry::correct(polygon);
-  }
-
-  return lanelet_unions;
+  geometry_msgs::msg::Point msg;
+  msg.x = point.x();
+  msg.y = point.y();
+  msg.z = z;
+  return msg;
 }
 
-bool is_footprint_inside_any_polygon(
-  const LinearRing2d & vehicle_footprint, const MultiPolygon2d & fused_polygons)
+std::vector<geometry_msgs::msg::Point> polygon_to_points(
+  const autoware_utils_geometry::Polygon2d & polygon, const double z)
 {
-  return std::any_of(
-    fused_polygons.begin(), fused_polygons.end(), [&vehicle_footprint](const auto & polygon) {
-      return boost::geometry::within(vehicle_footprint, polygon);
-    });
+  std::vector<geometry_msgs::msg::Point> points;
+  points.reserve(polygon.outer().size());
+  for (const auto & point : polygon.outer()) {
+    points.push_back(to_msg_point(point, z));
+  }
+  return points;
+}
+
+std::vector<geometry_msgs::msg::Point> lanelet_polygon_to_points(
+  const lanelet::ConstLanelet & lanelet, const double z)
+{
+  return polygon_to_points(
+    to_polygon_2d(lanelet.polygon2d().basicPolygon()), z);
+}
+
+std::vector<geometry_msgs::msg::Point> parking_polygon_to_points(
+  const lanelet::ConstPolygon3d & polygon, const double z)
+{
+  return polygon_to_points(
+    to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()), z);
+}
+
+void fill_debug_info(
+  DrivableAreaComplianceDebugInfo & debug_info,
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const std::vector<TrajectoryFootprintEvaluation> & evaluations)
+{
+  for (std::size_t index = 0; index < trajectory.points.size(); ++index) {
+    const auto & point = trajectory.points.at(index);
+    const auto & evaluation = evaluations.at(index);
+    if (!evaluation.ego_area_evaluation.has_value()) {
+      continue;
+    }
+
+    const auto & area = *evaluation.ego_area_evaluation;
+    const auto time_s = rclcpp::Duration(point.time_from_start).seconds();
+    DrivableAreaComplianceHorizonFootprint footprint;
+    footprint.time_s = time_s;
+    footprint.non_drivable_area = area.flags.non_drivable_area;
+    footprint.footprint = polygon_to_points(evaluation.ego_polygon, point.pose.position.z);
+    debug_info.ego_horizon_footprints.push_back(std::move(footprint));
+
+    if (!area.flags.non_drivable_area || std::isfinite(debug_info.first_failure_time_s)) {
+      continue;
+    }
+
+    debug_info.first_failure_time_s = time_s;
+    debug_info.route_candidate_count = area.designated_lanelet_count;
+    debug_info.road_candidate_count = area.road_lanelets.size();
+    debug_info.parking_candidate_count = area.parking_lots.size();
+    debug_info.corner_count_inside = std::count(
+      area.corner_drivable.begin(), area.corner_drivable.end(), true);
+    if (!area.footprint_points.empty()) {
+      debug_info.label_anchor = to_msg_point(area.footprint_points.front(), point.pose.position.z);
+    }
+
+    for (std::size_t corner_index = 0; corner_index < area.footprint_points.size(); ++corner_index) {
+      if (area.corner_drivable.at(corner_index)) {
+        continue;
+      }
+      debug_info.failing_corner_indices.push_back(corner_index);
+      debug_info.failing_corners.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, corner_index, to_msg_point(area.footprint_points.at(corner_index), point.pose.position.z)});
+    }
+
+    for (const auto & road_lanelet : area.road_lanelets) {
+      debug_info.admissible_road_areas.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, lanelet_polygon_to_points(road_lanelet, point.pose.position.z + 0.02)});
+    }
+    for (const auto & parking_lot : area.parking_lots) {
+      debug_info.admissible_parking_areas.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, parking_polygon_to_points(parking_lot, point.pose.position.z + 0.04)});
+    }
+  }
 }
 
 }  // namespace
 
 DrivableAreaComplianceResult calculate_drivable_area_compliance(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const lanelet::ConstLanelets & drivable_lanelets,
-  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info)
+  const std::shared_ptr<autoware::route_handler::RouteHandler> & route_handler,
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations)
 {
   DrivableAreaComplianceResult result;
   if (trajectory.points.empty()) {
     result.reason = "unavailable_empty_trajectory";
     return result;
   }
-  if (drivable_lanelets.empty()) {
-    result.reason = "unavailable_no_drivable_lanelets";
+  if (!route_handler) {
+    result.reason = "unavailable_no_route_handler";
+    return result;
+  }
+  if (!route_handler->isMapMsgReady()) {
+    result.reason = "unavailable_route_handler_map_not_ready";
+    return result;
+  }
+  if (!route_handler->isHandlerReady()) {
+    result.reason = "unavailable_route_handler_not_ready";
     return result;
   }
   if (!is_vehicle_info_valid(vehicle_info)) {
@@ -154,30 +159,27 @@ DrivableAreaComplianceResult calculate_drivable_area_compliance(
     return result;
   }
 
-  const auto vehicle_footprints = create_vehicle_footprints(trajectory, vehicle_info);
-  if (vehicle_footprints.empty() || vehicle_footprints.front().empty()) {
+  const auto local_evaluations =
+    footprint_evaluations ? std::vector<TrajectoryFootprintEvaluation>{}
+                          : evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler);
+  const auto & evaluations = footprint_evaluations ? *footprint_evaluations : local_evaluations;
+  if (evaluations.size() != trajectory.points.size()) {
     result.reason = "unavailable_invalid_footprint";
     return result;
   }
 
-  const auto candidate_lanelets = collect_candidate_lanelets(drivable_lanelets, vehicle_footprints);
-  if (candidate_lanelets.empty()) {
-    result.reason = "unavailable_no_candidate_lanelets";
-    return result;
-  }
-
-  const auto fused_lanelet_polygons = fuse_lanelet_polygons(candidate_lanelets);
-  if (!fused_lanelet_polygons) {
-    result.reason = "unavailable_invalid_drivable_area_polygon";
-    return result;
-  }
-
+  fill_debug_info(result.debug_info, trajectory, evaluations);
   result.available = true;
   result.reason = "compliant";
 
-  for (const auto & footprint : vehicle_footprints) {
-    if (!is_footprint_inside_any_polygon(footprint, *fused_lanelet_polygons)) {
-      result.reason = "non_compliant_footprint_outside_drivable_area";
+  for (const auto & evaluation : evaluations) {
+    if (!evaluation.ego_area_evaluation.has_value()) {
+      result.available = false;
+      result.reason = "unavailable_drivable_area_query_failed";
+      return result;
+    }
+    if (evaluation.ego_area_evaluation->flags.non_drivable_area) {
+      result.reason = "non_compliant_corner_outside_drivable_area";
       return result;
     }
   }

@@ -150,6 +150,11 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const auto & logged_future_objects =
     future_objects.empty() ? sync_data->future_objects : future_objects;
   const size_t num_points = trajectory.points.size();
+  const auto shared_footprint_evaluations =
+    (enabled_metrics.drivable_area_compliance || enabled_metrics.no_at_fault_collision) &&
+        is_vehicle_info_valid(vehicle_info)
+      ? evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler)
+      : std::vector<TrajectoryFootprintEvaluation>{};
 
   // Initialize vectors
   metrics.ttc_values.resize(num_points, std::numeric_limits<double>::max());
@@ -177,7 +182,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
 
   if (enabled_metrics.no_at_fault_collision) {
     const auto no_at_fault_collision = calculate_no_at_fault_collision(
-      trajectory, logged_future_objects, vehicle_info, route_handler);
+      trajectory, logged_future_objects, vehicle_info, route_handler,
+      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
     metrics.no_at_fault_collision = no_at_fault_collision.score;
     metrics.no_at_fault_collision_available = no_at_fault_collision.available;
     metrics.no_at_fault_collision_reason = no_at_fault_collision.reason;
@@ -243,13 +249,15 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       metrics.traffic_light_compliance_reason = "unavailable_route_handler_not_ready";
     }
   } else if (enabled_metrics.drivable_area_compliance || enabled_metrics.traffic_light_compliance) {
-    const auto drivable_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
     if (enabled_metrics.drivable_area_compliance) {
       const auto drivable_area_compliance =
-        calculate_drivable_area_compliance(trajectory, drivable_lanelets, vehicle_info);
+        calculate_drivable_area_compliance(
+          trajectory, route_handler, vehicle_info,
+          shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
       metrics.drivable_area_compliance = drivable_area_compliance.score;
       metrics.drivable_area_compliance_available = drivable_area_compliance.available;
       metrics.drivable_area_compliance_reason = drivable_area_compliance.reason;
+      metrics.drivable_area_compliance_debug = drivable_area_compliance.debug_info;
     }
 
     if (enabled_metrics.traffic_light_compliance) {
