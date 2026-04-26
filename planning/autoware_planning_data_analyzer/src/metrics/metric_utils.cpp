@@ -41,6 +41,8 @@ using autoware::route_handler::RouteHandler;
 namespace
 {
 
+constexpr double kLocalLaneSearchRadiusM = 5.0;
+
 void append_unique_lanelet(
   const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelets & lanelets,
   std::unordered_set<lanelet::Id> & seen_ids)
@@ -68,6 +70,190 @@ double closest_pi_symmetric_yaw(const double reference_yaw, const double yaw)
 double normalize_angle(const double angle)
 {
   return std::atan2(std::sin(angle), std::cos(angle));
+}
+
+autoware_utils_geometry::Polygon2d to_polygon_2d(const lanelet::BasicPolygon2d & polygon)
+{
+  namespace bg = boost::geometry;
+
+  autoware_utils_geometry::Polygon2d converted;
+  for (const auto & point : polygon) {
+    converted.outer().push_back({point.x(), point.y()});
+  }
+  bg::correct(converted);
+  return converted;
+}
+
+bool footprint_intersects_lanelet(
+  const autoware_utils_geometry::Polygon2d & footprint, const lanelet::ConstLanelet & lanelet)
+{
+  namespace bg = boost::geometry;
+  return !bg::disjoint(footprint, to_polygon_2d(lanelet.polygon2d().basicPolygon()));
+}
+
+std::vector<autoware_utils_geometry::Point2d> footprint_vertices(
+  const autoware_utils_geometry::Polygon2d & footprint)
+{
+  namespace bg = boost::geometry;
+
+  std::vector<autoware_utils_geometry::Point2d> vertices;
+  for (const auto & point : footprint.outer()) {
+    if (vertices.empty() || !bg::equals(vertices.front(), point)) {
+      vertices.push_back(point);
+    }
+  }
+  return vertices;
+}
+
+lanelet::BoundingBox2d footprint_bounding_box(const autoware_utils_geometry::Polygon2d & footprint)
+{
+  double min_x = std::numeric_limits<double>::max();
+  double min_y = std::numeric_limits<double>::max();
+  double max_x = std::numeric_limits<double>::lowest();
+  double max_y = std::numeric_limits<double>::lowest();
+
+  for (const auto & point : footprint.outer()) {
+    min_x = std::min(min_x, point.x());
+    min_y = std::min(min_y, point.y());
+    max_x = std::max(max_x, point.x());
+    max_y = std::max(max_y, point.y());
+  }
+
+  constexpr double kSearchMargin = 1.0e-3;
+  return lanelet::BoundingBox2d{
+    lanelet::BasicPoint2d{min_x - kSearchMargin, min_y - kSearchMargin},
+    lanelet::BasicPoint2d{max_x + kSearchMargin, max_y + kSearchMargin}};
+}
+
+lanelet::BoundingBox2d point_bounding_box(
+  const geometry_msgs::msg::Point & point, const double radius_m = kLocalLaneSearchRadiusM)
+{
+  return lanelet::BoundingBox2d{
+    lanelet::BasicPoint2d{point.x - radius_m, point.y - radius_m},
+    lanelet::BasicPoint2d{point.x + radius_m, point.y + radius_m}};
+}
+
+lanelet::ConstLanelets collect_candidate_road_lanelets(
+  const autoware_utils_geometry::Polygon2d & ego_polygon,
+  const std::shared_ptr<RouteHandler> & route_handler, const lanelet::ConstLanelets & designated_lanelets)
+{
+  lanelet::ConstLanelets road_lanelets;
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return road_lanelets;
+  }
+
+  std::unordered_set<lanelet::Id> seen_ids;
+  for (const auto & lanelet : designated_lanelets) {
+    if (!route_handler->isRoadLanelet(lanelet)) {
+      continue;
+    }
+    if (seen_ids.insert(lanelet.id()).second) {
+      road_lanelets.push_back(lanelet);
+    }
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  for (const auto & lanelet : map->laneletLayer.search(footprint_bounding_box(ego_polygon))) {
+    if (!route_handler->isRoadLanelet(lanelet)) {
+      continue;
+    }
+    if (seen_ids.insert(lanelet.id()).second) {
+      road_lanelets.push_back(lanelet);
+    }
+  }
+
+  return road_lanelets;
+}
+
+std::vector<lanelet::ConstPolygon3d> collect_candidate_parking_lots(
+  const autoware_utils_geometry::Polygon2d & ego_polygon,
+  const std::shared_ptr<RouteHandler> & route_handler)
+{
+  std::vector<lanelet::ConstPolygon3d> parking_lots;
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return parking_lots;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  for (const auto & polygon : map->polygonLayer.search(footprint_bounding_box(ego_polygon))) {
+    const std::string type = polygon.attributeOr(lanelet::AttributeName::Type, "none");
+    if (type == "parking_lot") {
+      parking_lots.push_back(polygon);
+    }
+  }
+
+  return parking_lots;
+}
+
+bool point_in_lanelet(
+  const autoware_utils_geometry::Point2d & point, const lanelet::ConstLanelet & lanelet)
+{
+  namespace bg = boost::geometry;
+  return bg::covered_by(point, to_polygon_2d(lanelet.polygon2d().basicPolygon()));
+}
+
+bool point_in_parking_lot(
+  const autoware_utils_geometry::Point2d & point, const lanelet::ConstPolygon3d & parking_lot)
+{
+  namespace bg = boost::geometry;
+  return bg::covered_by(point, to_polygon_2d(lanelet::utils::to2D(parking_lot).basicPolygon()));
+}
+
+bool detect_multiple_lanes(
+  const std::vector<autoware_utils_geometry::Point2d> & footprint_points,
+  const lanelet::ConstLanelets & road_lanelets)
+{
+  if (footprint_points.empty() || road_lanelets.empty()) {
+    return false;
+  }
+
+  std::size_t occupied_lanelets = 0;
+  bool single_lane_contains_all_points = false;
+  for (const auto & lanelet : road_lanelets) {
+    std::size_t contained_points = 0;
+    for (const auto & point : footprint_points) {
+      if (point_in_lanelet(point, lanelet)) {
+        ++contained_points;
+      }
+    }
+
+    if (contained_points > 0U) {
+      ++occupied_lanelets;
+    }
+    if (contained_points == footprint_points.size()) {
+      single_lane_contains_all_points = true;
+    }
+  }
+
+  return occupied_lanelets > 1U && !single_lane_contains_all_points;
+}
+
+std::vector<bool> evaluate_corner_drivable(
+  const std::vector<autoware_utils_geometry::Point2d> & footprint_points,
+  const lanelet::ConstLanelets & road_lanelets,
+  const std::vector<lanelet::ConstPolygon3d> & parking_lots)
+{
+  std::vector<bool> corner_drivable(footprint_points.size(), false);
+
+  for (std::size_t index = 0; index < footprint_points.size(); ++index) {
+    const auto & point = footprint_points.at(index);
+    for (const auto & lanelet : road_lanelets) {
+      if (point_in_lanelet(point, lanelet)) {
+        corner_drivable.at(index) = true;
+        break;
+      }
+    }
+    if (!corner_drivable.at(index)) {
+      for (const auto & parking_lot : parking_lots) {
+        if (point_in_parking_lot(point, parking_lot)) {
+          corner_drivable.at(index) = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return corner_drivable;
 }
 
 double planar_speed_mps(const geometry_msgs::msg::Twist & twist)
@@ -214,6 +400,79 @@ lanelet::ConstLanelets collect_route_relevant_lanelets(
   return route_lanelets;
 }
 
+std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
+  const geometry_msgs::msg::Pose & pose, const autoware_utils_geometry::Polygon2d & ego_polygon,
+  const std::shared_ptr<RouteHandler> & route_handler, const lanelet::ConstLanelets & designated_lanelets)
+{
+  if (!route_handler) {
+    return std::nullopt;
+  }
+  if (!route_handler->isMapMsgReady()) {
+    return std::nullopt;
+  }
+
+  auto road_lanelets = collect_candidate_road_lanelets(ego_polygon, route_handler, designated_lanelets);
+  for (const auto & lanelet : route_handler->getRoadLaneletsAtPose(pose)) {
+    if (
+      route_handler->isRoadLanelet(lanelet) && footprint_intersects_lanelet(ego_polygon, lanelet)) {
+      const auto duplicate = std::any_of(
+        road_lanelets.begin(), road_lanelets.end(),
+        [&lanelet](const auto & candidate) { return candidate.id() == lanelet.id(); });
+      if (!duplicate) {
+        road_lanelets.push_back(lanelet);
+      }
+    }
+  }
+  const auto parking_lots = collect_candidate_parking_lots(ego_polygon, route_handler);
+  const auto points = footprint_vertices(ego_polygon);
+  const auto corner_drivable = evaluate_corner_drivable(points, road_lanelets, parking_lots);
+
+  EgoAreaEvaluation evaluation;
+  evaluation.flags.multiple_lanes = detect_multiple_lanes(points, road_lanelets);
+  evaluation.flags.non_drivable_area = std::any_of(
+    corner_drivable.begin(), corner_drivable.end(), [](const bool value) { return !value; });
+  evaluation.footprint_points = points;
+  evaluation.corner_drivable = corner_drivable;
+  evaluation.road_lanelets = std::move(road_lanelets);
+  evaluation.parking_lots = std::move(parking_lots);
+  evaluation.designated_lanelet_count = designated_lanelets.size();
+  return evaluation;
+}
+
+std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::shared_ptr<RouteHandler> & route_handler)
+{
+  std::vector<TrajectoryFootprintEvaluation> evaluations;
+  if (!is_vehicle_info_valid(vehicle_info)) {
+    return evaluations;
+  }
+
+  const auto local_footprint = vehicle_info.createFootprint(0.0);
+  if (local_footprint.empty()) {
+    return evaluations;
+  }
+
+  const auto designated_lanelets =
+    route_handler && route_handler->isHandlerReady()
+      ? collect_route_relevant_lanelets(trajectory, route_handler)
+      : lanelet::ConstLanelets{};
+
+  evaluations.reserve(trajectory.points.size());
+  for (const auto & point : trajectory.points) {
+    TrajectoryFootprintEvaluation evaluation;
+    evaluation.ego_polygon = create_pose_footprint(point.pose, local_footprint);
+    if (route_handler) {
+      evaluation.ego_area_evaluation = compute_ego_area_evaluation(
+        point.pose, evaluation.ego_polygon, route_handler, designated_lanelets);
+    }
+    evaluations.push_back(std::move(evaluation));
+  }
+
+  return evaluations;
+}
+
 autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineString3d & line)
 {
   autoware_utils_geometry::LineString2d line_2d;
@@ -226,9 +485,40 @@ autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineSt
 bool is_pose_in_intersection(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
 {
-  const auto lanelet = find_reference_lanelet(pose, route_handler);
-  return lanelet.has_value() &&
-         autoware::experimental::lanelet2_utils::is_intersection_lanelet(*lanelet);
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return false;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  const autoware_utils_geometry::Point2d search_point{pose.position.x, pose.position.y};
+  for (const auto & lanelet : map->laneletLayer.search(point_bounding_box(pose.position))) {
+    if (
+      autoware::experimental::lanelet2_utils::is_intersection_lanelet(lanelet) &&
+      point_in_lanelet(search_point, lanelet)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool is_pose_in_route_lane_polygon(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
+{
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return false;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  const autoware_utils_geometry::Point2d search_point{pose.position.x, pose.position.y};
+  for (const auto & lanelet : map->laneletLayer.search(point_bounding_box(pose.position))) {
+    if (!route_handler->isRouteLanelet(lanelet)) {
+      continue;
+    }
+    if (point_in_lanelet(search_point, lanelet)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 double forward_offset_in_ego_frame(

@@ -70,6 +70,28 @@ struct InterpolatedLoggedObject
   autoware_utils_geometry::Polygon2d polygon;
 };
 
+struct EgoAreaFlags
+{
+  bool multiple_lanes{false};
+  bool non_drivable_area{false};
+};
+
+struct EgoAreaEvaluation
+{
+  EgoAreaFlags flags;
+  std::vector<autoware_utils_geometry::Point2d> footprint_points;
+  std::vector<bool> corner_drivable;
+  lanelet::ConstLanelets road_lanelets;
+  std::vector<lanelet::ConstPolygon3d> parking_lots;
+  std::size_t designated_lanelet_count{0};
+};
+
+struct TrajectoryFootprintEvaluation
+{
+  autoware_utils_geometry::Polygon2d ego_polygon;
+  std::optional<EgoAreaEvaluation> ego_area_evaluation;
+};
+
 bool is_vehicle_info_valid(const autoware::vehicle_info_utils::VehicleInfo & vehicle_info);
 
 double get_yaw(const geometry_msgs::msg::Quaternion & orientation);
@@ -89,9 +111,22 @@ lanelet::ConstLanelets collect_route_relevant_lanelets(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const std::shared_ptr<RouteHandler> & route_handler);
 
+std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
+  const geometry_msgs::msg::Pose & pose, const autoware_utils_geometry::Polygon2d & ego_polygon,
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const lanelet::ConstLanelets & designated_lanelets = {});
+
+std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::shared_ptr<RouteHandler> & route_handler = nullptr);
+
 autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineString3d & line);
 
 bool is_pose_in_intersection(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
+
+bool is_pose_in_route_lane_polygon(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
 
 double forward_offset_in_ego_frame(

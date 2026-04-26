@@ -55,5 +55,5 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   outside lane boundaries.
 - When moving on to a different subscore, aggregated full EPDMS work, or human-filtered
   work, first commit the current state to the corresponding subscore branch, then create
-  a new branch on top of that committed state. The target remote for those branches is
-  `kim`.
+  the next working branch on top of that committed state. Push and manage those subscore
+  branches on the `kim` remote.

@@ -1365,18 +1365,18 @@ Semantically, DDC measures how much meaningful forward motion the ego accumulate
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Oncoming Traffic Mask** | Map layer identifying reverse-flow lanes. | `autoware::route_handler::RouteHandler::isRouteLanelet()` | Lanelets that do not flow toward the goal. | **Equivalent.** Semantic "wrong-way" intent is preserved. |
-| **Intersection Mask** | Map layer for direction leniency zones. | `is_intersection_lanelet()` | Lanelets labeled as intersections in Vector Map. | **Equivalent.** |
+| **Oncoming Traffic Mask** | Center point not inside any on-route lane / lane-connector polygon. | Local nearby route-lane polygon membership from `RouteHandler` + raw map search | Ego center not inside any nearby route lane polygon. | **Approximate.** Preserves NAVSIM center-in-route-polygon logic, but scopes the route set locally around ego rather than over the whole mission route. |
+| **Intersection Mask** | Center point inside an intersection polygon / lane connector leniency area. | Local nearby `is_intersection_lanelet()` polygon membership | Ego center inside a nearby intersection lanelet polygon. | **Approximate.** Preserves center-in-intersection logic with local lanelet polygons. |
 | **Centerline Progress** | Accumulated forward distance. | `DrivingDirectionEvaluationPoint::progress_m` | Longitudinal distance along lanelet centerline. | **Equivalent.** |
 
-- **Semantic replacement meaning:** oncoming traffic is approximated as "not in route lane", and intersection is approximated from route/reference lanelets.
+- **Semantic replacement meaning:** oncoming traffic is approximated as "ego center not inside any nearby route lane polygon", and intersection is approximated as "ego center inside a nearby intersection lanelet polygon".
 
 ### Platform deviations and impact
 
-- NAVSIM determines oncoming traffic from the cached drivable-area map and on-route lane polygons.
-- The migrated code uses `RouteHandler::getClosestLaneletWithinRoute()` and route-lane membership checks.
+- NAVSIM determines oncoming traffic from cached on-route lane / lane-connector polygons over the route set.
+- The migrated code searches nearby lanelets around ego center and checks polygon containment only against nearby route lanelets.
 - Thresholds are preserved exactly: horizon $1.0\,s$, compliance threshold $2.0\,m$, violation threshold $6.0\,m$.
-- **Impact:** **Low to moderate.** The core rule is ported closely; differences come mostly from how route/oncoming membership is inferred.
+- **Impact:** **Low to moderate.** The core rule is ported closely; the main difference is that the migrated implementation uses a local nearby route-lane subset instead of NAVSIM's full cached route polygon set.
 
 ### Equation comparison
 
@@ -1452,7 +1452,7 @@ $$
 #### Migrated Autoware DDC
 
 **Migrated Autoware inputs.** For the selected trajectory, the implementation builds
-evaluation points from trajectory poses and `RouteHandler` map queries:
+evaluation points from trajectory poses and local map-polygon membership queries:
 
 $$
 e_t^{aw} =
@@ -1472,19 +1472,27 @@ $$
 \end{cases}
 $$
 
-and:
+where the oncoming flag is determined from nearby route lane polygons around ego center:
 
 $$
 \mathrm{Oncoming}_t^{aw}
 =
-\neg\mathrm{isPoseInRouteLane}(\mathrm{pose}_t,\mathrm{RouteHandler}),
+\neg\mathrm{isPoseInRouteLanePolygon}(\mathrm{pose}_t,\mathrm{RouteHandler}),
 $$
+
+and the intersection flag is determined from nearby intersection lanelet polygons:
 
 $$
 \mathrm{Intersection}_t^{aw}
 =
 \mathrm{isPoseInIntersection}(\mathrm{pose}_t,\mathrm{RouteHandler}).
 $$
+
+Here, `isPoseInRouteLanePolygon(...)` searches lanelets in a local region around the ego
+center point, keeps only nearby route lanelets, and returns true iff the ego center is
+covered by at least one of those route lane polygons. Likewise,
+`isPoseInIntersection(...)` searches nearby lanelets and returns true iff the ego center
+is covered by an intersection lanelet polygon.
 
 Then:
 

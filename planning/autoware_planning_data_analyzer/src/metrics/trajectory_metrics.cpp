@@ -107,27 +107,6 @@ double calculate_ttc_between_points(
   return distance / relative_velocity;
 }
 
-bool is_pose_in_route_lane(
-  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
-{
-  if (!route_handler || !route_handler->isHandlerReady()) {
-    return false;
-  }
-
-  lanelet::ConstLanelet closest_lanelet;
-  if (route_handler->getClosestLaneletWithinRoute(pose, &closest_lanelet)) {
-    return true;
-  }
-
-  for (const auto & lanelet : route_handler->getRoadLaneletsAtPose(pose)) {
-    if (route_handler->isRouteLanelet(lanelet)) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
 }  // namespace
 
 TrajectoryPointMetrics calculate_trajectory_point_metrics(
@@ -211,7 +190,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       const auto & point = trajectory.points.at(i);
       driving_direction_evaluation_points.push_back(DrivingDirectionEvaluationPoint{
         rclcpp::Duration(point.time_from_start).seconds(), progress_m,
-        !is_pose_in_route_lane(point.pose, route_handler),
+        !is_pose_in_route_lane_polygon(point.pose, route_handler),
         is_pose_in_intersection(point.pose, route_handler)});
     }
 
