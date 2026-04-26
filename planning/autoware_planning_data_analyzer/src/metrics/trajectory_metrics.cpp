@@ -27,6 +27,7 @@
 #include <autoware/motion_utils/trajectory/trajectory.hpp>
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
 #include <autoware_utils_geometry/geometry.hpp>
+#include <boost/geometry.hpp>
 #include <tf2/LinearMath/Vector3.hpp>
 
 #include <algorithm>
@@ -46,6 +47,8 @@ using autoware::route_handler::RouteHandler;
 namespace
 {
 
+constexpr double kDDCAdmissibleLaneMarkerMarginM = 0.35;
+
 geometry_msgs::msg::Point to_msg_point(
   const geometry_msgs::msg::Point & point, const double z_offset = 0.0)
 {
@@ -55,10 +58,34 @@ geometry_msgs::msg::Point to_msg_point(
 }
 
 std::vector<geometry_msgs::msg::Point> lanelet_polygon_to_points(
-  const lanelet::ConstLanelet & lanelet, const double z)
+  const lanelet::ConstLanelet & lanelet, const double z, const double margin_m = 0.0)
 {
+  namespace bg = boost::geometry;
   std::vector<geometry_msgs::msg::Point> points;
+  autoware_utils_geometry::Polygon2d polygon;
   for (const auto & point : lanelet.polygon2d().basicPolygon()) {
+    polygon.outer().push_back({point.x(), point.y()});
+  }
+  bg::correct(polygon);
+
+  autoware_utils_geometry::Polygon2d visualization_polygon = polygon;
+  if (margin_m > 0.0) {
+    bg::model::multi_polygon<autoware_utils_geometry::Polygon2d> buffered;
+    bg::strategy::buffer::distance_symmetric<double> distance_strategy(margin_m);
+    bg::strategy::buffer::join_round join_strategy(16);
+    bg::strategy::buffer::end_round end_strategy(16);
+    bg::strategy::buffer::point_circle circle_strategy(16);
+    bg::strategy::buffer::side_straight side_strategy;
+    bg::buffer(
+      polygon, buffered, distance_strategy, side_strategy, join_strategy, end_strategy,
+      circle_strategy);
+    if (!buffered.empty()) {
+      visualization_polygon = buffered.front();
+      bg::correct(visualization_polygon);
+    }
+  }
+
+  for (const auto & point : visualization_polygon.outer()) {
     geometry_msgs::msg::Point msg;
     msg.x = point.x();
     msg.y = point.y();
@@ -224,8 +251,6 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   } else {
     std::vector<DrivingDirectionEvaluationPoint> driving_direction_evaluation_points;
     std::vector<DrivingDirectionLocalContext> driving_direction_contexts;
-    std::unordered_set<lanelet::Id> debug_route_lanelet_ids;
-    std::unordered_set<lanelet::Id> debug_intersection_area_ids;
     bool label_anchor_set = false;
     driving_direction_evaluation_points.reserve(num_points);
     driving_direction_contexts.reserve(num_points);
@@ -275,6 +300,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
         driving_direction_evaluation_points.at(i).progress_m,
         counted_progress_m,
         driving_direction_evaluation_points.at(i).in_oncoming_traffic,
+        context.in_lane_margin_only,
         driving_direction_evaluation_points.at(i).is_intersection,
         to_msg_point(point.pose.position, 0.05)});
 
@@ -289,17 +315,13 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
         label_anchor_set = true;
       }
       for (const auto & lanelet : context.route_lanelets) {
-        if (!debug_route_lanelet_ids.insert(lanelet.id()).second) {
-          continue;
-        }
         metrics.driving_direction_compliance_debug.route_lane_polygons.push_back(
           DrivingDirectionDebugPolygon{
-            time_s, lanelet_polygon_to_points(lanelet, point.pose.position.z + 0.02)});
+            time_s,
+            lanelet_polygon_to_points(
+              lanelet, point.pose.position.z + 0.02, kDDCAdmissibleLaneMarkerMarginM)});
       }
       for (const auto & polygon : context.intersection_areas) {
-        if (!debug_intersection_area_ids.insert(polygon.id()).second) {
-          continue;
-        }
         metrics.driving_direction_compliance_debug.intersection_lane_polygons.push_back(
           DrivingDirectionDebugPolygon{
             time_s, polygon_to_points(polygon, point.pose.position.z + 0.08)});

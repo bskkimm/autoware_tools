@@ -1496,6 +1496,134 @@ at least one of those local admissible polygons. Likewise, `isPoseInIntersection
 searches nearby map polygons whose type is `intersection_area` and returns true iff the
 ego center is covered by one of those intersection-area polygons.
 
+More concretely, let:
+
+$$
+\mathcal{L}_t^{route,seed,aw}
+=
+\mathrm{RouteLaneSeedsAtPose}(\mathrm{pose}_t),
+$$
+
+where `RouteLaneSeedsAtPose(...)` means the union of:
+
+- route lanelets returned by `getRoadLaneletsAtPose(...)`
+- the closest lanelet within route, if available
+
+Let:
+
+$$
+\mathcal{L}_t^{road,near,aw}
+=
+\mathrm{NearbyRoadLanelets}(\mathrm{pose}_t),
+\qquad
+\mathcal{L}_t^{shoulder,near,aw}
+=
+\mathrm{NearbyShoulderLanelets}(\mathrm{pose}_t).
+$$
+
+The migrated implementation then uses the lane direction at the first route seed as a
+local reference heading and keeps nearby polygons whose lane direction is sufficiently
+aligned with that heading. The admissible not-oncoming lane set is therefore:
+
+$$
+\mathcal{L}_t^{ddc,aw}
+=
+\mathcal{L}_t^{road,route,aw}
+\cup
+\mathcal{L}_t^{road,same\_dir,aw}
+\cup
+\mathcal{L}_t^{shoulder,same\_dir,aw},
+$$
+
+where:
+
+- $\mathcal{L}_t^{road,route,aw}$ are nearby road lanelets that `RouteHandler`
+  already classifies as route lanelets
+- $\mathcal{L}_t^{road,same\_dir,aw}$ are nearby non-route road lanelets whose
+  local lane angle is close to the route-seed direction
+- $\mathcal{L}_t^{shoulder,same\_dir,aw}$ are nearby `road_shoulder` lanelets whose
+  local lane angle is close to the route-seed direction
+
+Define:
+
+$$
+\mathrm{InAdmissibleLaneSet}_t^{aw}
+=
+\left[
+\sum_{\ell \in \mathcal{L}_t^{ddc,aw}}
+\mathbf{1}\left(p_t^{ego} \in \mathrm{polygon}(\ell)\right)
+> 0
+\right].
+$$
+
+Let the migrated DDC soft lane margin be:
+
+$$
+\varepsilon_{ddc}^{lane} = 0.35 \text{ m}.
+$$
+
+Define:
+
+$$
+\mathrm{NearAdmissibleLaneSet}_t^{aw}
+=
+\left[
+\min_{\ell \in \mathcal{L}_t^{ddc,aw}}
+\mathrm{dist}\left(p_t^{ego}, \mathrm{polygon}(\ell)\right)
+\le
+\varepsilon_{ddc}^{lane}
+\right].
+$$
+
+Then:
+
+$$
+\mathrm{Oncoming}_t^{aw}
+=
+\neg
+\left(
+\mathrm{InAdmissibleLaneSet}_t^{aw}
+\lor
+\mathrm{NearAdmissibleLaneSet}_t^{aw}
+\right).
+$$
+
+For intersection leniency, let:
+
+$$
+\mathcal{P}_t^{intersection,aw}
+=
+\mathrm{NearbyIntersectionAreaPolygons}(\mathrm{pose}_t),
+$$
+
+where the polygon type is `intersection_area`. Then:
+
+$$
+\mathrm{Intersection}_t^{aw}
+=
+\left[
+\sum_{q \in \mathcal{P}_t^{intersection,aw}}
+\mathbf{1}\left(p_t^{ego} \in \mathrm{polygon}(q)\right)
+> 0
+\right].
+$$
+
+**Currently included space.** The DDC admissible set currently includes:
+
+- nearby on-route road lanelets
+- nearby same-direction road lanelets, even if they are not tagged as route lanelets
+- nearby same-direction `road_shoulder` lanelets
+- a narrow `0.35 m` soft margin around those admitted road/shoulder polygons, so abrupt
+  same-direction lane-crossing and boundary-touching cases are not over-penalized
+- nearby `intersection_area` polygons for intersection leniency
+
+**Currently excluded space.** The DDC admissible set currently does **not** include:
+
+- wide painted separator / striped in-between space beyond the `0.35 m` soft margin, unless it is
+  explicitly encoded by the map as an admitted polygon or shoulder lanelet
+- arbitrary road-border-adjacent space from `road_border` lines alone
+- opposite-direction lanelets, even if spatially close
+
 Then:
 
 $$

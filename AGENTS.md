@@ -35,6 +35,10 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
 - Keep that report section aligned with the actual implementation and match the notation,
   display-math style, structure, and writing style already used by neighboring metric
   sections in the report.
+- When a subscore logic update changes which lanelets, polygons, or road-space categories
+  are admitted or excluded, explicitly document those admitted/excluded spaces in the
+  corresponding `implementation_report.md` section rather than only describing the
+  high-level score equation.
 - When an Autoware-side subscore implementation is modified and the corresponding
   debugging support is added or changed, run the full analyzer pipeline with
   `open_loop.enabled_metrics` expanded cumulatively to include all already-integrated

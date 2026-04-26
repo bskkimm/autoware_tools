@@ -44,6 +44,7 @@ namespace
 
 constexpr double kLocalLaneSearchRadiusM = 5.0;
 constexpr double kDirectionSimilarityThresholdRad = M_PI_4;
+constexpr double kAdmissibleLaneMarginM = 0.35;
 
 void append_unique_lanelet(
   const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelets & lanelets,
@@ -215,6 +216,15 @@ bool point_in_polygon(
 {
   namespace bg = boost::geometry;
   return bg::covered_by(point, to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()));
+}
+
+bool point_within_lanelet_margin(
+  const autoware_utils_geometry::Point2d & point, const lanelet::ConstLanelet & lanelet,
+  const double margin_m)
+{
+  namespace bg = boost::geometry;
+  const auto polygon = to_polygon_2d(lanelet.polygon2d().basicPolygon());
+  return bg::distance(point, polygon) <= margin_m;
 }
 
 lanelet::ConstLanelets collect_local_route_consistent_lanelets(
@@ -611,9 +621,15 @@ std::optional<DrivingDirectionLocalContext> compute_driving_direction_local_cont
   context.route_lanelets = collect_local_route_consistent_lanelets(pose, route_handler);
   context.intersection_areas = collect_local_intersection_areas(pose, route_handler);
 
-  context.in_route_lane_polygon = std::any_of(
+  const bool in_route_lane_polygon_exact = std::any_of(
     context.route_lanelets.begin(), context.route_lanelets.end(),
     [&search_point](const auto & lanelet) { return point_in_lanelet(search_point, lanelet); });
+  const bool in_route_lane_polygon_margin = std::any_of(
+    context.route_lanelets.begin(), context.route_lanelets.end(), [&search_point](const auto & lanelet) {
+      return point_within_lanelet_margin(search_point, lanelet, kAdmissibleLaneMarginM);
+    });
+  context.in_route_lane_polygon = in_route_lane_polygon_exact || in_route_lane_polygon_margin;
+  context.in_lane_margin_only = !in_route_lane_polygon_exact && in_route_lane_polygon_margin;
   context.in_intersection = std::any_of(
     context.intersection_areas.begin(), context.intersection_areas.end(),
     [&search_point](const auto & polygon) { return point_in_polygon(search_point, polygon); });

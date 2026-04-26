@@ -682,11 +682,17 @@ void write_ddc_debug_topics_to_bag(
       make_color(0.2F, 1.0F, 0.4F, 0.90F), 0.20, true, marker_lifetime_s, 0.22));
   }
 
+  const bool has_margin_only_sample = std::any_of(
+    debug_info.samples.begin(), debug_info.samples.end(),
+    [](const auto & sample) { return sample.in_lane_margin_only; });
   std::ostringstream label;
   label << "DDC=" << metrics.driving_direction_compliance << "\nmax=" << std::fixed
         << std::setprecision(2) << metrics.max_oncoming_progress_m << "m\nwindow=["
         << std::setprecision(1) << debug_info.worst_window_start_time_s << ", "
         << debug_info.worst_window_end_time_s << "]s";
+  if (has_margin_only_sample) {
+    label << "\nsoft lane margin used";
+  }
   labels.markers.push_back(make_text_marker(
     timestamp, "ddc_labels", 0, debug_info.label_anchor, label.str(),
     make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));

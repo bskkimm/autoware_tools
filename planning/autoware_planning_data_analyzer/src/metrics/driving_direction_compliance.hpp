@@ -62,6 +62,7 @@ struct DrivingDirectionDebugSample
   double progress_m{0.0};
   double counted_progress_m{0.0};
   bool in_oncoming_traffic{false};
+  bool in_lane_margin_only{false};
   bool is_intersection{false};
   geometry_msgs::msg::Point ego_center;
 };

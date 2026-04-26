@@ -95,6 +95,7 @@ struct TrajectoryFootprintEvaluation
 struct DrivingDirectionLocalContext
 {
   bool in_route_lane_polygon{false};
+  bool in_lane_margin_only{false};
   bool in_intersection{false};
   lanelet::ConstLanelets route_lanelets;
   std::vector<lanelet::ConstPolygon3d> intersection_areas;
