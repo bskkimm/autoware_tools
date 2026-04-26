@@ -35,6 +35,16 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
 - Keep that report section aligned with the actual implementation and match the notation,
   display-math style, structure, and writing style already used by neighboring metric
   sections in the report.
+- When an Autoware-side subscore implementation is modified and the corresponding
+  debugging support is added or changed, run the full analyzer pipeline with
+  `open_loop.enabled_metrics` expanded cumulatively to include all already-integrated
+  subscores plus the new one, unless the user explicitly asks for isolated validation.
+- After that accumulated run, verify that:
+  - the newly added subscore result topics are produced,
+  - the corresponding new debug topics are produced, and
+  - the previously integrated subscores still produce consistent results and debug topics.
+- The purpose of that accumulated run is to catch regressions where a new subscore or
+  debug path breaks existing subscores.
 - When patching equations in `implementation_report.md`, prefer the subset of math that
   actually renders cleanly in the user's Markdown preview. If preview rendering is mixed,
   do not broadly rewrite unrelated equations. Patch only the failing expressions and
