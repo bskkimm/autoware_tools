@@ -71,6 +71,23 @@ std::vector<geometry_msgs::msg::Point> lanelet_polygon_to_points(
   return points;
 }
 
+std::vector<geometry_msgs::msg::Point> polygon_to_points(
+  const lanelet::ConstPolygon3d & polygon, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  for (const auto & point : lanelet::utils::to2D(polygon).basicPolygon()) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  if (!points.empty()) {
+    points.push_back(points.front());
+  }
+  return points;
+}
+
 /**
  * @brief Get velocity in world coordinate frame from trajectory point
  * Reference: autoware_trajectory_ranker/src/metrics/metrics_utils.cpp
@@ -208,7 +225,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     std::vector<DrivingDirectionEvaluationPoint> driving_direction_evaluation_points;
     std::vector<DrivingDirectionLocalContext> driving_direction_contexts;
     std::unordered_set<lanelet::Id> debug_route_lanelet_ids;
-    std::unordered_set<lanelet::Id> debug_intersection_lanelet_ids;
+    std::unordered_set<lanelet::Id> debug_intersection_area_ids;
     bool label_anchor_set = false;
     driving_direction_evaluation_points.reserve(num_points);
     driving_direction_contexts.reserve(num_points);
@@ -279,13 +296,13 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
           DrivingDirectionDebugPolygon{
             time_s, lanelet_polygon_to_points(lanelet, point.pose.position.z + 0.02)});
       }
-      for (const auto & lanelet : context.intersection_lanelets) {
-        if (!debug_intersection_lanelet_ids.insert(lanelet.id()).second) {
+      for (const auto & polygon : context.intersection_areas) {
+        if (!debug_intersection_area_ids.insert(polygon.id()).second) {
           continue;
         }
         metrics.driving_direction_compliance_debug.intersection_lane_polygons.push_back(
           DrivingDirectionDebugPolygon{
-            time_s, lanelet_polygon_to_points(lanelet, point.pose.position.z + 0.04)});
+            time_s, polygon_to_points(polygon, point.pose.position.z + 0.08)});
       }
     }
   }

@@ -97,7 +97,7 @@ struct DrivingDirectionLocalContext
   bool in_route_lane_polygon{false};
   bool in_intersection{false};
   lanelet::ConstLanelets route_lanelets;
-  lanelet::ConstLanelets intersection_lanelets;
+  std::vector<lanelet::ConstPolygon3d> intersection_areas;
 };
 
 bool is_vehicle_info_valid(const autoware::vehicle_info_utils::VehicleInfo & vehicle_info);

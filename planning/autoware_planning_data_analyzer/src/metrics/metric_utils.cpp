@@ -16,6 +16,7 @@
 
 #include <autoware/lanelet2_utils/intersection.hpp>
 #include <autoware/object_recognition_utils/object_classification.hpp>
+#include <autoware_lanelet2_extension/utility/utilities.hpp>
 #include <autoware_utils_geometry/boost_polygon_utils.hpp>
 #include <autoware_utils_geometry/geometry.hpp>
 
@@ -42,6 +43,7 @@ namespace
 {
 
 constexpr double kLocalLaneSearchRadiusM = 5.0;
+constexpr double kDirectionSimilarityThresholdRad = M_PI_4;
 
 void append_unique_lanelet(
   const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelets & lanelets,
@@ -49,6 +51,15 @@ void append_unique_lanelet(
 {
   if (seen_ids.insert(lanelet.id()).second) {
     lanelets.push_back(lanelet);
+  }
+}
+
+void append_unique_polygon(
+  const lanelet::ConstPolygon3d & polygon, std::vector<lanelet::ConstPolygon3d> & polygons,
+  std::unordered_set<lanelet::Id> & seen_ids)
+{
+  if (seen_ids.insert(polygon.id()).second) {
+    polygons.push_back(polygon);
   }
 }
 
@@ -197,6 +208,98 @@ bool point_in_parking_lot(
 {
   namespace bg = boost::geometry;
   return bg::covered_by(point, to_polygon_2d(lanelet::utils::to2D(parking_lot).basicPolygon()));
+}
+
+bool point_in_polygon(
+  const autoware_utils_geometry::Point2d & point, const lanelet::ConstPolygon3d & polygon)
+{
+  namespace bg = boost::geometry;
+  return bg::covered_by(point, to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()));
+}
+
+lanelet::ConstLanelets collect_local_route_consistent_lanelets(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
+{
+  lanelet::ConstLanelets local_lanelets;
+  if (!route_handler || !route_handler->isHandlerReady()) {
+    return local_lanelets;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  const auto nearby_bbox = point_bounding_box(pose.position);
+  std::unordered_set<lanelet::Id> nearby_road_lanelet_ids;
+  std::unordered_set<lanelet::Id> nearby_shoulder_lanelet_ids;
+  lanelet::ConstLanelets nearby_road_lanelets;
+  lanelet::ConstLanelets nearby_shoulder_lanelets;
+  for (const auto & lanelet : map->laneletLayer.search(nearby_bbox)) {
+    if (route_handler->isRoadLanelet(lanelet)) {
+      append_unique_lanelet(lanelet, nearby_road_lanelets, nearby_road_lanelet_ids);
+    } else if (route_handler->isShoulderLanelet(lanelet)) {
+      append_unique_lanelet(lanelet, nearby_shoulder_lanelets, nearby_shoulder_lanelet_ids);
+    }
+  }
+
+  lanelet::ConstLanelets seed_lanelets;
+  std::unordered_set<lanelet::Id> seed_ids;
+  for (const auto & lanelet : route_handler->getRoadLaneletsAtPose(pose)) {
+    if (route_handler->isRouteLanelet(lanelet)) {
+      append_unique_lanelet(lanelet, seed_lanelets, seed_ids);
+    }
+  }
+  lanelet::ConstLanelet closest_route_lanelet;
+  if (route_handler->getClosestLaneletWithinRoute(pose, &closest_route_lanelet)) {
+    append_unique_lanelet(closest_route_lanelet, seed_lanelets, seed_ids);
+  }
+
+  if (seed_lanelets.empty()) {
+    return local_lanelets;
+  }
+
+  const double reference_yaw = lanelet::utils::getLaneletAngle(seed_lanelets.front(), pose.position);
+  std::unordered_set<lanelet::Id> local_lanelet_ids;
+  for (const auto & lanelet : nearby_road_lanelets) {
+    const bool on_route = route_handler->isRouteLanelet(lanelet);
+    const double lanelet_yaw = lanelet::utils::getLaneletAngle(lanelet, pose.position);
+    const bool same_direction =
+      std::abs(normalize_angle(lanelet_yaw - reference_yaw)) <= kDirectionSimilarityThresholdRad;
+    if (!on_route && !same_direction) {
+      continue;
+    }
+    append_unique_lanelet(lanelet, local_lanelets, local_lanelet_ids);
+  }
+
+  for (const auto & shoulder_lanelet : nearby_shoulder_lanelets) {
+    const double shoulder_yaw = lanelet::utils::getLaneletAngle(shoulder_lanelet, pose.position);
+    const bool same_direction =
+      std::abs(normalize_angle(shoulder_yaw - reference_yaw)) <= kDirectionSimilarityThresholdRad;
+    if (!same_direction) {
+      continue;
+    }
+    append_unique_lanelet(shoulder_lanelet, local_lanelets, local_lanelet_ids);
+  }
+
+  return local_lanelets;
+}
+
+std::vector<lanelet::ConstPolygon3d> collect_local_intersection_areas(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
+{
+  std::vector<lanelet::ConstPolygon3d> intersection_areas;
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return intersection_areas;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  std::unordered_set<lanelet::Id> seen_ids;
+  for (const auto & polygon : map->polygonLayer.search(point_bounding_box(pose.position))) {
+    const std::string type = polygon.attributeOr(lanelet::AttributeName::Type, "none");
+    if (type != "intersection_area") {
+      continue;
+    }
+    append_unique_polygon(polygon, intersection_areas, seen_ids);
+  }
+
+  return intersection_areas;
 }
 
 bool detect_multiple_lanes(
@@ -503,28 +606,28 @@ std::optional<DrivingDirectionLocalContext> compute_driving_direction_local_cont
     return std::nullopt;
   }
 
-  const auto map = route_handler->getLaneletMapPtr();
   const autoware_utils_geometry::Point2d search_point{pose.position.x, pose.position.y};
-  std::unordered_set<lanelet::Id> route_ids;
-  std::unordered_set<lanelet::Id> intersection_ids;
   DrivingDirectionLocalContext context;
-  for (const auto & lanelet : map->laneletLayer.search(point_bounding_box(pose.position))) {
-    if (!point_in_lanelet(search_point, lanelet)) {
-      continue;
-    }
+  context.route_lanelets = collect_local_route_consistent_lanelets(pose, route_handler);
+  context.intersection_areas = collect_local_intersection_areas(pose, route_handler);
 
-    if (route_handler->isRouteLanelet(lanelet) && route_ids.insert(lanelet.id()).second) {
-      context.route_lanelets.push_back(lanelet);
-    }
-    if (
-      autoware::experimental::lanelet2_utils::is_intersection_lanelet(lanelet) &&
-      intersection_ids.insert(lanelet.id()).second) {
-      context.intersection_lanelets.push_back(lanelet);
+  context.in_route_lane_polygon = std::any_of(
+    context.route_lanelets.begin(), context.route_lanelets.end(),
+    [&search_point](const auto & lanelet) { return point_in_lanelet(search_point, lanelet); });
+  context.in_intersection = std::any_of(
+    context.intersection_areas.begin(), context.intersection_areas.end(),
+    [&search_point](const auto & polygon) { return point_in_polygon(search_point, polygon); });
+
+  if (!context.in_intersection) {
+    for (const auto & lanelet : context.route_lanelets) {
+      if (
+        autoware::experimental::lanelet2_utils::is_intersection_lanelet(lanelet) &&
+        point_in_lanelet(search_point, lanelet)) {
+        context.in_intersection = true;
+        break;
+      }
     }
   }
-
-  context.in_route_lane_polygon = !context.route_lanelets.empty();
-  context.in_intersection = !context.intersection_lanelets.empty();
   return context;
 }
 

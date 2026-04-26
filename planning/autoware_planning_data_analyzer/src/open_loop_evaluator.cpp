@@ -672,14 +672,14 @@ void write_ddc_debug_topics_to_bag(
   for (const auto & polygon : debug_info.route_lane_polygons) {
     route_lane_polygons.markers.push_back(make_line_strip_marker(
       timestamp, "ddc_route_lane_polygons", marker_id++, polygon.polygon,
-      make_color(0.0F, 0.9F, 1.0F, 0.7F), 0.10, true, marker_lifetime_s, 0.02));
+      make_color(0.0F, 0.9F, 1.0F, 0.85F), 0.18, true, marker_lifetime_s, 0.16));
   }
 
   marker_id = 0;
   for (const auto & polygon : debug_info.intersection_lane_polygons) {
     intersection_lane_polygons.markers.push_back(make_line_strip_marker(
       timestamp, "ddc_intersection_lane_polygons", marker_id++, polygon.polygon,
-      make_color(0.2F, 1.0F, 0.4F, 0.7F), 0.10, true, marker_lifetime_s, 0.04));
+      make_color(0.2F, 1.0F, 0.4F, 0.90F), 0.20, true, marker_lifetime_s, 0.22));
   }
 
   std::ostringstream label;

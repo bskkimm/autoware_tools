@@ -1472,7 +1472,8 @@ $$
 \end{cases}
 $$
 
-where the oncoming flag is determined from nearby route lane polygons around ego center:
+where the oncoming flag is determined from local route-consistent drivable polygons
+around ego center:
 
 $$
 \mathrm{Oncoming}_t^{aw}
@@ -1480,7 +1481,7 @@ $$
 \neg\mathrm{isPoseInRouteLanePolygon}(\mathrm{pose}_t,\mathrm{RouteHandler}),
 $$
 
-and the intersection flag is determined from nearby intersection lanelet polygons:
+and the intersection flag is determined from nearby `intersection_area` polygons:
 
 $$
 \mathrm{Intersection}_t^{aw}
@@ -1488,11 +1489,12 @@ $$
 \mathrm{isPoseInIntersection}(\mathrm{pose}_t,\mathrm{RouteHandler}).
 $$
 
-Here, `isPoseInRouteLanePolygon(...)` searches lanelets in a local region around the ego
-center point, keeps only nearby route lanelets, and returns true iff the ego center is
-covered by at least one of those route lane polygons. Likewise,
-`isPoseInIntersection(...)` searches nearby lanelets and returns true iff the ego center
-is covered by an intersection lanelet polygon.
+Here, `isPoseInRouteLanePolygon(...)` searches a local region around the ego center,
+starts from nearby route lanelets, expands to same-direction neighboring lanes, includes
+adjacent shoulder lanelets when present, and returns true iff the ego center is covered by
+at least one of those local admissible polygons. Likewise, `isPoseInIntersection(...)`
+searches nearby map polygons whose type is `intersection_area` and returns true iff the
+ego center is covered by one of those intersection-area polygons.
 
 Then:
 
@@ -1528,12 +1530,15 @@ $$
 $$
 
 **Main input gap.** The thresholding shape is close to NAVSIM, but the migrated
-implementation derives oncoming/intersection flags from Autoware route-lanelet
-queries at selected trajectory poses rather than NAVSIM's cached map-index arrays.
+implementation still uses local Autoware map queries around the selected trajectory poses
+instead of NAVSIM's cached global polygon-index arrays. The semantic shape now matches
+NAVSIM more closely because both `Oncoming` and `Intersection` are center-point membership
+tests against polygonal admissible areas.
 
 ### Assessment
 
-DDC is one of the **closest ports** in the migration. The math is the same; the main deviation is the Autoware route/oncoming classifier.
+DDC is one of the **closest ports** in the migration. The math is the same; the remaining
+deviation is mainly how the local Autoware admissible polygons are assembled around ego.
 
 ---
 

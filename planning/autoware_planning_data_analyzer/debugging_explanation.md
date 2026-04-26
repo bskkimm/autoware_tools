@@ -397,8 +397,8 @@ DDC debugging should answer:
 | `/debug/ddc/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DDC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DDC violation list. |
 | `/debug/ddc/ego_centers` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego-center polyline for the evaluated rollout. |
 | `/debug/ddc/oncoming_segments` | `visualization_msgs/msg/MarkerArray` | The ego-center segments whose progress counted toward wrong-way accumulation. |
-| `/debug/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-lane polygons used by the DDC center-point route-membership check inside the worst 1.0 s window. |
-| `/debug/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby intersection lanelet polygons used by the DDC intersection leniency check inside the worst 1.0 s window. |
+| `/debug/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-consistent admissible lane polygons used by the DDC center-point oncoming check inside the worst 1.0 s window. This historical topic name now also covers same-direction neighboring lanes and adjacent shoulders when they are part of the local admissible corridor. |
+| `/debug/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby `intersection_area` polygons used by the DDC intersection leniency check inside the worst 1.0 s window. The topic name is historical, but the markers now represent map intersection-area polygons rather than only turn-direction-tagged lanelets. |
 | `/debug/ddc/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DDC labels such as score, max wrong-way progress, and worst-window bounds. |
 
 The official metric topics still carry the scalar result:
@@ -451,8 +451,8 @@ Recommended interpretation:
 |---|---|
 | `/debug/ddc/ego_centers` | Ego-center path over the full evaluated horizon. |
 | `/debug/ddc/oncoming_segments` | Only the centerline segments that contributed to wrong-way accumulation because `Oncoming && !Intersection` held there. |
-| `/debug/ddc/route_lane_polygons` | Nearby route-lane polygons that counted as on-route in the worst 1.0 s window. |
-| `/debug/ddc/intersection_lane_polygons` | Nearby intersection lanelet polygons that granted intersection leniency in the worst 1.0 s window. |
+| `/debug/ddc/route_lane_polygons` | Nearby route-consistent admissible lane polygons that counted as not-oncoming in the worst 1.0 s window. This can include same-direction neighboring lanes and adjacent shoulders. |
+| `/debug/ddc/intersection_lane_polygons` | Nearby `intersection_area` polygons that granted intersection leniency in the worst 1.0 s window. |
 | `/debug/ddc/labels` | Human-readable DDC summary label. |
 
 Suggested visual semantics:
@@ -508,8 +508,8 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 Then each click jumps to the planner output time and shows:
 
 - the ego-center path over the evaluated horizon
-- the local route-lane polygons used to decide whether ego center was on-route
-- the local intersection polygons used to suppress accumulation
+- the local route-consistent admissible lane polygons used to decide whether ego center was oncoming
+- the local `intersection_area` polygons used to suppress accumulation
 - the exact centerline segments that counted toward the worst 1.0 s wrong-way window
 
 ## 2D Camera Overlay
