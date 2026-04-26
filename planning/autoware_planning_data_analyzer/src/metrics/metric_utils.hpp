@@ -92,6 +92,14 @@ struct TrajectoryFootprintEvaluation
   std::optional<EgoAreaEvaluation> ego_area_evaluation;
 };
 
+struct DrivingDirectionLocalContext
+{
+  bool in_route_lane_polygon{false};
+  bool in_intersection{false};
+  lanelet::ConstLanelets route_lanelets;
+  lanelet::ConstLanelets intersection_lanelets;
+};
+
 bool is_vehicle_info_valid(const autoware::vehicle_info_utils::VehicleInfo & vehicle_info);
 
 double get_yaw(const geometry_msgs::msg::Quaternion & orientation);
@@ -127,6 +135,9 @@ bool is_pose_in_intersection(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
 
 bool is_pose_in_route_lane_polygon(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
+
+std::optional<DrivingDirectionLocalContext> compute_driving_direction_local_context(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
 
 double forward_offset_in_ego_frame(

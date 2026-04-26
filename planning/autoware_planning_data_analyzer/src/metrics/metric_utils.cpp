@@ -485,40 +485,47 @@ autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineSt
 bool is_pose_in_intersection(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
 {
-  if (!route_handler || !route_handler->isMapMsgReady()) {
-    return false;
-  }
-
-  const auto map = route_handler->getLaneletMapPtr();
-  const autoware_utils_geometry::Point2d search_point{pose.position.x, pose.position.y};
-  for (const auto & lanelet : map->laneletLayer.search(point_bounding_box(pose.position))) {
-    if (
-      autoware::experimental::lanelet2_utils::is_intersection_lanelet(lanelet) &&
-      point_in_lanelet(search_point, lanelet)) {
-      return true;
-    }
-  }
-  return false;
+  const auto context = compute_driving_direction_local_context(pose, route_handler);
+  return context.has_value() && context->in_intersection;
 }
 
 bool is_pose_in_route_lane_polygon(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
 {
+  const auto context = compute_driving_direction_local_context(pose, route_handler);
+  return context.has_value() && context->in_route_lane_polygon;
+}
+
+std::optional<DrivingDirectionLocalContext> compute_driving_direction_local_context(
+  const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler)
+{
   if (!route_handler || !route_handler->isMapMsgReady()) {
-    return false;
+    return std::nullopt;
   }
 
   const auto map = route_handler->getLaneletMapPtr();
   const autoware_utils_geometry::Point2d search_point{pose.position.x, pose.position.y};
+  std::unordered_set<lanelet::Id> route_ids;
+  std::unordered_set<lanelet::Id> intersection_ids;
+  DrivingDirectionLocalContext context;
   for (const auto & lanelet : map->laneletLayer.search(point_bounding_box(pose.position))) {
-    if (!route_handler->isRouteLanelet(lanelet)) {
+    if (!point_in_lanelet(search_point, lanelet)) {
       continue;
     }
-    if (point_in_lanelet(search_point, lanelet)) {
-      return true;
+
+    if (route_handler->isRouteLanelet(lanelet) && route_ids.insert(lanelet.id()).second) {
+      context.route_lanelets.push_back(lanelet);
+    }
+    if (
+      autoware::experimental::lanelet2_utils::is_intersection_lanelet(lanelet) &&
+      intersection_ids.insert(lanelet.id()).second) {
+      context.intersection_lanelets.push_back(lanelet);
     }
   }
-  return false;
+
+  context.in_route_lane_polygon = !context.route_lanelets.empty();
+  context.in_intersection = !context.intersection_lanelets.empty();
+  return context;
 }
 
 double forward_offset_in_ego_frame(

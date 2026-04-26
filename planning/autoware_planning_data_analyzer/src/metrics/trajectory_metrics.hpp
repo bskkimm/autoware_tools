@@ -96,6 +96,7 @@ struct TrajectoryPointMetrics
   bool driving_direction_compliance_available{false};
   std::string driving_direction_compliance_reason{"unavailable"};
   double max_oncoming_progress_m{0.0};
+  DrivingDirectionComplianceDebugInfo driving_direction_compliance_debug;
   double traffic_light_compliance{0.0};
   bool traffic_light_compliance_available{false};
   std::string traffic_light_compliance_reason{"unavailable"};

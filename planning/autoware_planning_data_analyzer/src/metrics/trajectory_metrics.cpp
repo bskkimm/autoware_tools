@@ -35,6 +35,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
@@ -44,6 +45,31 @@ using autoware::route_handler::RouteHandler;
 
 namespace
 {
+
+geometry_msgs::msg::Point to_msg_point(
+  const geometry_msgs::msg::Point & point, const double z_offset = 0.0)
+{
+  auto msg = point;
+  msg.z += z_offset;
+  return msg;
+}
+
+std::vector<geometry_msgs::msg::Point> lanelet_polygon_to_points(
+  const lanelet::ConstLanelet & lanelet, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  for (const auto & point : lanelet.polygon2d().basicPolygon()) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  if (!points.empty()) {
+    points.push_back(points.front());
+  }
+  return points;
+}
 
 /**
  * @brief Get velocity in world coordinate frame from trajectory point
@@ -180,7 +206,12 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     metrics.driving_direction_compliance_reason = "unavailable_route_handler_not_ready";
   } else {
     std::vector<DrivingDirectionEvaluationPoint> driving_direction_evaluation_points;
+    std::vector<DrivingDirectionLocalContext> driving_direction_contexts;
+    std::unordered_set<lanelet::Id> debug_route_lanelet_ids;
+    std::unordered_set<lanelet::Id> debug_intersection_lanelet_ids;
+    bool label_anchor_set = false;
     driving_direction_evaluation_points.reserve(num_points);
+    driving_direction_contexts.reserve(num_points);
     for (size_t i = 0; i < num_points; ++i) {
       double progress_m = 0.0;
       if (i > 0) {
@@ -188,10 +219,13 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
           trajectory.points.at(i - 1).pose.position, trajectory.points.at(i).pose.position);
       }
       const auto & point = trajectory.points.at(i);
+      const auto local_context =
+        compute_driving_direction_local_context(point.pose, route_handler).value_or(
+          DrivingDirectionLocalContext{});
       driving_direction_evaluation_points.push_back(DrivingDirectionEvaluationPoint{
         rclcpp::Duration(point.time_from_start).seconds(), progress_m,
-        !is_pose_in_route_lane_polygon(point.pose, route_handler),
-        is_pose_in_intersection(point.pose, route_handler)});
+        !local_context.in_route_lane_polygon, local_context.in_intersection});
+      driving_direction_contexts.push_back(local_context);
     }
 
     const auto ddc_result = calculate_driving_direction_compliance(
@@ -200,6 +234,60 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     metrics.driving_direction_compliance_available = ddc_result.available;
     metrics.driving_direction_compliance_reason = ddc_result.reason;
     metrics.max_oncoming_progress_m = ddc_result.max_oncoming_progress_m;
+    metrics.driving_direction_compliance_debug.worst_window_start_time_s =
+      ddc_result.worst_window_start_time_s;
+    metrics.driving_direction_compliance_debug.worst_window_end_time_s =
+      ddc_result.worst_window_end_time_s;
+    metrics.driving_direction_compliance_debug.worst_window_sample_count =
+      ddc_result.worst_window_sample_count;
+    metrics.driving_direction_compliance_debug.window_progress_m =
+      ddc_result.max_oncoming_progress_m;
+
+    for (size_t i = 0; i < num_points; ++i) {
+      const auto & point = trajectory.points.at(i);
+      const auto & context = driving_direction_contexts.at(i);
+      const auto time_s = rclcpp::Duration(point.time_from_start).seconds();
+      const auto counted_progress_m =
+        driving_direction_evaluation_points.at(i).in_oncoming_traffic &&
+            !driving_direction_evaluation_points.at(i).is_intersection
+          ? std::max(0.0, driving_direction_evaluation_points.at(i).progress_m)
+          : 0.0;
+
+      metrics.driving_direction_compliance_debug.samples.push_back(DrivingDirectionDebugSample{
+        time_s,
+        driving_direction_evaluation_points.at(i).progress_m,
+        counted_progress_m,
+        driving_direction_evaluation_points.at(i).in_oncoming_traffic,
+        driving_direction_evaluation_points.at(i).is_intersection,
+        to_msg_point(point.pose.position, 0.05)});
+
+      const bool in_worst_window =
+        time_s + 1.0e-6 >= ddc_result.worst_window_start_time_s &&
+        time_s <= ddc_result.worst_window_end_time_s + 1.0e-6;
+      if (!in_worst_window) {
+        continue;
+      }
+      if (!label_anchor_set) {
+        metrics.driving_direction_compliance_debug.label_anchor = to_msg_point(point.pose.position, 0.35);
+        label_anchor_set = true;
+      }
+      for (const auto & lanelet : context.route_lanelets) {
+        if (!debug_route_lanelet_ids.insert(lanelet.id()).second) {
+          continue;
+        }
+        metrics.driving_direction_compliance_debug.route_lane_polygons.push_back(
+          DrivingDirectionDebugPolygon{
+            time_s, lanelet_polygon_to_points(lanelet, point.pose.position.z + 0.02)});
+      }
+      for (const auto & lanelet : context.intersection_lanelets) {
+        if (!debug_intersection_lanelet_ids.insert(lanelet.id()).second) {
+          continue;
+        }
+        metrics.driving_direction_compliance_debug.intersection_lane_polygons.push_back(
+          DrivingDirectionDebugPolygon{
+            time_s, lanelet_polygon_to_points(lanelet, point.pose.position.z + 0.04)});
+      }
+    }
   }
 
   if (!enabled_metrics.drivable_area_compliance) {

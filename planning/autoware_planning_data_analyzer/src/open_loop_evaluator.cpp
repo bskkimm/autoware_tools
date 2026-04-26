@@ -191,6 +191,11 @@ std::string dac_debug_topic(const std::string & topic_name)
   return "/debug/dac/" + topic_name;
 }
 
+std::string ddc_debug_topic(const std::string & topic_name)
+{
+  return "/debug/ddc/" + topic_name;
+}
+
 std_msgs::msg::ColorRGBA make_color(
   const float red, const float green, const float blue, const float alpha = 1.0F)
 {
@@ -324,6 +329,11 @@ bool should_write_dac_debug(const metrics::TrajectoryPointMetrics & metrics)
   return metrics.drivable_area_compliance_available && metrics.drivable_area_compliance < 1.0;
 }
 
+bool should_write_ddc_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return metrics.driving_direction_compliance_available && metrics.driving_direction_compliance < 1.0;
+}
+
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
 {
@@ -440,6 +450,21 @@ nlohmann::json nc_debug_summary_to_json(
     {"worst_collision_type", worst_event ? worst_event->collision_type : "NONE"},
     {"objects", std::move(objects)},
     {"events", std::move(events)}};
+}
+
+nlohmann::json ddc_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::DrivingDirectionComplianceDebugInfo & debug_info, const rclcpp::Time & timestamp)
+{
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.driving_direction_compliance},
+    {"reason", metrics.driving_direction_compliance_reason},
+    {"max_oncoming_progress_m", metrics.max_oncoming_progress_m},
+    {"worst_window_start_s", debug_info.worst_window_start_time_s},
+    {"worst_window_end_s", debug_info.worst_window_end_time_s},
+    {"window_progress_m", debug_info.window_progress_m},
+    {"sample_count", debug_info.worst_window_sample_count}};
 }
 
 void write_nc_debug_topics_to_bag(
@@ -592,6 +617,86 @@ void write_dac_debug_topics_to_bag(
     admissible_parking_areas, dac_debug_topic("admissible_parking_areas"), timestamp);
   bag_writer.write(failing_corners, dac_debug_topic("failing_corners"), timestamp);
   bag_writer.write(labels, dac_debug_topic("labels"), timestamp);
+}
+
+void write_ddc_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_ddc_debug(metrics)) {
+    return;
+  }
+
+  const auto & debug_info = metrics.driving_direction_compliance_debug;
+  if (debug_info.samples.empty()) {
+    return;
+  }
+
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = ddc_debug_summary_to_json(metrics, debug_info, timestamp).dump();
+  bag_writer.write(summary_msg, ddc_debug_topic("violation_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray ego_centers;
+  visualization_msgs::msg::MarkerArray oncoming_segments;
+  visualization_msgs::msg::MarkerArray route_lane_polygons;
+  visualization_msgs::msg::MarkerArray intersection_lane_polygons;
+  visualization_msgs::msg::MarkerArray labels;
+  ego_centers.markers.push_back(make_delete_all_marker(timestamp));
+  oncoming_segments.markers.push_back(make_delete_all_marker(timestamp));
+  route_lane_polygons.markers.push_back(make_delete_all_marker(timestamp));
+  intersection_lane_polygons.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  std::vector<geometry_msgs::msg::Point> center_points;
+  center_points.reserve(debug_info.samples.size());
+  int32_t marker_id = 0;
+  for (std::size_t index = 0; index < debug_info.samples.size(); ++index) {
+    const auto & sample = debug_info.samples.at(index);
+    center_points.push_back(sample.ego_center);
+    if (index == 0U || sample.counted_progress_m <= 0.0) {
+      continue;
+    }
+    oncoming_segments.markers.push_back(make_line_strip_marker(
+      timestamp, "ddc_oncoming_segments", marker_id++,
+      {debug_info.samples.at(index - 1).ego_center, sample.ego_center},
+      make_color(1.0F, 0.35F, 0.0F, 1.0F), 0.18, false, marker_lifetime_s, 0.12));
+  }
+
+  if (center_points.size() >= 2U) {
+    ego_centers.markers.push_back(make_line_strip_marker(
+      timestamp, "ddc_ego_centers", 0, center_points, make_color(0.0F, 0.8F, 1.0F, 0.8F), 0.12,
+      false, marker_lifetime_s, 0.08));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.route_lane_polygons) {
+    route_lane_polygons.markers.push_back(make_line_strip_marker(
+      timestamp, "ddc_route_lane_polygons", marker_id++, polygon.polygon,
+      make_color(0.0F, 0.9F, 1.0F, 0.7F), 0.10, true, marker_lifetime_s, 0.02));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.intersection_lane_polygons) {
+    intersection_lane_polygons.markers.push_back(make_line_strip_marker(
+      timestamp, "ddc_intersection_lane_polygons", marker_id++, polygon.polygon,
+      make_color(0.2F, 1.0F, 0.4F, 0.7F), 0.10, true, marker_lifetime_s, 0.04));
+  }
+
+  std::ostringstream label;
+  label << "DDC=" << metrics.driving_direction_compliance << "\nmax=" << std::fixed
+        << std::setprecision(2) << metrics.max_oncoming_progress_m << "m\nwindow=["
+        << std::setprecision(1) << debug_info.worst_window_start_time_s << ", "
+        << debug_info.worst_window_end_time_s << "]s";
+  labels.markers.push_back(make_text_marker(
+    timestamp, "ddc_labels", 0, debug_info.label_anchor, label.str(),
+    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+
+  bag_writer.write(ego_centers, ddc_debug_topic("ego_centers"), timestamp);
+  bag_writer.write(oncoming_segments, ddc_debug_topic("oncoming_segments"), timestamp);
+  bag_writer.write(route_lane_polygons, ddc_debug_topic("route_lane_polygons"), timestamp);
+  bag_writer.write(
+    intersection_lane_polygons, ddc_debug_topic("intersection_lane_polygons"), timestamp);
+  bag_writer.write(labels, ddc_debug_topic("labels"), timestamp);
 }
 
 std::string normalize_metric_name(std::string name)
@@ -1994,6 +2099,10 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     write_dac_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.driving_direction_compliance) {
+    write_ddc_debug_topics_to_bag(
+      metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 std::string OpenLoopEvaluator::metric_topic(const std::string & metric_name) const
@@ -2820,6 +2929,13 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("max_oncoming_progress_m"), "std_msgs/msg/Float64");
     add_topic(metric_topic("driving_direction_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("driving_direction_compliance_reason"), "std_msgs/msg/String");
+    add_topic(ddc_debug_topic("violation_summary"), "std_msgs/msg/String");
+    add_topic(ddc_debug_topic("ego_centers"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ddc_debug_topic("oncoming_segments"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ddc_debug_topic("route_lane_polygons"), "visualization_msgs/msg/MarkerArray");
+    add_topic(
+      ddc_debug_topic("intersection_lane_polygons"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ddc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.traffic_light_compliance) {
     add_topic(metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64");

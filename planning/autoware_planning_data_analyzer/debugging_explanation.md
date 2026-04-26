@@ -379,6 +379,139 @@ the admissible drivable area, and the 3D view shows exactly which corner left wh
 candidate area set.
 trajectory was generated, and the map shows the full 4 s future polygon evidence.
 
+# DDC Debugging
+
+## Intent
+
+DDC debugging should answer:
+
+1. Which evaluated trajectory had non-perfect DDC?
+2. Which local route-lane polygons were considered on-route near ego center?
+3. Which local intersection polygons suppressed wrong-way accumulation?
+4. Which centerline segments actually counted toward the 1.0 s wrong-way window?
+
+## Debug Topics
+
+| Topic | Message type | Purpose |
+|---|---|---|
+| `/debug/ddc/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DDC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DDC violation list. |
+| `/debug/ddc/ego_centers` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego-center polyline for the evaluated rollout. |
+| `/debug/ddc/oncoming_segments` | `visualization_msgs/msg/MarkerArray` | The ego-center segments whose progress counted toward wrong-way accumulation. |
+| `/debug/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-lane polygons used by the DDC center-point route-membership check inside the worst 1.0 s window. |
+| `/debug/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby intersection lanelet polygons used by the DDC intersection leniency check inside the worst 1.0 s window. |
+| `/debug/ddc/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DDC labels such as score, max wrong-way progress, and worst-window bounds. |
+
+The official metric topics still carry the scalar result:
+
+| Topic | Message type | Purpose |
+|---|---|---|
+| `/open_loop/metrics/<variant>/driving_direction_compliance` | `std_msgs/msg/Float64` | Final DDC score. |
+| `/open_loop/metrics/<variant>/max_oncoming_progress_m` | `std_msgs/msg/Float64` | Maximum accumulated wrong-way progress over the worst 1.0 s window. |
+| `/open_loop/metrics/<variant>/driving_direction_compliance_available` | `std_msgs/msg/Bool` | Metric availability. |
+| `/open_loop/metrics/<variant>/driving_direction_compliance_reason` | `std_msgs/msg/String` | Final DDC reason. |
+
+## DDC Summary JSON
+
+`/debug/ddc/violation_summary` is published only for evaluated trajectories whose DDC
+score is below `1.0`.
+
+Example:
+
+```json
+{
+  "trajectory_stamp_sec": 1776838192.42,
+  "score": 0.5,
+  "reason": "minor_oncoming_progress",
+  "max_oncoming_progress_m": 3.4,
+  "worst_window_start_s": 1.2,
+  "worst_window_end_s": 2.0,
+  "window_progress_m": 3.4,
+  "sample_count": 9
+}
+```
+
+The Lichtblick plugin should use `trajectory_stamp_sec` for click-to-seek:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+## MarkerArray Display
+
+All DDC debug markers use:
+
+```text
+header.frame_id = "map"
+header.stamp = t0
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/ddc/ego_centers` | Ego-center path over the full evaluated horizon. |
+| `/debug/ddc/oncoming_segments` | Only the centerline segments that contributed to wrong-way accumulation because `Oncoming && !Intersection` held there. |
+| `/debug/ddc/route_lane_polygons` | Nearby route-lane polygons that counted as on-route in the worst 1.0 s window. |
+| `/debug/ddc/intersection_lane_polygons` | Nearby intersection lanelet polygons that granted intersection leniency in the worst 1.0 s window. |
+| `/debug/ddc/labels` | Human-readable DDC summary label. |
+
+Suggested visual semantics:
+
+| Case | Color |
+|---|---|
+| ego-center horizon | transparent cyan |
+| counted oncoming segments | orange |
+| nearby route-lane polygons | cyan/blue |
+| nearby intersection polygons | green |
+| DDC label | red text |
+
+## Lichtblick Workflow
+
+The Lichtblick plugin should provide a panel named:
+
+```text
+DDC Violation Timeline
+```
+
+It should subscribe to:
+
+```text
+/debug/ddc/violation_summary
+```
+
+Panel behavior:
+
+1. Subscribe to `/debug/ddc/violation_summary`.
+2. Build a table of DDC-non-perfect trajectory timestamps.
+3. Show columns:
+
+```text
+t0 | score | max wrong-way progress | window start | window end | reason | sample count
+```
+
+4. On row click, call:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+5. In the 3D map panel, enable:
+
+```text
+/debug/ddc/ego_centers
+/debug/ddc/oncoming_segments
+/debug/ddc/route_lane_polygons
+/debug/ddc/intersection_lane_polygons
+/debug/ddc/labels
+```
+
+Then each click jumps to the planner output time and shows:
+
+- the ego-center path over the evaluated horizon
+- the local route-lane polygons used to decide whether ego center was on-route
+- the local intersection polygons used to suppress accumulation
+- the exact centerline segments that counted toward the worst 1.0 s wrong-way window
+
 ## 2D Camera Overlay
 
 The first implementation should use the 3D map.

@@ -49,6 +49,10 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   actual local Lichtblick plugin code under
   `~/workspace/AutowareLichtblickPlugins/src/` and name the concrete panels,
   converters, topics, and expected 3D/timeline behavior being used.
+- When adding a new Lichtblick panel or related plugin-side materials for a subscore,
+  do that work in the Lichtblick repo `~/workspace/AutowareLichtblickPlugins` on a
+  dedicated branch. Commit and push that plugin branch to the `myrepo` remote before
+  moving on.
 - When refining DAC semantics, explicitly consider whether lane polygons alone are too
   strict near road-border-adjacent paved area. Prefer adding genuine map-supported
   drivable border area when justified, but do not broadly accept arbitrary space
