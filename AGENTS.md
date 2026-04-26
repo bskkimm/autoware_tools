@@ -39,6 +39,11 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   debugging support is added or changed, run the full analyzer pipeline with
   `open_loop.enabled_metrics` expanded cumulatively to include all already-integrated
   subscores plus the new one, unless the user explicitly asks for isolated validation.
+- The intended cumulative chain is additive over time. Example:
+  - after NC: `['nc']`
+  - after DAC: `['nc','dac']`
+  - after DDC: `['nc','dac','ddc']`
+  - after the next subscore: `['nc','dac','ddc','<next>']`
 - After that accumulated run, verify that:
   - the newly added subscore result topics are produced,
   - the corresponding new debug topics are produced, and
