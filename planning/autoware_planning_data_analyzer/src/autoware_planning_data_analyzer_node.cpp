@@ -164,6 +164,8 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   tf_topic_name_ = get_or_declare_parameter<std::string>(*this, "tf_topic");
   acceleration_topic_name_ = get_or_declare_parameter<std::string>(*this, "acceleration_topic");
   steering_topic_name_ = get_or_declare_parameter<std::string>(*this, "steering_topic");
+  turn_indicators_topic_name_ =
+    get_or_declare_parameter<std::string>(*this, "turn_indicators_topic");
 
   if (evaluation_interval_ms_ <= 0.0) {
     throw std::runtime_error(
@@ -485,6 +487,7 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
   topic_names.tf_topic = tf_topic_name_;
   topic_names.acceleration_topic = acceleration_topic_name_;
   topic_names.steering_topic = steering_topic_name_;
+  topic_names.turn_indicators_topic = turn_indicators_topic_name_;
   topic_names.evaluation_interval_ms = evaluation_interval_ms_;
   topic_names.sync_tolerance_ms = sync_tolerance_ms_;
   topic_names.trajectory_evaluation_horizon_s = trajectory_evaluation_horizon_s_;

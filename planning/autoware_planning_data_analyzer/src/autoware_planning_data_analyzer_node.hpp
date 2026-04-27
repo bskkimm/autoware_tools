@@ -101,6 +101,7 @@ private:
   std::string tf_topic_name_;
   std::string acceleration_topic_name_;
   std::string steering_topic_name_;
+  std::string turn_indicators_topic_name_;
 
   EvaluationMode evaluation_mode_;
   std::string bag_path_;

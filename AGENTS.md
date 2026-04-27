@@ -39,6 +39,10 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   are admitted or excluded, explicitly document those admitted/excluded spaces in the
   corresponding `implementation_report.md` section rather than only describing the
   high-level score equation.
+- For traffic-control metrics such as TLC, that documentation must also make the
+  movement-selection rule explicit: which approach lanes, connector-like lanelets,
+  turn-direction-specific polygons, and neighboring same-movement polygons are included
+  or excluded.
 - When an Autoware-side subscore implementation is modified and the corresponding
   debugging support is added or changed, run the full analyzer pipeline with
   `open_loop.enabled_metrics` expanded cumulatively to include all already-integrated
@@ -76,6 +80,10 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   strict near road-border-adjacent paved area. Prefer adding genuine map-supported
   drivable border area when justified, but do not broadly accept arbitrary space
   outside lane boundaries.
+- For DDC semantics, do not conflate generic non-drivable side space with actual
+  oncoming traffic. Sidewalk / pedestrian-side / curbside non-drivable intrusion should
+  be handled by DAC-style drivable-area logic, while DDC should only count meaningful
+  wrong-way progress in opposite-direction vehicle-travel space.
 - When moving on to a different subscore, aggregated full EPDMS work, or human-filtered
   work, first commit the current state to the corresponding subscore branch, then create
   the next working branch on top of that committed state. Push and manage those subscore

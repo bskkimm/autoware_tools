@@ -370,6 +370,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     if (enabled_metrics.traffic_light_compliance) {
       const auto traffic_light_compliance = calculate_traffic_light_compliance(
         trajectory, sync_data->traffic_signals, route_handler, vehicle_info,
+        sync_data->turn_indicators_status,
         shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
       metrics.traffic_light_compliance = traffic_light_compliance.score;
       metrics.traffic_light_compliance_available = traffic_light_compliance.available;

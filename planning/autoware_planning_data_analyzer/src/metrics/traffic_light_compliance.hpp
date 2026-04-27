@@ -27,6 +27,7 @@
 
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -47,13 +48,12 @@ struct TrafficLightComplianceDebugInfo
   double first_failure_time_s{std::numeric_limits<double>::infinity()};
   geometry_msgs::msg::Point label_anchor;
   std::vector<TrafficLightComplianceDebugPolygon> ego_horizon_footprints;
-  std::vector<TrafficLightComplianceDebugPolygon> red_controlled_lane_polygons;
-  std::vector<TrafficLightComplianceDebugPolygon> overlap_areas;
   std::vector<TrafficLightComplianceDebugPolygon> stop_lines;
   std::vector<lanelet::Id> regulatory_element_ids;
-  std::vector<lanelet::Id> controlled_lane_ids;
-  std::size_t active_red_polygon_count{0};
-  std::size_t overlap_count{0};
+  std::vector<lanelet::Id> selected_lane_ids;
+  std::vector<lanelet::Id> stop_line_ids;
+  std::size_t selected_stop_line_count{0};
+  std::optional<std::string> intended_movement;
 };
 
 struct TrafficLightComplianceResult
@@ -69,6 +69,7 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
   const std::shared_ptr<TrafficLightGroupArray> & traffic_signals,
   const std::shared_ptr<RouteHandler> & route_handler,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status = nullptr,
   const std::vector<TrajectoryFootprintEvaluation> * evaluations = nullptr);
 
 }  // namespace autoware::planning_data_analyzer::metrics

@@ -16,13 +16,11 @@
 
 #include "metric_utils.hpp"
 
+#include <autoware/lanelet2_utils/intersection.hpp>
 #include <autoware/traffic_light_utils/traffic_light_utils.hpp>
 #include <autoware_lanelet2_extension/regulatory_elements/autoware_traffic_light.hpp>
 #include <autoware_utils_geometry/boost_geometry.hpp>
 
-#include <boost/geometry.hpp>
-#include <boost/geometry/algorithms/correct.hpp>
-#include <boost/geometry/algorithms/intersection.hpp>
 #include <boost/geometry/algorithms/intersects.hpp>
 
 #include <algorithm>
@@ -40,32 +38,45 @@ using autoware::route_handler::RouteHandler;
 namespace
 {
 
-struct ControlledTrafficLightGroup
+using TurnDirection = autoware::experimental::lanelet2_utils::TurnDirection;
+
+struct RelevantTrafficLightGroup
 {
   lanelet::Id regulatory_element_id{0};
-  lanelet::ConstLanelets lanelets;
+  lanelet::ConstLanelets route_lanelets;
+  lanelet::ConstLanelets selected_lanelets;
   std::optional<lanelet::ConstLineString3d> stop_line;
+  std::optional<TurnDirection> intended_turn_direction;
 };
 
 const autoware_perception_msgs::msg::TrafficLightGroup * find_signal_group(
-  const TrafficLightGroupArray & traffic_signals, const lanelet::Id reg_elem_id)
+  const TrafficLightGroupArray & traffic_signals, const RelevantTrafficLightGroup & group)
 {
-  const auto it = std::find_if(
-    traffic_signals.traffic_light_groups.begin(), traffic_signals.traffic_light_groups.end(),
-    [reg_elem_id](const auto & group) {
-      return static_cast<lanelet::Id>(group.traffic_light_group_id) == reg_elem_id;
-    });
-  return it == traffic_signals.traffic_light_groups.end() ? nullptr : &(*it);
-}
-
-autoware_utils_geometry::Polygon2d lanelet_polygon_2d(const lanelet::ConstLanelet & lanelet)
-{
-  autoware_utils_geometry::Polygon2d polygon;
-  for (const auto & point : lanelet.polygon2d().basicPolygon()) {
-    polygon.outer().push_back({point.x(), point.y()});
+  std::vector<lanelet::Id> candidate_ids;
+  candidate_ids.reserve(1U + group.selected_lanelets.size() + group.route_lanelets.size());
+  candidate_ids.push_back(group.regulatory_element_id);
+  for (const auto & lanelet : group.selected_lanelets) {
+    candidate_ids.push_back(lanelet.id());
   }
-  boost::geometry::correct(polygon);
-  return polygon;
+  for (const auto & lanelet : group.route_lanelets) {
+    candidate_ids.push_back(lanelet.id());
+  }
+
+  std::unordered_set<lanelet::Id> seen_ids;
+  for (const auto candidate_id : candidate_ids) {
+    if (!seen_ids.insert(candidate_id).second) {
+      continue;
+    }
+    const auto it = std::find_if(
+      traffic_signals.traffic_light_groups.begin(), traffic_signals.traffic_light_groups.end(),
+      [candidate_id](const auto & signal_group) {
+        return static_cast<lanelet::Id>(signal_group.traffic_light_group_id) == candidate_id;
+      });
+    if (it != traffic_signals.traffic_light_groups.end()) {
+      return &(*it);
+    }
+  }
+  return nullptr;
 }
 
 std::vector<geometry_msgs::msg::Point> polygon_to_msg_points(
@@ -86,12 +97,6 @@ std::vector<geometry_msgs::msg::Point> polygon_to_msg_points(
   return points;
 }
 
-std::vector<geometry_msgs::msg::Point> lanelet_to_msg_points(
-  const lanelet::ConstLanelet & lanelet, const double z)
-{
-  return polygon_to_msg_points(lanelet_polygon_2d(lanelet), z);
-}
-
 std::vector<geometry_msgs::msg::Point> stop_line_to_msg_points(
   const lanelet::ConstLineString3d & stop_line, const double z)
 {
@@ -107,32 +112,82 @@ std::vector<geometry_msgs::msg::Point> stop_line_to_msg_points(
   return points;
 }
 
-std::optional<autoware_utils_geometry::Polygon2d> intersection_polygon(
-  const autoware_utils_geometry::Polygon2d & lhs, const autoware_utils_geometry::Polygon2d & rhs)
+std::optional<TurnDirection> infer_turn_direction_from_indicator(
+  const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status)
 {
-  namespace bg = boost::geometry;
-  bg::model::multi_polygon<autoware_utils_geometry::Polygon2d> intersections;
-  bg::intersection(lhs, rhs, intersections);
-  if (intersections.empty()) {
+  if (!turn_indicators_status) {
     return std::nullopt;
   }
 
-  auto polygon = intersections.front();
-  bg::correct(polygon);
-  if (polygon.outer().empty()) {
-    return std::nullopt;
+  switch (turn_indicators_status->report) {
+    case TurnIndicatorsReport::ENABLE_LEFT:
+      return TurnDirection::Left;
+    case TurnIndicatorsReport::ENABLE_RIGHT:
+      return TurnDirection::Right;
+    default:
+      return std::nullopt;
   }
-  return polygon;
 }
 
-std::vector<ControlledTrafficLightGroup> build_controlled_traffic_light_groups(
-  const lanelet::ConstLanelets & route_lanelets, const std::shared_ptr<RouteHandler> & route_handler)
+std::optional<TurnDirection> infer_turn_direction_from_route_lanelets(
+  const lanelet::ConstLanelets & lanelets)
 {
-  std::vector<ControlledTrafficLightGroup> groups;
+  std::optional<TurnDirection> inferred;
+  for (const auto & lanelet : lanelets) {
+    const auto lanelet_turn_direction =
+      autoware::experimental::lanelet2_utils::get_turn_direction(lanelet);
+    if (!lanelet_turn_direction.has_value()) {
+      continue;
+    }
+    if (!inferred.has_value()) {
+      inferred = lanelet_turn_direction;
+      continue;
+    }
+    if (inferred.value() != lanelet_turn_direction.value()) {
+      return std::nullopt;
+    }
+  }
+  return inferred;
+}
+
+std::string turn_direction_to_string(const TurnDirection turn_direction)
+{
+  switch (turn_direction) {
+    case TurnDirection::Straight:
+      return "straight";
+    case TurnDirection::Left:
+      return "left";
+    case TurnDirection::Right:
+      return "right";
+  }
+  return "unknown";
+}
+
+bool matches_intended_turn_direction(
+  const lanelet::ConstLanelet & lanelet, const std::optional<TurnDirection> & intended_turn_direction)
+{
+  if (!intended_turn_direction.has_value()) {
+    return true;
+  }
+
+  const auto lanelet_turn_direction =
+    autoware::experimental::lanelet2_utils::get_turn_direction(lanelet);
+  if (!lanelet_turn_direction.has_value()) {
+    return false;
+  }
+  return lanelet_turn_direction.value() == intended_turn_direction.value();
+}
+
+std::vector<RelevantTrafficLightGroup> build_relevant_traffic_light_groups(
+  const lanelet::ConstLanelets & route_lanelets, const std::shared_ptr<RouteHandler> & route_handler,
+  const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status)
+{
+  std::vector<RelevantTrafficLightGroup> groups;
   if (!route_handler || !route_handler->isHandlerReady()) {
     return groups;
   }
 
+  const auto indicator_turn_direction = infer_turn_direction_from_indicator(turn_indicators_status);
   std::unordered_map<lanelet::Id, std::size_t> index_by_reg_elem_id;
   for (const auto & lanelet : route_lanelets) {
     if (!route_handler->isRoadLanelet(lanelet)) {
@@ -143,7 +198,7 @@ std::vector<ControlledTrafficLightGroup> build_controlled_traffic_light_groups(
       const auto [it, inserted] =
         index_by_reg_elem_id.emplace(reg_elem->id(), index_by_reg_elem_id.size());
       if (inserted) {
-        ControlledTrafficLightGroup group;
+        RelevantTrafficLightGroup group;
         group.regulatory_element_id = reg_elem->id();
         if (const auto stop_line = reg_elem->stopLine(); stop_line && !stop_line->empty()) {
           group.stop_line = *stop_line;
@@ -153,10 +208,10 @@ std::vector<ControlledTrafficLightGroup> build_controlled_traffic_light_groups(
 
       auto & group = groups.at(it->second);
       const auto duplicate = std::any_of(
-        group.lanelets.begin(), group.lanelets.end(),
+        group.route_lanelets.begin(), group.route_lanelets.end(),
         [&lanelet](const auto & candidate) { return candidate.id() == lanelet.id(); });
       if (!duplicate) {
-        group.lanelets.push_back(lanelet);
+        group.route_lanelets.push_back(lanelet);
       }
       if (!group.stop_line.has_value()) {
         if (const auto stop_line = reg_elem->stopLine(); stop_line && !stop_line->empty()) {
@@ -166,14 +221,39 @@ std::vector<ControlledTrafficLightGroup> build_controlled_traffic_light_groups(
     }
   }
 
+  for (auto & group : groups) {
+    group.intended_turn_direction =
+      indicator_turn_direction.has_value() ? indicator_turn_direction
+                                           : infer_turn_direction_from_route_lanelets(group.route_lanelets);
+
+    std::unordered_set<lanelet::Id> selected_lanelet_ids;
+    for (const auto & lanelet : group.route_lanelets) {
+      if (!matches_intended_turn_direction(lanelet, group.intended_turn_direction)) {
+        continue;
+      }
+      if (selected_lanelet_ids.insert(lanelet.id()).second) {
+        group.selected_lanelets.push_back(lanelet);
+      }
+    }
+
+    if (group.selected_lanelets.empty()) {
+      group.selected_lanelets = group.route_lanelets;
+    }
+  }
+
   return groups;
+}
+
+bool stop_line_intersects_ego_polygon(
+  const autoware_utils_geometry::Polygon2d & ego_polygon, const lanelet::ConstLineString3d & stop_line)
+{
+  return boost::geometry::intersects(ego_polygon, to_linestring2d(stop_line));
 }
 
 void record_first_failure_debug_info(
   TrafficLightComplianceDebugInfo & debug_info, const double time_s,
   const autoware_utils_geometry::Polygon2d & ego_polygon, const double z,
-  const ControlledTrafficLightGroup & group, const lanelet::ConstLanelet & lanelet,
-  const autoware_utils_geometry::Polygon2d & overlap_polygon)
+  const RelevantTrafficLightGroup & group)
 {
   if (!std::isinf(debug_info.first_failure_time_s)) {
     return;
@@ -182,17 +262,17 @@ void record_first_failure_debug_info(
   debug_info.first_failure_time_s = time_s;
   debug_info.label_anchor = polygon_to_msg_points(ego_polygon, z + 0.12).front();
   debug_info.regulatory_element_ids.push_back(group.regulatory_element_id);
-  debug_info.controlled_lane_ids.push_back(lanelet.id());
-  debug_info.active_red_polygon_count = 1U;
-  debug_info.overlap_count = 1U;
-
-  debug_info.red_controlled_lane_polygons.push_back(TrafficLightComplianceDebugPolygon{
-    time_s, lanelet_to_msg_points(lanelet, z + 0.04), lanelet.id()});
-  debug_info.overlap_areas.push_back(TrafficLightComplianceDebugPolygon{
-    time_s, polygon_to_msg_points(overlap_polygon, z + 0.08), lanelet.id()});
+  for (const auto & lanelet : group.selected_lanelets) {
+    debug_info.selected_lane_ids.push_back(lanelet.id());
+  }
   if (group.stop_line.has_value()) {
+    debug_info.stop_line_ids.push_back(group.stop_line->id());
     debug_info.stop_lines.push_back(TrafficLightComplianceDebugPolygon{
       time_s, stop_line_to_msg_points(*group.stop_line, z + 0.10), group.stop_line->id()});
+  }
+  debug_info.selected_stop_line_count = debug_info.stop_lines.size();
+  if (group.intended_turn_direction.has_value()) {
+    debug_info.intended_movement = turn_direction_to_string(group.intended_turn_direction.value());
   }
 }
 
@@ -222,6 +302,7 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
   const std::shared_ptr<TrafficLightGroupArray> & traffic_signals,
   const std::shared_ptr<RouteHandler> & route_handler,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status,
   const std::vector<TrajectoryFootprintEvaluation> * evaluations)
 {
   TrafficLightComplianceResult result;
@@ -244,7 +325,8 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
   }
 
   const auto route_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
-  const auto groups = build_controlled_traffic_light_groups(route_lanelets, route_handler);
+  const auto groups =
+    build_relevant_traffic_light_groups(route_lanelets, route_handler, turn_indicators_status);
   result.available = true;
   result.reason = groups.empty() ? "available_no_relevant_traffic_lights" : "available";
   result.score = 1.0;
@@ -259,7 +341,7 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
     return result;
   }
 
-  std::unordered_set<lanelet::Id> missing_signal_ids;
+  std::unordered_set<lanelet::Id> missing_signal_ids_at_relevant_stop_line;
   const auto local_footprint = vehicle_info.createFootprint(0.0);
   const bool can_reuse_evaluations =
     evaluations != nullptr && evaluations->size() == trajectory.points.size();
@@ -280,42 +362,37 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
     }
 
     for (const auto & group : groups) {
-      const auto * signal_group = find_signal_group(*traffic_signals, group.regulatory_element_id);
-      if (!signal_group) {
-        missing_signal_ids.insert(group.regulatory_element_id);
+      if (!group.stop_line.has_value()) {
+        continue;
+      }
+      if (!stop_line_intersects_ego_polygon(ego_polygon, *group.stop_line)) {
         continue;
       }
 
-      std::size_t active_red_polygons = 0U;
-      for (const auto & lanelet : group.lanelets) {
-        if (!autoware::traffic_light_utils::isTrafficSignalStop(lanelet, *signal_group)) {
-          continue;
-        }
-
-        ++active_red_polygons;
-        const auto controlled_polygon = lanelet_polygon_2d(lanelet);
-        if (!boost::geometry::intersects(ego_polygon, controlled_polygon)) {
-          continue;
-        }
-
-        const auto overlap_polygon = intersection_polygon(ego_polygon, controlled_polygon);
-        if (!overlap_polygon.has_value()) {
-          continue;
-        }
-
-        record_first_failure_debug_info(
-          result.debug_info, time_s, ego_polygon, point.pose.position.z, group, lanelet,
-          *overlap_polygon);
-        result.debug_info.active_red_polygon_count =
-          std::max(result.debug_info.active_red_polygon_count, active_red_polygons);
-        result.reason = "red_light_controlled_lane_entered";
-        result.score = 0.0;
-        return result;
+      const auto * signal_group = find_signal_group(*traffic_signals, group);
+      if (!signal_group) {
+        missing_signal_ids_at_relevant_stop_line.insert(group.regulatory_element_id);
+        continue;
       }
+
+      const bool stop_required = std::any_of(
+        group.selected_lanelets.begin(), group.selected_lanelets.end(),
+        [signal_group](const auto & lanelet) {
+          return autoware::traffic_light_utils::isTrafficSignalStop(lanelet, *signal_group);
+        });
+      if (!stop_required) {
+        continue;
+      }
+
+      record_first_failure_debug_info(
+        result.debug_info, time_s, ego_polygon, point.pose.position.z, group);
+      result.reason = "red_light_stop_line_crossed";
+      result.score = 0.0;
+      return result;
     }
   }
 
-  if (!missing_signal_ids.empty()) {
+  if (!missing_signal_ids_at_relevant_stop_line.empty()) {
     result.available = false;
     result.score = 0.0;
     result.reason = "unavailable_missing_signal_group";
