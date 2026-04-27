@@ -16,30 +16,60 @@
 #define METRICS__TRAFFIC_LIGHT_COMPLIANCE_HPP_
 
 #include "../data_types.hpp"
+#include "metric_utils.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
 
+#include <geometry_msgs/msg/point.hpp>
+
+#include <lanelet2_core/primitives/Lanelet.h>
+
+#include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
 
 using autoware::route_handler::RouteHandler;
 
+struct TrafficLightComplianceDebugPolygon
+{
+  double time_s{0.0};
+  std::vector<geometry_msgs::msg::Point> polygon;
+  lanelet::Id source_id{0};
+};
+
+struct TrafficLightComplianceDebugInfo
+{
+  double first_failure_time_s{std::numeric_limits<double>::infinity()};
+  geometry_msgs::msg::Point label_anchor;
+  std::vector<TrafficLightComplianceDebugPolygon> ego_horizon_footprints;
+  std::vector<TrafficLightComplianceDebugPolygon> red_controlled_lane_polygons;
+  std::vector<TrafficLightComplianceDebugPolygon> overlap_areas;
+  std::vector<TrafficLightComplianceDebugPolygon> stop_lines;
+  std::vector<lanelet::Id> regulatory_element_ids;
+  std::vector<lanelet::Id> controlled_lane_ids;
+  std::size_t active_red_polygon_count{0};
+  std::size_t overlap_count{0};
+};
+
 struct TrafficLightComplianceResult
 {
   double score{0.0};
   bool available{false};
   std::string reason{"unavailable"};
+  TrafficLightComplianceDebugInfo debug_info;
 };
 
 TrafficLightComplianceResult calculate_traffic_light_compliance(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const std::shared_ptr<TrafficLightGroupArray> & traffic_signals,
   const std::shared_ptr<RouteHandler> & route_handler,
-  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info);
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const std::vector<TrajectoryFootprintEvaluation> * evaluations = nullptr);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

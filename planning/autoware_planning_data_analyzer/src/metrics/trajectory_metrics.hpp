@@ -100,6 +100,7 @@ struct TrajectoryPointMetrics
   double traffic_light_compliance{0.0};
   bool traffic_light_compliance_available{false};
   std::string traffic_light_compliance_reason{"unavailable"};
+  TrafficLightComplianceDebugInfo traffic_light_compliance_debug;
 };
 
 /**

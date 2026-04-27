@@ -200,7 +200,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     future_objects.empty() ? sync_data->future_objects : future_objects;
   const size_t num_points = trajectory.points.size();
   const auto shared_footprint_evaluations =
-    (enabled_metrics.drivable_area_compliance || enabled_metrics.no_at_fault_collision) &&
+    (enabled_metrics.drivable_area_compliance || enabled_metrics.no_at_fault_collision ||
+     enabled_metrics.traffic_light_compliance) &&
         is_vehicle_info_valid(vehicle_info)
       ? evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler)
       : std::vector<TrajectoryFootprintEvaluation>{};
@@ -368,10 +369,12 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
 
     if (enabled_metrics.traffic_light_compliance) {
       const auto traffic_light_compliance = calculate_traffic_light_compliance(
-        trajectory, sync_data->traffic_signals, route_handler, vehicle_info);
+        trajectory, sync_data->traffic_signals, route_handler, vehicle_info,
+        shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
       metrics.traffic_light_compliance = traffic_light_compliance.score;
       metrics.traffic_light_compliance_available = traffic_light_compliance.available;
       metrics.traffic_light_compliance_reason = traffic_light_compliance.reason;
+      metrics.traffic_light_compliance_debug = traffic_light_compliance.debug_info;
     }
   }
 

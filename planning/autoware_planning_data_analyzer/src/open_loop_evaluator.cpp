@@ -196,6 +196,11 @@ std::string ddc_debug_topic(const std::string & topic_name)
   return "/debug/ddc/" + topic_name;
 }
 
+std::string tlc_debug_topic(const std::string & topic_name)
+{
+  return "/debug/tlc/" + topic_name;
+}
+
 std_msgs::msg::ColorRGBA make_color(
   const float red, const float green, const float blue, const float alpha = 1.0F)
 {
@@ -334,6 +339,11 @@ bool should_write_ddc_debug(const metrics::TrajectoryPointMetrics & metrics)
   return metrics.driving_direction_compliance_available && metrics.driving_direction_compliance < 1.0;
 }
 
+bool should_write_tlc_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return metrics.traffic_light_compliance_available && metrics.traffic_light_compliance < 1.0;
+}
+
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
 {
@@ -465,6 +475,25 @@ nlohmann::json ddc_debug_summary_to_json(
     {"worst_window_end_s", debug_info.worst_window_end_time_s},
     {"window_progress_m", debug_info.window_progress_m},
     {"sample_count", debug_info.worst_window_sample_count}};
+}
+
+nlohmann::json tlc_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::TrafficLightComplianceDebugInfo & debug_info, const rclcpp::Time & timestamp)
+{
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.traffic_light_compliance},
+    {"reason", metrics.traffic_light_compliance_reason},
+    {"first_failure_time_s", debug_info.first_failure_time_s},
+    {"failure_stamp_sec",
+     std::isfinite(debug_info.first_failure_time_s)
+       ? timestamp.seconds() + debug_info.first_failure_time_s
+       : std::numeric_limits<double>::quiet_NaN()},
+    {"regulatory_element_ids", debug_info.regulatory_element_ids},
+    {"controlled_lane_ids", debug_info.controlled_lane_ids},
+    {"active_red_polygon_count", debug_info.active_red_polygon_count},
+    {"overlap_count", debug_info.overlap_count}};
 }
 
 void write_nc_debug_topics_to_bag(
@@ -703,6 +732,80 @@ void write_ddc_debug_topics_to_bag(
   bag_writer.write(
     intersection_lane_polygons, ddc_debug_topic("intersection_lane_polygons"), timestamp);
   bag_writer.write(labels, ddc_debug_topic("labels"), timestamp);
+}
+
+void write_tlc_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_tlc_debug(metrics)) {
+    return;
+  }
+
+  const auto & debug_info = metrics.traffic_light_compliance_debug;
+  if (!std::isfinite(debug_info.first_failure_time_s)) {
+    return;
+  }
+
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = tlc_debug_summary_to_json(metrics, debug_info, timestamp).dump();
+  bag_writer.write(summary_msg, tlc_debug_topic("violation_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray ego_footprints;
+  visualization_msgs::msg::MarkerArray red_controlled_lane_polygons;
+  visualization_msgs::msg::MarkerArray overlap_areas;
+  visualization_msgs::msg::MarkerArray stop_lines;
+  visualization_msgs::msg::MarkerArray labels;
+  ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  red_controlled_lane_polygons.markers.push_back(make_delete_all_marker(timestamp));
+  overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
+  stop_lines.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (const auto & footprint : debug_info.ego_horizon_footprints) {
+    const bool failed = std::abs(footprint.time_s - debug_info.first_failure_time_s) < 1.0e-3;
+    ego_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "tlc_ego_footprints", marker_id++, footprint.polygon,
+      failed ? make_color(1.0F, 0.35F, 0.0F, 1.0F) : make_color(0.0F, 0.8F, 1.0F, 0.60F),
+      failed ? 0.22 : 0.12, true, marker_lifetime_s, 0.12));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.red_controlled_lane_polygons) {
+    red_controlled_lane_polygons.markers.push_back(make_line_strip_marker(
+      timestamp, "tlc_red_controlled_lane_polygons", marker_id++, polygon.polygon,
+      make_color(1.0F, 0.0F, 0.0F, 0.95F), 0.20, true, marker_lifetime_s, 0.18));
+  }
+
+  marker_id = 0;
+  for (const auto & polygon : debug_info.overlap_areas) {
+    overlap_areas.markers.push_back(make_line_strip_marker(
+      timestamp, "tlc_overlap_areas", marker_id++, polygon.polygon,
+      make_color(1.0F, 0.0F, 0.8F, 1.0F), 0.40, true, marker_lifetime_s, 0.24));
+  }
+
+  marker_id = 0;
+  for (const auto & stop_line : debug_info.stop_lines) {
+    stop_lines.markers.push_back(make_line_strip_marker(
+      timestamp, "tlc_stop_lines", marker_id++, stop_line.polygon,
+      make_color(1.0F, 0.8F, 0.0F, 0.95F), 0.18, false, marker_lifetime_s, 0.28));
+  }
+
+  std::ostringstream label;
+  label << "TLC=" << metrics.traffic_light_compliance << "\ndt=" << std::fixed
+        << std::setprecision(1) << debug_info.first_failure_time_s << "s\nred polys="
+        << debug_info.active_red_polygon_count << "\noverlaps=" << debug_info.overlap_count;
+  labels.markers.push_back(make_text_marker(
+    timestamp, "tlc_labels", 0, debug_info.label_anchor, label.str(),
+    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+
+  bag_writer.write(ego_footprints, tlc_debug_topic("ego_footprints"), timestamp);
+  bag_writer.write(
+    red_controlled_lane_polygons, tlc_debug_topic("red_controlled_lane_polygons"), timestamp);
+  bag_writer.write(overlap_areas, tlc_debug_topic("overlap_areas"), timestamp);
+  bag_writer.write(stop_lines, tlc_debug_topic("stop_lines"), timestamp);
+  bag_writer.write(labels, tlc_debug_topic("labels"), timestamp);
 }
 
 std::string normalize_metric_name(std::string name)
@@ -2109,6 +2212,10 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     write_ddc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.traffic_light_compliance) {
+    write_tlc_debug_topics_to_bag(
+      metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 std::string OpenLoopEvaluator::metric_topic(const std::string & metric_name) const
@@ -2947,6 +3054,13 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64");
     add_topic(metric_topic("traffic_light_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("traffic_light_compliance_reason"), "std_msgs/msg/String");
+    add_topic(tlc_debug_topic("violation_summary"), "std_msgs/msg/String");
+    add_topic(tlc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(
+      tlc_debug_topic("red_controlled_lane_polygons"), "visualization_msgs/msg/MarkerArray");
+    add_topic(tlc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(tlc_debug_topic("stop_lines"), "visualization_msgs/msg/MarkerArray");
+    add_topic(tlc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
     add_topic(metric_topic("synthetic_epdms_raw"), "std_msgs/msg/Float64");

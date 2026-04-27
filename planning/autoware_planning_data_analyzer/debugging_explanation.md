@@ -512,6 +512,130 @@ Then each click jumps to the planner output time and shows:
 - the local `intersection_area` polygons used to suppress accumulation
 - the exact centerline segments that counted toward the worst 1.0 s wrong-way window
 
+## TLC Debugging
+
+TLC debug output is intended to answer:
+
+- which trajectory first entered an active red-controlled route polygon
+- which route lane polygons were treated as red-controlled at the failing sample
+- whether the legacy stop line for that traffic-light regulatory element agrees with the polygon event
+
+### Topics
+
+When TLC is enabled and a trajectory scores below `1.0`, the analyzer writes:
+
+```text
+/debug/tlc/violation_summary
+/debug/tlc/ego_footprints
+/debug/tlc/red_controlled_lane_polygons
+/debug/tlc/overlap_areas
+/debug/tlc/stop_lines
+/debug/tlc/labels
+```
+
+### Summary Payload
+
+`/debug/tlc/violation_summary` is a `std_msgs/msg/String` JSON message.
+
+Expected shape:
+
+```json
+{
+  "trajectory_stamp_sec": 1776838192.42,
+  "score": 0.0,
+  "reason": "red_light_controlled_lane_entered",
+  "first_failure_time_s": 1.6,
+  "failure_stamp_sec": 1776838194.02,
+  "regulatory_element_ids": [12034],
+  "controlled_lane_ids": [54021],
+  "active_red_polygon_count": 1,
+  "overlap_count": 1
+}
+```
+
+The Lichtblick plugin should use `trajectory_stamp_sec` for click-to-seek:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+### MarkerArray Display
+
+All TLC debug markers use:
+
+```text
+header.frame_id = "map"
+header.stamp = t0
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/tlc/ego_footprints` | Ego footprint path over the full evaluated horizon. The failing sample is highlighted more strongly. |
+| `/debug/tlc/red_controlled_lane_polygons` | Active route lane polygons whose traffic-light regulatory element currently requires stop/red and therefore counted as TLC pseudo objects. |
+| `/debug/tlc/overlap_areas` | Exact overlap polygon between ego footprint and the active red-controlled lane polygon at the first failing sample. |
+| `/debug/tlc/stop_lines` | Stop line belonging to the failing traffic-light regulatory element. This is debug context only, not the scoring primitive. |
+| `/debug/tlc/labels` | Human-readable TLC summary label. |
+
+Suggested visual semantics:
+
+| Case | Color |
+|---|---|
+| ego-footprint horizon | transparent cyan |
+| failing ego footprint | orange |
+| active red-controlled polygons | bright red |
+| overlap area | magenta |
+| stop line | yellow/orange |
+| TLC label | red text |
+
+### Lichtblick Workflow
+
+The Lichtblick plugin should provide a panel named:
+
+```text
+TLC Violation Timeline
+```
+
+It should subscribe to:
+
+```text
+/debug/tlc/violation_summary
+```
+
+Panel behavior:
+
+1. Subscribe to `/debug/tlc/violation_summary`.
+2. Build a table of TLC-non-perfect trajectory timestamps.
+3. Show columns:
+
+```text
+t0 | score | dt | reason | active red polygons | overlaps | controlled lanes | regulatory elements
+```
+
+4. On row click, call:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+5. In the 3D map panel, enable:
+
+```text
+/debug/tlc/ego_footprints
+/debug/tlc/red_controlled_lane_polygons
+/debug/tlc/overlap_areas
+/debug/tlc/stop_lines
+/debug/tlc/labels
+```
+
+Then each click shows:
+
+- the ego footprint horizon
+- the route-local red-controlled polygons actually used by TLC
+- the exact overlap area that caused the violation
+- the stop line associated with the same failing regulatory element for comparison
+
 ## 2D Camera Overlay
 
 The first implementation should use the 3D map.

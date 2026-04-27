@@ -1684,7 +1684,7 @@ Semantically, TLC answers "did the ego commit a red-light violation?" rather tha
 - **NAVSIM outsourced helper logic:** no dedicated helper
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_polygons`, `self._observation.red_light_token`
 - **Migrated owner:** `src/metrics/traffic_light_compliance.cpp::calculate_traffic_light_compliance()`
-- **Migrated local helpers:** `find_signal_group()`, `footprint_intersects_stop_line()`, `find_reference_lanelet()`
+- **Migrated local helpers:** `find_signal_group()`, `build_controlled_traffic_light_groups()`
 
 ### Required inputs: same availability or replacement?
 
@@ -1692,17 +1692,18 @@ Semantically, TLC answers "did the ego commit a red-light violation?" rather tha
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Red-light Tokens** | Objects representing a "locked" red light area. | `autoware_perception_msgs::msg::TrafficLightGroupArray` + `reg_elem->stopLine()` | Signal states tied to physical stop lines. | **Moderate.** Different mechanism: NAVSIM checks area overlap; AW checks line crossing. |
+| **Red-light Tokens** | Objects representing a "locked" red light area. | `autoware_perception_msgs::msg::TrafficLightGroupArray` + route lanelets carrying the same `AutowareTrafficLight` regulatory element | Signal states tied to route-local controlled lane polygons. | **Moderate.** Still map-driven rather than observation-driven, but now area overlap is restored. |
 | **Simulated Ego Polygons** | Footprint overlap with the red light area. | `autoware_planning_msgs::msg::Trajectory` + `VehicleInfo` | Ego footprint relative to the stop line. | **Equivalent.** |
 
-- **Semantic replacement meaning:** the migrated code turns TLC into a stop-line crossing check under red, not a red-light occupancy-object intersection check.
+- **Semantic replacement meaning:** the migrated code now builds route-local red-controlled lane polygons from route lanelets that share a traffic-light regulatory element and checks ego overlap against those polygons.
 
 ### Platform deviations and impact
 
 - NAVSIM detects violation when an ego polygon intersects an observation object whose token starts with `red_light_token`.
-- The migrated code detects violation when the ego footprint intersects a red-light stop line.
-- The migrated code can also become unavailable when signal groups are missing; NAVSIM's scoring path does not have this exact availability mode because red-light occupancy is already encoded in the observation.
-- **Impact:** **High.** Same legal intent, but the actual event primitive is different.
+- The migrated code detects violation when the ego footprint intersects a route-local lane polygon whose traffic-light regulatory element is currently stop/red for that lanelet.
+- The migrated code still uses stop lines only as debug context, not as the main violation primitive.
+- The migrated code can still become unavailable when signal groups are missing; NAVSIM's scoring path does not have this exact availability mode because red-light occupancy is already encoded in the observation.
+- **Impact:** **Moderate.** Same legal intent and now the same polygon-overlap primitive, but controlled polygons are reconstructed from route lanelets rather than supplied as observation pseudo objects.
 
 ### Equation comparison
 
@@ -1736,30 +1737,54 @@ $$
 
 #### Migrated Autoware TLC
 
-**Migrated Autoware inputs.** The migrated implementation uses lanelet traffic-light
-regulatory elements and stop lines. Let $\mathcal{G}_t^{aw}$ be traffic-light
-regulatory elements attached to the reference lanelet at ego pose $t$. For each
-regulatory element $g$, let $L_g^{stop}$ be its stop line and $S_g$ be the matching
-traffic-light signal group from the current traffic-light message. Let $P_t^{aw}$ be
-the selected-trajectory ego footprint.
+**Migrated Autoware inputs.** The migrated implementation uses:
 
-The stop-state predicate is:
+- route lanelets collected from the selected trajectory with `getRoadLaneletsAtPose()` and `isRouteLanelet()`
+- `AutowareTrafficLight` regulatory elements attached to those route lanelets
+- the current `TrafficLightGroupArray`
+- the selected-trajectory ego footprint
+
+For each traffic-light regulatory element `g`, let `RouteControlledLanelets(g)` be the
+set of route lanelets that carry regulatory element `g`. These lanelets are the
+Autoware-side approximation of NAVSIM's red-light pseudo-object polygons.
+
+For each trajectory sample `t`, let `P_t^{aw}` be the ego footprint polygon and let
+`S_g` be the matching traffic-light signal group for regulatory element `g`.
+
+Each route lanelet `\ell` under regulatory element `g` is treated as actively red if:
 
 $$
-\mathrm{RedStop}_{t,g}^{aw}
+\mathrm{RedControlledLane}_{t,g,\ell}^{aw}
 =
-\mathrm{isTrafficSignalStop}(\mathrm{referenceLanelet}_t,S_g).
+\mathrm{isTrafficSignalStop}(\ell, S_g).
 $$
 
-A violation occurs when ego footprint intersects a red stop line:
+Let `\mathcal{R}_{t,g}^{red,aw}` be the stop-controlled route lanelets under
+regulatory element `g` at time `t`:
 
 $$
-\mathrm{StopLineViolation}_{t,g}^{aw}
+\mathcal{R}_{t,g}^{red,aw}
 =
-\mathrm{RedStop}_{t,g}^{aw}
-\land
+\mathrm{StopControlledRouteLanelets}(g, S_g).
+$$
+
+The effective red-controlled polygon set at time `t` is therefore:
+
+$$
+\mathcal{R}_t^{red,aw}
+=
+\bigcup_g \mathcal{R}_{t,g}^{red,aw}.
+$$
+
+A violation occurs when the ego footprint overlaps any active red-controlled route lane
+polygon:
+
+$$
+\mathrm{RedIntersect}_t^{aw}
+=
 \left[
-\mathrm{Overlap}(P_t^{aw}, L_g^{stop})
+\exists \ell \in \mathcal{R}_t^{red,aw}:\;
+\mathrm{Overlap}(P_t^{aw}, \mathrm{polygon}(\ell))
 \right].
 $$
 
@@ -1770,23 +1795,42 @@ $$
 =
 \mathbf{1}
 \left[
-\forall t,\forall g\in\mathcal{G}_t^{aw},\;
-\neg\mathrm{StopLineViolation}_{t,g}^{aw}
+\forall t,\;\neg\mathrm{RedIntersect}_t^{aw}
 \right].
 $$
 
-If a relevant traffic light exists but signal state is unavailable or missing, the local
-metric is marked unavailable.
+For debugging only, the migrated implementation also records the stop line associated
+with the failing traffic-light regulatory element, but stop-line intersection is no
+longer the scoring primitive.
 
-**Main input gap.** NAVSIM's TLC checks overlap with red-light lane-connector pseudo
-objects already encoded in the observation. The migrated Autoware implementation
-checks footprint intersection with regulatory-element stop lines under current signal
-groups. Both penalize red-light entry/crossing, but the geometric input is not the
-same.
+If a relevant route traffic light exists but the matching signal group is unavailable or
+missing, the local metric is marked unavailable.
+
+**Lane / area inclusion detail.**
+
+- Included:
+  - route lanelets collected from selected-trajectory poses
+  - only those route lanelets that carry the active traffic-light regulatory element
+  - only those member lanelets for which `isTrafficSignalStop(lanelet, signal_group)` is true
+- Excluded:
+  - unrelated nearby non-route lanelets
+  - traffic lights not attached to the route lane set
+  - stop lines as direct scoring geometry
+  - non-route intersection polygons and generic drivable-area polygons
+
+**Main input gap.** NAVSIM's TLC checks overlap with red-light pseudo objects already
+constructed in the observation. The migrated Autoware implementation reconstructs the
+red-controlled polygons from route lanelets and their shared traffic-light regulatory
+elements. The score primitive is now polygon overlap in both systems, but the polygon
+source is still different.
 
 ### Assessment
 
-TLC is **not a code- or math-identical port**. It is a platform-driven reinterpretation of the same policy concept.
+TLC is **closer to NAVSIM than before**, because the migrated score is now based on
+ego overlap with active red-controlled route polygons instead of stop-line crossing.
+It is still not a literal port, because the red polygons are reconstructed from route
+lanelets and traffic-light regulatory elements instead of coming from observation
+pseudo objects.
 
 ---
 
