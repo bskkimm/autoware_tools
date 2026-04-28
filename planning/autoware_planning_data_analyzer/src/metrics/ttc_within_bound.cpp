@@ -188,6 +188,64 @@ TTCWithinBoundDebugEvent make_debug_event(
   return event;
 }
 
+void populate_ttc_debug_horizon(
+  TTCWithinBoundDebugInfo & debug_info,
+  const autoware_planning_msgs::msg::TrajectoryPoint & point,
+  const tf2::Vector3 & velocity_world, const LinearRing2d & local_footprint,
+  const LoggedObjectTrack & object_track, const rclcpp::Time & trajectory_start_time,
+  const double failure_time_s, const double failure_future_offset_s, const std::string & object_id,
+  const std::string & object_label)
+{
+  for (const double future_offset_s : kFutureProjectionOffsetsSec) {
+    const double query_time_s = failure_time_s + future_offset_s;
+    const auto query_time = trajectory_start_time + rclcpp::Duration::from_seconds(query_time_s);
+    const auto projected_pose = project_pose(point.pose, velocity_world, future_offset_s);
+    const auto ego_polygon = create_pose_footprint(projected_pose, local_footprint);
+
+    TTCWithinBoundHorizonFootprint ego_footprint;
+    ego_footprint.future_offset_s = future_offset_s;
+    ego_footprint.object_id = "ego";
+    ego_footprint.object_label = "EGO";
+    ego_footprint.failing = std::abs(future_offset_s - failure_future_offset_s) < 1.0e-6;
+    ego_footprint.footprint = polygon_to_points(ego_polygon, projected_pose.position.z + 0.12);
+
+    const auto object_state = interpolate_logged_object_state(object_track, query_time);
+    if (object_state.has_value()) {
+      const bool overlap = bg::intersects(ego_polygon, object_state->polygon);
+      ego_footprint.overlap = overlap;
+      debug_info.ego_horizon_footprints.push_back(ego_footprint);
+
+      TTCWithinBoundHorizonFootprint object_footprint;
+      object_footprint.future_offset_s = future_offset_s;
+      object_footprint.object_id = object_id;
+      object_footprint.object_label = object_label;
+      object_footprint.overlap = overlap;
+      object_footprint.failing = ego_footprint.failing;
+      object_footprint.footprint =
+        polygon_to_points(object_state->polygon, object_state->pose.position.z + 0.18);
+      debug_info.object_horizon_footprints.push_back(std::move(object_footprint));
+
+      if (overlap) {
+        for (const auto & overlap_polygon :
+             overlap_polygons_to_points(
+               ego_polygon, object_state->polygon, projected_pose.position.z + 0.24)) {
+          TTCWithinBoundOverlapArea overlap_area;
+          overlap_area.time_s = failure_time_s;
+          overlap_area.future_offset_s = future_offset_s;
+          overlap_area.object_id = object_id;
+          overlap_area.object_label = object_label;
+          overlap_area.failing = ego_footprint.failing;
+          overlap_area.polygon = overlap_polygon;
+          debug_info.overlap_areas.push_back(std::move(overlap_area));
+        }
+      }
+      continue;
+    }
+
+    debug_info.ego_horizon_footprints.push_back(std::move(ego_footprint));
+  }
+}
+
 }  // namespace
 
 TTCWithinBoundResult calculate_ttc_within_bound(
@@ -292,17 +350,10 @@ TTCWithinBoundResult calculate_ttc_within_bound(
             non_drivable_area, ego_in_intersection, ahead, behind, point, projected_pose,
             ego_polygon, *object_state);
           result.debug_info.events.push_back(debug_event);
-          for (const auto & overlap_polygon :
-               overlap_polygons_to_points(
-                 ego_polygon, object_state->polygon, projected_pose.position.z + 0.24)) {
-            TTCWithinBoundOverlapArea overlap_area;
-            overlap_area.time_s = time_s;
-            overlap_area.future_offset_s = future_offset_s;
-            overlap_area.object_id = debug_event.object_id;
-            overlap_area.object_label = debug_event.object_label;
-            overlap_area.polygon = overlap_polygon;
-            result.debug_info.overlap_areas.push_back(std::move(overlap_area));
-          }
+          populate_ttc_debug_horizon(
+            result.debug_info, point, velocity_world, local_footprint, object_track,
+            trajectory_start_time, time_s, future_offset_s, debug_event.object_id,
+            debug_event.object_label);
           result.score = 0.0;
           result.reason = "collision_within_bound";
           result.infraction_time_s = query_time_s;

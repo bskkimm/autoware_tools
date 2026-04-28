@@ -182,6 +182,9 @@ TEST(TTCWithinBound, AheadCollisionFails)
   EXPECT_GE(result.infraction_time_s, 0.0);
   ASSERT_EQ(result.debug_info.events.size(), 1U);
   EXPECT_TRUE(result.debug_info.events.front().ahead);
+  EXPECT_EQ(result.debug_info.ego_horizon_footprints.size(), 4U);
+  EXPECT_GE(result.debug_info.object_horizon_footprints.size(), 1U);
+  EXPECT_FALSE(result.debug_info.overlap_areas.empty());
 }
 
 TEST(TTCWithinBound, BehindCollisionDoesNotFail)

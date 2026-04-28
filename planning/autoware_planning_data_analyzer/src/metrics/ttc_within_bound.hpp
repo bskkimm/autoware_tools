@@ -60,12 +60,25 @@ struct TTCWithinBoundOverlapArea
   double future_offset_s{0.0};
   std::string object_id{"invalid"};
   std::string object_label{"UNKNOWN"};
+  bool failing{false};
   std::vector<geometry_msgs::msg::Point> polygon;
+};
+
+struct TTCWithinBoundHorizonFootprint
+{
+  double future_offset_s{0.0};
+  std::string object_id{"ego"};
+  std::string object_label{"EGO"};
+  bool overlap{false};
+  bool failing{false};
+  std::vector<geometry_msgs::msg::Point> footprint;
 };
 
 struct TTCWithinBoundDebugInfo
 {
   std::vector<TTCWithinBoundDebugEvent> events;
+  std::vector<TTCWithinBoundHorizonFootprint> ego_horizon_footprints;
+  std::vector<TTCWithinBoundHorizonFootprint> object_horizon_footprints;
   std::vector<TTCWithinBoundOverlapArea> overlap_areas;
 };
 

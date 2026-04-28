@@ -703,17 +703,19 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/ttc/ego_footprints` | The projected ego footprint at the failing TTC check. |
-| `/debug/epdms/ttc/object_footprints` | The logged future object footprint at the same query time. |
-| `/debug/epdms/ttc/overlap_areas` | The overlap polygon between the projected ego footprint and the object footprint. |
+| `/debug/epdms/ttc/ego_footprints` | The projected ego footprints for the selected TTC sample at all checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s`. Offsets with overlap are highlighted more strongly. |
+| `/debug/epdms/ttc/object_footprints` | The same logged object's queried future footprints at those checked offsets, when available. Offsets with overlap are highlighted more strongly. |
+| `/debug/epdms/ttc/overlap_areas` | The overlap polygon(s) at the checked offsets that actually overlap. The selected failing offset is included in this set. |
 | `/debug/epdms/ttc/labels` | Human-readable TTC summary label. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| TTC ego footprint | orange |
-| TTC object footprint | orange/yellow |
+| TTC ego footprint, no overlap | transparent cyan |
+| TTC ego footprint, overlap offset | orange |
+| TTC object footprint, no overlap | transparent orange |
+| TTC object footprint, overlap offset | yellow/orange |
 | TTC overlap | magenta |
 | TTC label | red text |
 
@@ -755,6 +757,16 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/ttc/overlap_areas
 /debug/epdms/ttc/labels
 ```
+
+This TTC horizon is not the full 4-second trajectory horizon. It is the local TTC
+check horizon for the selected failing trajectory sample:
+
+```text
+delta = 0.0, 0.3, 0.6, 0.9 s
+```
+
+So the ego/object footprint topics should appear like a short four-step TTC horizon
+for one sampled state, with the overlapping offset highlighted.
 
 ## 4s Trajectory Horizon Debugging
 
