@@ -21,6 +21,7 @@
 #include "lane_keeping.hpp"
 #include "no_at_fault_collision.hpp"
 #include "traffic_light_compliance.hpp"
+#include "ttc_within_bound.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
@@ -80,6 +81,7 @@ struct TrajectoryPointMetrics
   bool time_to_collision_within_bound_available{false};
   std::string time_to_collision_within_bound_reason{"unavailable"};
   double time_to_collision_infraction_time_s{std::numeric_limits<double>::infinity()};
+  TTCWithinBoundDebugInfo time_to_collision_within_bound_debug;
   double lane_keeping{0.0};
   bool lane_keeping_available{false};
   std::string lane_keeping_reason{"unavailable"};

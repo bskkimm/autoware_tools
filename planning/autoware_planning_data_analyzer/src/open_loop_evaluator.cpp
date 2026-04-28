@@ -201,6 +201,11 @@ std::string tlc_debug_topic(const std::string & topic_name)
   return "/debug/epdms/tlc/" + topic_name;
 }
 
+std::string ttc_debug_topic(const std::string & topic_name)
+{
+  return "/debug/epdms/ttc/" + topic_name;
+}
+
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
   return "/debug/epdms/trajectory/" + topic_name;
@@ -400,6 +405,12 @@ bool should_write_tlc_debug(const metrics::TrajectoryPointMetrics & metrics)
   return metrics.traffic_light_compliance_available && metrics.traffic_light_compliance < 1.0;
 }
 
+bool should_write_ttc_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return metrics.time_to_collision_within_bound_available &&
+         metrics.time_to_collision_within_bound < 1.0;
+}
+
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
 {
@@ -552,6 +563,50 @@ nlohmann::json tlc_debug_summary_to_json(
     {"selected_lane_ids", debug_info.selected_lane_ids},
     {"stop_line_ids", debug_info.stop_line_ids},
     {"selected_stop_line_count", debug_info.selected_stop_line_count}};
+}
+
+nlohmann::json ttc_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::TTCWithinBoundDebugInfo & debug_info, const rclcpp::Time & timestamp)
+{
+  nlohmann::json events = nlohmann::json::array();
+  for (const auto & event : debug_info.events) {
+    events.push_back(
+      {{"trajectory_stamp_sec", timestamp.seconds()},
+       {"event_stamp_sec", timestamp.seconds() + event.query_time_s},
+       {"time_s", event.time_s},
+       {"future_offset_s", event.future_offset_s},
+       {"query_time_s", event.query_time_s},
+       {"object_id", event.object_id},
+       {"object_label", event.object_label},
+       {"ahead", event.ahead},
+       {"behind", event.behind},
+       {"multiple_lanes", event.multiple_lanes},
+       {"non_drivable_area", event.non_drivable_area},
+       {"intersection", event.intersection},
+       {"bad_or_intersection", event.bad_or_intersection}});
+  }
+
+  const auto * event = debug_info.events.empty() ? nullptr : &debug_info.events.front();
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.time_to_collision_within_bound},
+    {"reason", metrics.time_to_collision_within_bound_reason},
+    {"first_failure_time_s", metrics.time_to_collision_infraction_time_s},
+    {"failure_stamp_sec",
+     std::isfinite(metrics.time_to_collision_infraction_time_s)
+       ? timestamp.seconds() + metrics.time_to_collision_infraction_time_s
+       : std::numeric_limits<double>::quiet_NaN()},
+    {"future_offset_s", event ? event->future_offset_s : 0.0},
+    {"object_id", event ? event->object_id : "invalid"},
+    {"object_label", event ? event->object_label : "UNKNOWN"},
+    {"ahead", event ? event->ahead : false},
+    {"behind", event ? event->behind : false},
+    {"multiple_lanes", event ? event->multiple_lanes : false},
+    {"non_drivable_area", event ? event->non_drivable_area : false},
+    {"intersection", event ? event->intersection : false},
+    {"bad_or_intersection", event ? event->bad_or_intersection : false},
+    {"events", std::move(events)}};
 }
 
 void write_nc_debug_topics_to_bag(
@@ -846,6 +901,74 @@ void write_tlc_debug_topics_to_bag(
   bag_writer.write(ego_footprints, tlc_debug_topic("ego_footprints"), timestamp);
   bag_writer.write(stop_lines, tlc_debug_topic("stop_lines"), timestamp);
   bag_writer.write(labels, tlc_debug_topic("labels"), timestamp);
+}
+
+void write_ttc_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_ttc_debug(metrics)) {
+    return;
+  }
+
+  const auto & debug_info = metrics.time_to_collision_within_bound_debug;
+  if (debug_info.events.empty()) {
+    return;
+  }
+
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = ttc_debug_summary_to_json(metrics, debug_info, timestamp).dump();
+  bag_writer.write(summary_msg, ttc_debug_topic("violation_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray ego_footprints;
+  visualization_msgs::msg::MarkerArray object_footprints;
+  visualization_msgs::msg::MarkerArray overlap_areas;
+  visualization_msgs::msg::MarkerArray labels;
+  ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  object_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (const auto & event : debug_info.events) {
+    ego_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "ttc_ego_footprints", marker_id++, event.ego_footprint,
+      make_color(1.0F, 0.35F, 0.0F, 1.0F), 0.22, true, marker_lifetime_s, 0.12));
+  }
+
+  marker_id = 0;
+  for (const auto & event : debug_info.events) {
+    object_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "ttc_object_footprints", marker_id++, event.object_footprint,
+      make_color(1.0F, 0.6F, 0.0F, 0.90F), 0.18, true, marker_lifetime_s, 0.18));
+  }
+
+  marker_id = 0;
+  for (const auto & overlap : debug_info.overlap_areas) {
+    overlap_areas.markers.push_back(make_line_strip_marker(
+      timestamp, "ttc_overlap_areas", marker_id++, overlap.polygon,
+      make_color(1.0F, 0.0F, 0.8F, 1.0F), 0.40, true, marker_lifetime_s, 0.24));
+  }
+
+  marker_id = 0;
+  for (const auto & event : debug_info.events) {
+    std::ostringstream label;
+    label << "TTC=" << metrics.time_to_collision_within_bound << "\ndt=" << std::fixed
+          << std::setprecision(1) << event.time_s << "s, delta=" << event.future_offset_s
+          << "s\n" << event.object_label << "\nahead=" << event.ahead
+          << ", behind=" << event.behind;
+    if (event.bad_or_intersection) {
+      label << "\nbad/intersection";
+    }
+    labels.markers.push_back(make_text_marker(
+      timestamp, "ttc_labels", marker_id++, event.ego_center, label.str(),
+      make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+  }
+
+  bag_writer.write(ego_footprints, ttc_debug_topic("ego_footprints"), timestamp);
+  bag_writer.write(object_footprints, ttc_debug_topic("object_footprints"), timestamp);
+  bag_writer.write(overlap_areas, ttc_debug_topic("overlap_areas"), timestamp);
+  bag_writer.write(labels, ttc_debug_topic("labels"), timestamp);
 }
 
 void write_trajectory_horizon_debug_topics_to_bag(
@@ -2301,6 +2424,10 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     write_tlc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.time_to_collision_within_bound) {
+    write_ttc_debug_topics_to_bag(
+      metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 std::string OpenLoopEvaluator::metric_topic(const std::string & metric_name) const
@@ -3072,6 +3199,11 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("time_to_collision_within_bound_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("time_to_collision_within_bound_reason"), "std_msgs/msg/String");
     add_topic(trajectory_metric_topic("ttc_values"), "std_msgs/msg/Float64MultiArray");
+    add_topic(ttc_debug_topic("violation_summary"), "std_msgs/msg/String");
+    add_topic(ttc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ttc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ttc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ttc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.history_comfort) {
     add_topic(metric_topic("history_comfort"), "std_msgs/msg/Float64");

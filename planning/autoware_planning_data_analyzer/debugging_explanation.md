@@ -638,6 +638,124 @@ element. A missing signal group now becomes `unavailable_missing_signal_group` o
 the ego actually reaches that selected stop line and the signal is required to judge
 compliance.
 
+## TTC Debugging
+
+TTC debug output is intended to answer:
+
+- which trajectory first produced a TTC failure
+- which logged object and future offset caused it
+- whether the failure came from `Ahead` directly or from the
+  `BadOrIntersection && !Behind` branch
+
+### Topics
+
+When TTC is enabled and a trajectory scores below `1.0`, the analyzer writes:
+
+```text
+/debug/epdms/ttc/violation_summary
+/debug/epdms/ttc/ego_footprints
+/debug/epdms/ttc/object_footprints
+/debug/epdms/ttc/overlap_areas
+/debug/epdms/ttc/labels
+```
+
+### Summary Payload
+
+`/debug/epdms/ttc/violation_summary` is a `std_msgs/msg/String` JSON message.
+
+Expected shape:
+
+```json
+{
+  "trajectory_stamp_sec": 1776838192.42,
+  "score": 0.0,
+  "reason": "collision_within_bound",
+  "first_failure_time_s": 1.2,
+  "failure_stamp_sec": 1776838193.62,
+  "future_offset_s": 0.6,
+  "object_id": "abc123",
+  "object_label": "CAR",
+  "ahead": false,
+  "behind": false,
+  "multiple_lanes": false,
+  "non_drivable_area": true,
+  "intersection": false,
+  "bad_or_intersection": true
+}
+```
+
+The Lichtblick plugin should use `trajectory_stamp_sec` for click-to-seek:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+### MarkerArray Display
+
+All TTC debug markers use:
+
+```text
+header.frame_id = "map"
+header.stamp = t0
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/epdms/ttc/ego_footprints` | The projected ego footprint at the failing TTC check. |
+| `/debug/epdms/ttc/object_footprints` | The logged future object footprint at the same query time. |
+| `/debug/epdms/ttc/overlap_areas` | The overlap polygon between the projected ego footprint and the object footprint. |
+| `/debug/epdms/ttc/labels` | Human-readable TTC summary label. |
+
+Suggested visual semantics:
+
+| Case | Color |
+|---|---|
+| TTC ego footprint | orange |
+| TTC object footprint | orange/yellow |
+| TTC overlap | magenta |
+| TTC label | red text |
+
+### Lichtblick Workflow
+
+The Lichtblick plugin should provide a panel named:
+
+```text
+TTC Violation Timeline
+```
+
+It should subscribe to:
+
+```text
+/debug/epdms/ttc/violation_summary
+```
+
+Panel behavior:
+
+1. Subscribe to `/debug/epdms/ttc/violation_summary`.
+2. Build a table of TTC-producing trajectory timestamps.
+3. Show columns:
+
+```text
+t0 | score | dt | delta | reason | object label | ahead | bad/intersection
+```
+
+4. On row click, call:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+5. In the 3D map panel, enable:
+
+```text
+/debug/epdms/ttc/ego_footprints
+/debug/epdms/ttc/object_footprints
+/debug/epdms/ttc/overlap_areas
+/debug/epdms/ttc/labels
+```
+
 ## 4s Trajectory Horizon Debugging
 
 To inspect the exact evaluated 4-second horizon in 3D, the analyzer also writes:

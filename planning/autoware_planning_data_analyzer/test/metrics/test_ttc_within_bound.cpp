@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "../../src/metrics/ttc_within_bound.hpp"
+#include "../../src/metrics/metric_utils.hpp"
 
 #include <autoware_utils_geometry/geometry.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
@@ -23,9 +24,11 @@
 #include <autoware_perception_msgs/msg/predicted_path.hpp>
 #include <autoware_perception_msgs/msg/shape.hpp>
 #include <autoware_planning_msgs/msg/trajectory.hpp>
+#include <unique_identifier_msgs/msg/uuid.hpp>
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <memory>
 #include <utility>
@@ -98,6 +101,14 @@ autoware_perception_msgs::msg::PredictedObject make_stationary_object(
   return object;
 }
 
+autoware_perception_msgs::msg::PredictedObject make_box_object(
+  const double x, const double y, const unique_identifier_msgs::msg::UUID & object_id)
+{
+  auto object = make_stationary_object(x, y);
+  object.object_id = object_id;
+  return object;
+}
+
 builtin_interfaces::msg::Time make_stamp(const double stamp_s)
 {
   const auto stamp_ns = static_cast<int64_t>(std::llround(stamp_s * 1.0e9));
@@ -114,6 +125,32 @@ std::vector<TimedPredictedObjects> make_future_objects(
   msg->header.stamp = make_stamp(stamp_s);
   msg->objects = std::move(objects);
   return {TimedPredictedObjects{rclcpp::Time(msg->header.stamp), msg}};
+}
+
+unique_identifier_msgs::msg::UUID make_uuid(const std::array<uint8_t, 16> & bytes)
+{
+  unique_identifier_msgs::msg::UUID id;
+  id.uuid = bytes;
+  return id;
+}
+
+std::vector<TrajectoryFootprintEvaluation> make_footprint_evaluations(
+  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
+  const bool multiple_lanes, const bool non_drivable_area)
+{
+  std::vector<TrajectoryFootprintEvaluation> evaluations;
+  evaluations.reserve(trajectory.points.size());
+  for (const auto & point : trajectory.points) {
+    TrajectoryFootprintEvaluation evaluation;
+    evaluation.ego_polygon = create_pose_footprint(point.pose, vehicle_info);
+    EgoAreaEvaluation area;
+    area.flags.multiple_lanes = multiple_lanes;
+    area.flags.non_drivable_area = non_drivable_area;
+    evaluation.ego_area_evaluation = area;
+    evaluations.push_back(std::move(evaluation));
+  }
+  return evaluations;
 }
 
 }  // namespace
@@ -143,6 +180,8 @@ TEST(TTCWithinBound, AheadCollisionFails)
   EXPECT_DOUBLE_EQ(result.score, 0.0);
   EXPECT_EQ(result.reason, "collision_within_bound");
   EXPECT_GE(result.infraction_time_s, 0.0);
+  ASSERT_EQ(result.debug_info.events.size(), 1U);
+  EXPECT_TRUE(result.debug_info.events.front().ahead);
 }
 
 TEST(TTCWithinBound, BehindCollisionDoesNotFail)
@@ -194,6 +233,65 @@ TEST(TTCWithinBound, IgnoresPredictedPathsAndUsesLoggedObjectPose)
   EXPECT_TRUE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 0.0);
   EXPECT_EQ(result.reason, "collision_within_bound");
+}
+
+TEST(TTCWithinBound, NuplanAheadAngleDoesNotFailForLargeLateralOffset)
+{
+  const auto trajectory = make_straight_trajectory(5.0);
+  auto objects = std::make_shared<PredictedObjects>();
+  objects->objects.push_back(make_stationary_object(1.0, 1.2));
+
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "available");
+}
+
+TEST(TTCWithinBound, BadAreaAllowsLateralOverlapToFail)
+{
+  const auto trajectory = make_straight_trajectory(5.0);
+  auto objects = std::make_shared<PredictedObjects>();
+  objects->objects.push_back(make_stationary_object(1.0, 1.2));
+  const auto evaluations = make_footprint_evaluations(
+    trajectory, make_vehicle_info(), false, true);
+
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info(), nullptr, &evaluations);
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 0.0);
+  EXPECT_EQ(result.reason, "collision_within_bound");
+  ASSERT_EQ(result.debug_info.events.size(), 1U);
+  EXPECT_FALSE(result.debug_info.events.front().ahead);
+  EXPECT_TRUE(result.debug_info.events.front().bad_or_intersection);
+  EXPECT_TRUE(result.debug_info.events.front().non_drivable_area);
+}
+
+TEST(TTCWithinBound, PreviouslyCollidedObjectIsIgnored)
+{
+  const auto trajectory = make_straight_trajectory(5.0);
+  const auto object_id = make_uuid({1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1});
+
+  auto objects_t0 = std::make_shared<PredictedObjects>();
+  objects_t0->header.stamp = make_stamp(0.0);
+  objects_t0->objects.push_back(make_box_object(-1.5, 0.0, object_id));
+
+  auto objects_t1 = std::make_shared<PredictedObjects>();
+  objects_t1->header.stamp = make_stamp(1.0);
+  objects_t1->objects.push_back(make_box_object(6.0, 0.0, object_id));
+
+  const std::vector<TimedPredictedObjects> future_objects = {
+    TimedPredictedObjects{rclcpp::Time(objects_t0->header.stamp), objects_t0},
+    TimedPredictedObjects{rclcpp::Time(objects_t1->header.stamp), objects_t1}};
+
+  const auto result = calculate_ttc_within_bound(
+    trajectory, future_objects, make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "available");
 }
 
 }  // namespace autoware::planning_data_analyzer::metrics

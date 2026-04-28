@@ -200,8 +200,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     future_objects.empty() ? sync_data->future_objects : future_objects;
   const size_t num_points = trajectory.points.size();
   const auto shared_footprint_evaluations =
-    (enabled_metrics.drivable_area_compliance || enabled_metrics.no_at_fault_collision ||
-     enabled_metrics.traffic_light_compliance) &&
+    (enabled_metrics.time_to_collision_within_bound || enabled_metrics.drivable_area_compliance ||
+     enabled_metrics.no_at_fault_collision || enabled_metrics.traffic_light_compliance) &&
         is_vehicle_info_valid(vehicle_info)
       ? evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler)
       : std::vector<TrajectoryFootprintEvaluation>{};
@@ -221,11 +221,13 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
 
   if (enabled_metrics.time_to_collision_within_bound) {
     const auto ttc_within_bound = calculate_ttc_within_bound(
-      trajectory, logged_future_objects, vehicle_info, route_handler);
+      trajectory, logged_future_objects, vehicle_info, route_handler,
+      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
     metrics.time_to_collision_within_bound = ttc_within_bound.score;
     metrics.time_to_collision_within_bound_available = ttc_within_bound.available;
     metrics.time_to_collision_within_bound_reason = ttc_within_bound.reason;
     metrics.time_to_collision_infraction_time_s = ttc_within_bound.infraction_time_s;
+    metrics.time_to_collision_within_bound_debug = ttc_within_bound.debug_info;
   } else {
     metrics.time_to_collision_within_bound_reason = "disabled";
   }

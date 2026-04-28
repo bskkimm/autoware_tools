@@ -2122,16 +2122,16 @@ $$
 #### Migrated Autoware TTC
 
 **Migrated Autoware inputs.** The migrated implementation uses the selected
-trajectory, highest-confidence Autoware predicted object paths, and constant-velocity
-projection of ego. The checked future offsets are:
+trajectory, logged future objects reconstructed from `future_objects`, and
+constant-velocity projection of ego. The checked future offsets are:
 
 $$
 \delta \in (0, 0.3, 0.6, 0.9).
 $$
 
 The migrated implementation projects the current ego footprint forward to the checked
-future offset. Object pose is interpolated from the highest-confidence predicted path
-at the matching future query time, yielding the queried object polygon.
+future offset. Object pose is interpolated from the logged future object track at the
+matching future query time, yielding the queried object polygon.
 
 Intersection:
 
@@ -2143,20 +2143,29 @@ $$
 \right].
 $$
 
-The migrated ahead and behind predicates are half-plane tests in the ego frame:
+The migrated ahead and behind predicates are the same nuPlan-style relative-angle
+tests as NAVSIM, evaluated at the checked projected ego pose and queried object pose:
 
 $$
 \mathrm{Ahead}_{t,\delta,o}^{aw}
 =
-\left[
-f_{t,\delta,o}^{aw}>0
-\right],
+\left[\theta_{t,\delta,o}^{aw}<30^{\circ}\right],
 \qquad
 \mathrm{Behind}_{t,\delta,o}^{aw}
 =
-\left[
-f_{t,\delta,o}^{aw}<0
-\right].
+\left[\theta_{t,\delta,o}^{aw}>150^{\circ}\right].
+$$
+
+The migrated implementation also reuses the current-sample ego-area and route context:
+
+$$
+\mathrm{BadOrIntersection}_{t}^{aw}
+=
+\mathrm{MultipleLanes}_{t}^{aw}
+\lor
+\mathrm{NonDrivableArea}_{t}^{aw}
+\lor
+\mathrm{Intersection}_{t}^{aw}.
 $$
 
 The local TTC fail condition is:
@@ -2170,7 +2179,7 @@ $$
 \mathrm{Ahead}_{t,\delta,o}^{aw}
 \lor
 \left(
-\mathrm{Intersection}_{t}^{aw}
+\mathrm{BadOrIntersection}_{t}^{aw}
 \land
 \neg\mathrm{Behind}_{t,\delta,o}^{aw}
 \right)
@@ -2190,19 +2199,29 @@ $$
 \right].
 $$
 
-The migrated condition omits NAVSIM's `multiple lanes or non-drivable area` branch from
-TTC and keeps only the intersection special case.
+The migrated implementation also suppresses previously collided logged objects in later
+TTC checks, matching the NAVSIM scorer shape more closely. It does **not** add
+NAVSIM's red-light-token exclusion because the Autoware-side TTC object stream has no
+red-light pseudo objects to exclude.
 
-**Main input gap.** TTC shares two important NC mismatches: Autoware uses
-`PredictedObjects.predicted_paths` rather than logged future tracked objects, and its
-ahead/behind predicates are half-plane tests rather than nuPlan's angle-threshold
-helpers. It also omits NAVSIM's multiple-lanes/non-drivable-area TTC exception.
+**Admitted / excluded road-space semantics.** TTC reuses the current selected-trajectory
+sample's shared ego-area and route context:
+
+- Included in `BadOrIntersection_t^{aw}`:
+  - `MultipleLanes_t^{aw}` from the shared current-sample ego footprint evaluation
+  - `NonDrivableArea_t^{aw}` from the same shared ego footprint evaluation
+  - `Intersection_t^{aw}` from the local `intersection_area` / intersection-lanelet
+    context already used by DDC
+- Excluded:
+  - red-light pseudo-token suppression
+  - any future-offset-specific reclassification of multiple-lane or non-drivable status;
+    those flags are taken from the current sample `t`, matching the NAVSIM equation
 
 ### Assessment
-TTC is a **partial port**, not an exact one. The main highlighted difference is the
-missing `badArea_t` branch in the migrated implementation. The local implementation
-keeps the thresholded binary structure but not the same environment semantics or full
-condition set.
+TTC is now a **close structural port**. The object source, angle predicates,
+`BadOrIntersection` branch, and previously-collided-object suppression now follow the
+NAVSIM rule shape closely. The remaining difference is mainly the absence of NAVSIM's
+red-light pseudo tokens in the Autoware-side TTC object stream.
 
 ---
 
