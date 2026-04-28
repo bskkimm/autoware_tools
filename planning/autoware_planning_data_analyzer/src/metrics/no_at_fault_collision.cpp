@@ -250,6 +250,7 @@ NoAtFaultCollisionDebugEvent make_debug_event(
   const Polygon2d & ego_polygon, const InterpolatedLoggedObject & object_state,
   const CollisionClassification & collision)
 {
+  const double debug_surface_z = ego_point.pose.position.z;
   NoAtFaultCollisionDebugEvent event;
   event.time_s = query_time_s;
   event.object_id = object_id_to_string(object_state.object_id, object_state.has_valid_object_id);
@@ -263,8 +264,8 @@ NoAtFaultCollisionDebugEvent make_debug_event(
   event.front_hit = collision.front_hit;
   event.ego_center = to_msg_point(ego_point.pose);
   event.object_center = to_msg_point(object_state.pose);
-  event.ego_footprint = polygon_to_points(ego_polygon, ego_point.pose.position.z);
-  event.object_footprint = polygon_to_points(object_state.polygon, object_state.pose.position.z);
+  event.ego_footprint = polygon_to_points(ego_polygon, debug_surface_z);
+  event.object_footprint = polygon_to_points(object_state.polygon, debug_surface_z);
   event.front_bumper = collision.front_bumper;
   return event;
 }
@@ -325,14 +326,13 @@ void fill_horizon_debug_footprints(
         autoware::object_recognition_utils::convertLabelToString(object_state->classification);
       object_footprint.collision = intersects;
       object_footprint.at_fault = intersects && object_at_fault;
-      object_footprint.footprint =
-        polygon_to_points(object_state->polygon, object_state->pose.position.z);
+      object_footprint.footprint = polygon_to_points(object_state->polygon, point.pose.position.z);
       debug_info.object_horizon_footprints.push_back(std::move(object_footprint));
 
       if (intersects) {
-        const double overlap_z = 0.5 * (point.pose.position.z + object_state->pose.position.z);
         for (const auto & overlap_polygon :
-             overlap_polygons_to_points(ego_polygon, object_state->polygon, overlap_z)) {
+             overlap_polygons_to_points(
+               ego_polygon, object_state->polygon, point.pose.position.z)) {
           NoAtFaultCollisionOverlapArea overlap_area;
           overlap_area.time_s = query_time_s;
           overlap_area.object_id = object_id;

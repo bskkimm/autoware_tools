@@ -565,6 +565,36 @@ nlohmann::json tlc_debug_summary_to_json(
     {"selected_stop_line_count", debug_info.selected_stop_line_count}};
 }
 
+std::string ttc_area_condition_string(const metrics::TTCWithinBoundDebugEvent & event)
+{
+  if (event.ahead) {
+    return "ahead";
+  }
+
+  std::vector<std::string> conditions;
+  if (event.multiple_lanes) {
+    conditions.push_back("multiple_lanes");
+  }
+  if (event.non_drivable_area) {
+    conditions.push_back("non_drivable_area");
+  }
+  if (event.intersection) {
+    conditions.push_back("intersection");
+  }
+  if (conditions.empty()) {
+    return event.bad_or_intersection ? "bad_or_intersection" : "other";
+  }
+
+  std::ostringstream oss;
+  for (std::size_t index = 0; index < conditions.size(); ++index) {
+    if (index > 0U) {
+      oss << "+";
+    }
+    oss << conditions.at(index);
+  }
+  return oss.str();
+}
+
 nlohmann::json ttc_debug_summary_to_json(
   const metrics::TrajectoryPointMetrics & metrics,
   const metrics::TTCWithinBoundDebugInfo & debug_info, const rclcpp::Time & timestamp)
@@ -579,6 +609,7 @@ nlohmann::json ttc_debug_summary_to_json(
        {"query_time_s", event.query_time_s},
        {"object_id", event.object_id},
        {"object_label", event.object_label},
+       {"area_condition", ttc_area_condition_string(event)},
        {"ahead", event.ahead},
        {"behind", event.behind},
        {"multiple_lanes", event.multiple_lanes},
@@ -600,6 +631,7 @@ nlohmann::json ttc_debug_summary_to_json(
     {"future_offset_s", event ? event->future_offset_s : 0.0},
     {"object_id", event ? event->object_id : "invalid"},
     {"object_label", event ? event->object_label : "UNKNOWN"},
+    {"area_condition", event ? ttc_area_condition_string(*event) : "other"},
     {"ahead", event ? event->ahead : false},
     {"behind", event ? event->behind : false},
     {"multiple_lanes", event ? event->multiple_lanes : false},
@@ -961,11 +993,8 @@ void write_ttc_debug_topics_to_bag(
     std::ostringstream label;
     label << "TTC=" << metrics.time_to_collision_within_bound << "\ndt=" << std::fixed
           << std::setprecision(1) << event.time_s << "s, delta=" << event.future_offset_s
-          << "s\n" << event.object_label << "\nahead=" << event.ahead
-          << ", behind=" << event.behind;
-    if (event.bad_or_intersection) {
-      label << "\nbad/intersection";
-    }
+          << "s\n" << event.object_label << "\ncond=" << ttc_area_condition_string(event)
+          << "\nahead=" << event.ahead << ", behind=" << event.behind;
     labels.markers.push_back(make_text_marker(
       timestamp, "ttc_labels", marker_id++, event.ego_center, label.str(),
       make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));

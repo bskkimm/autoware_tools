@@ -344,7 +344,7 @@ TEST(NoAtFaultCollision, FrontCollisionWithAgentFails)
     [](const auto & footprint) { return footprint.collision && footprint.at_fault; }));
 }
 
-TEST(NoAtFaultCollision, DebugFootprintsPreserveMapZ)
+TEST(NoAtFaultCollision, DebugFootprintsUseEgoSurfaceZ)
 {
   auto trajectory = make_single_point_trajectory(0.0, 0.0);
   trajectory.points.front().pose.position.z = 12.3;
@@ -371,16 +371,16 @@ TEST(NoAtFaultCollision, DebugFootprintsPreserveMapZ)
     EXPECT_DOUBLE_EQ(point.z, 12.3);
   }
   for (const auto & point : result.debug_info.events.front().object_footprint) {
-    EXPECT_DOUBLE_EQ(point.z, 40.5);
+    EXPECT_DOUBLE_EQ(point.z, 12.3);
   }
   for (const auto & point : result.debug_info.ego_horizon_footprints.front().footprint) {
     EXPECT_DOUBLE_EQ(point.z, 12.3);
   }
   for (const auto & point : result.debug_info.object_horizon_footprints.front().footprint) {
-    EXPECT_DOUBLE_EQ(point.z, 40.5);
+    EXPECT_DOUBLE_EQ(point.z, 12.3);
   }
   for (const auto & point : result.debug_info.overlap_areas.front().polygon) {
-    EXPECT_DOUBLE_EQ(point.z, 0.5 * (12.3 + 40.5));
+    EXPECT_DOUBLE_EQ(point.z, 12.3);
   }
 }
 

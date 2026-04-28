@@ -703,9 +703,9 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/ttc/ego_footprints` | The projected ego footprints for the selected TTC sample at all checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s`. Offsets with overlap are highlighted more strongly. |
-| `/debug/epdms/ttc/object_footprints` | The same logged object's queried future footprints at those checked offsets, when available. Offsets with overlap are highlighted more strongly. |
-| `/debug/epdms/ttc/overlap_areas` | The overlap polygon(s) at the checked offsets that actually overlap. The selected failing offset is included in this set. |
+| `/debug/epdms/ttc/ego_footprints` | The projected ego footprints for the selected TTC sample at all checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s`. Offsets with overlap are highlighted more strongly. These polygons are anchored to the ego road-surface z and then lifted only by a small marker offset. |
+| `/debug/epdms/ttc/object_footprints` | The same logged object's queried future footprints at those checked offsets, when available. Offsets with overlap are highlighted more strongly. These polygons use the same local road-surface z as the paired ego footprint instead of the object's 3D center height. |
+| `/debug/epdms/ttc/overlap_areas` | The overlap polygon(s) at the checked offsets that actually overlap. The selected failing offset is included in this set and is anchored to the same local road-surface z as the paired TTC footprint markers. |
 | `/debug/epdms/ttc/labels` | Human-readable TTC summary label. |
 
 Suggested visual semantics:
@@ -740,7 +740,7 @@ Panel behavior:
 3. Show columns:
 
 ```text
-t0 | score | dt | delta | reason | object label | ahead | bad/intersection
+t0 | score | t_fail | delta | condition | reason | object label | ahead | bad/intersection
 ```
 
 4. On row click, call:

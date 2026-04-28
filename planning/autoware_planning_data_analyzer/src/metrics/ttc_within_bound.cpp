@@ -167,6 +167,7 @@ TTCWithinBoundDebugEvent make_debug_event(
   const InterpolatedLoggedObject & object_state)
 {
   (void)ego_point;
+  const double debug_surface_z = projected_pose.position.z;
   TTCWithinBoundDebugEvent event;
   event.time_s = time_s;
   event.future_offset_s = future_offset_s;
@@ -183,8 +184,8 @@ TTCWithinBoundDebugEvent make_debug_event(
   event.ego_stopped = false;
   event.ego_center = to_msg_point(projected_pose);
   event.object_center = to_msg_point(object_state.pose);
-  event.ego_footprint = polygon_to_points(ego_polygon, projected_pose.position.z + 0.12);
-  event.object_footprint = polygon_to_points(object_state.polygon, object_state.pose.position.z + 0.18);
+  event.ego_footprint = polygon_to_points(ego_polygon, debug_surface_z);
+  event.object_footprint = polygon_to_points(object_state.polygon, debug_surface_z);
   return event;
 }
 
@@ -207,7 +208,7 @@ void populate_ttc_debug_horizon(
     ego_footprint.object_id = "ego";
     ego_footprint.object_label = "EGO";
     ego_footprint.failing = std::abs(future_offset_s - failure_future_offset_s) < 1.0e-6;
-    ego_footprint.footprint = polygon_to_points(ego_polygon, projected_pose.position.z + 0.12);
+    ego_footprint.footprint = polygon_to_points(ego_polygon, projected_pose.position.z);
 
     const auto object_state = interpolate_logged_object_state(object_track, query_time);
     if (object_state.has_value()) {
@@ -222,13 +223,13 @@ void populate_ttc_debug_horizon(
       object_footprint.overlap = overlap;
       object_footprint.failing = ego_footprint.failing;
       object_footprint.footprint =
-        polygon_to_points(object_state->polygon, object_state->pose.position.z + 0.18);
+        polygon_to_points(object_state->polygon, projected_pose.position.z);
       debug_info.object_horizon_footprints.push_back(std::move(object_footprint));
 
       if (overlap) {
         for (const auto & overlap_polygon :
              overlap_polygons_to_points(
-               ego_polygon, object_state->polygon, projected_pose.position.z + 0.24)) {
+               ego_polygon, object_state->polygon, projected_pose.position.z)) {
           TTCWithinBoundOverlapArea overlap_area;
           overlap_area.time_s = failure_time_s;
           overlap_area.future_offset_s = future_offset_s;
