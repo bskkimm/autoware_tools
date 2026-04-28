@@ -66,9 +66,11 @@ struct TTCWithinBoundOverlapArea
 
 struct TTCWithinBoundHorizonFootprint
 {
+  double time_s{0.0};
   double future_offset_s{0.0};
   std::string object_id{"ego"};
   std::string object_label{"EGO"};
+  bool prefix{false};
   bool overlap{false};
   bool failing{false};
   std::vector<geometry_msgs::msg::Point> footprint;

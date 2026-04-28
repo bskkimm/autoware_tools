@@ -703,8 +703,8 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/ttc/ego_footprints` | The projected ego footprints for the selected TTC sample at all checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s`. Offsets with overlap are highlighted more strongly. These polygons are anchored to the ego road-surface z and then lifted only by a small marker offset. |
-| `/debug/epdms/ttc/object_footprints` | The same logged object's queried future footprints at those checked offsets, when available. Offsets with overlap are highlighted more strongly. These polygons use the same local road-surface z as the paired ego footprint instead of the object's 3D center height. |
+| `/debug/epdms/ttc/ego_footprints` | The full trajectory prefix up to the TTC base sample is shown first in dim cyan, then the selected TTC sample's projected ego footprints at checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s` are drawn on top. Overlap offsets are highlighted more strongly. These polygons are anchored to the ego road-surface z and then lifted only by a small marker offset. |
+| `/debug/epdms/ttc/object_footprints` | The same object's matched prefix footprints are shown in dim orange up to the TTC base sample, then the same logged object's queried future footprints at the checked TTC offsets are drawn on top. Overlap offsets are highlighted more strongly. These polygons use the same local road-surface z as the paired ego footprint instead of the object's 3D center height. |
 | `/debug/epdms/ttc/overlap_areas` | The overlap polygon(s) at the checked offsets that actually overlap. The selected failing offset is included in this set and is anchored to the same local road-surface z as the paired TTC footprint markers. |
 | `/debug/epdms/ttc/labels` | Human-readable TTC summary label. |
 
@@ -765,8 +765,11 @@ check horizon for the selected failing trajectory sample:
 delta = 0.0, 0.3, 0.6, 0.9 s
 ```
 
-So the ego/object footprint topics should appear like a short four-step TTC horizon
-for one sampled state, with the overlapping offset highlighted.
+So the ego/object footprint topics should appear as:
+
+1. a dim full prefix from trajectory start up to the TTC base sample, then
+2. the short four-step TTC local horizon for that sampled state, with
+3. the overlapping offset highlighted.
 
 ## 4s Trajectory Horizon Debugging
 

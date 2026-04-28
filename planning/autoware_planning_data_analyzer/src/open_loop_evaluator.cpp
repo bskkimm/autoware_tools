@@ -963,21 +963,27 @@ void write_ttc_debug_topics_to_bag(
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
-    const double width = footprint.overlap ? 0.28 : 0.12;
+    const bool prefix = footprint.prefix;
+    const double width = prefix ? 0.08 : (footprint.overlap ? 0.28 : 0.12);
+    const auto color = prefix ? make_color(0.0F, 0.8F, 1.0F, 0.22F)
+                              : (footprint.overlap ? make_color(1.0F, 0.35F, 0.0F, 1.0F)
+                                                   : make_color(0.0F, 0.8F, 1.0F, 0.65F));
     ego_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "ttc_ego_footprints", marker_id++, footprint.footprint,
-      footprint.overlap ? make_color(1.0F, 0.35F, 0.0F, 1.0F)
-                        : make_color(0.0F, 0.8F, 1.0F, 0.65F),
+      color,
       width, true, marker_lifetime_s, 0.12));
   }
 
   marker_id = 0;
   for (const auto & footprint : debug_info.object_horizon_footprints) {
-    const double width = footprint.overlap ? 0.28 : 0.12;
+    const bool prefix = footprint.prefix;
+    const double width = prefix ? 0.08 : (footprint.overlap ? 0.28 : 0.12);
+    const auto color = prefix ? make_color(1.0F, 0.55F, 0.0F, 0.22F)
+                              : (footprint.overlap ? make_color(1.0F, 0.8F, 0.0F, 1.0F)
+                                                   : make_color(1.0F, 0.55F, 0.0F, 0.65F));
     object_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "ttc_object_footprints", marker_id++, footprint.footprint,
-      footprint.overlap ? make_color(1.0F, 0.8F, 0.0F, 1.0F)
-                        : make_color(1.0F, 0.55F, 0.0F, 0.65F),
+      color,
       width, true, marker_lifetime_s, 0.18));
   }
 

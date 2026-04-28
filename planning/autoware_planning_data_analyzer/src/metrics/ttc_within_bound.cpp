@@ -190,13 +190,48 @@ TTCWithinBoundDebugEvent make_debug_event(
 }
 
 void populate_ttc_debug_horizon(
-  TTCWithinBoundDebugInfo & debug_info,
-  const autoware_planning_msgs::msg::TrajectoryPoint & point,
+  TTCWithinBoundDebugInfo & debug_info, const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const std::size_t failure_index, const autoware_planning_msgs::msg::TrajectoryPoint & point,
   const tf2::Vector3 & velocity_world, const LinearRing2d & local_footprint,
   const LoggedObjectTrack & object_track, const rclcpp::Time & trajectory_start_time,
   const double failure_time_s, const double failure_future_offset_s, const std::string & object_id,
   const std::string & object_label)
 {
+  for (std::size_t index = 0; index <= failure_index && index < trajectory.points.size(); ++index) {
+    const auto & prefix_point = trajectory.points.at(index);
+    const double prefix_time_s = rclcpp::Duration(prefix_point.time_from_start).seconds();
+    const auto prefix_query_time =
+      trajectory_start_time + rclcpp::Duration(prefix_point.time_from_start);
+    const auto prefix_ego_polygon = create_pose_footprint(prefix_point.pose, local_footprint);
+
+    TTCWithinBoundHorizonFootprint prefix_ego_footprint;
+    prefix_ego_footprint.time_s = prefix_time_s;
+    prefix_ego_footprint.future_offset_s = 0.0;
+    prefix_ego_footprint.object_id = "ego";
+    prefix_ego_footprint.object_label = "EGO";
+    prefix_ego_footprint.prefix = true;
+    prefix_ego_footprint.overlap = false;
+    prefix_ego_footprint.failing = false;
+    prefix_ego_footprint.footprint =
+      polygon_to_points(prefix_ego_polygon, prefix_point.pose.position.z);
+    debug_info.ego_horizon_footprints.push_back(std::move(prefix_ego_footprint));
+
+    const auto prefix_object_state = interpolate_logged_object_state(object_track, prefix_query_time);
+    if (prefix_object_state.has_value()) {
+      TTCWithinBoundHorizonFootprint prefix_object_footprint;
+      prefix_object_footprint.time_s = prefix_time_s;
+      prefix_object_footprint.future_offset_s = 0.0;
+      prefix_object_footprint.object_id = object_id;
+      prefix_object_footprint.object_label = object_label;
+      prefix_object_footprint.prefix = true;
+      prefix_object_footprint.overlap = false;
+      prefix_object_footprint.failing = false;
+      prefix_object_footprint.footprint =
+        polygon_to_points(prefix_object_state->polygon, prefix_point.pose.position.z);
+      debug_info.object_horizon_footprints.push_back(std::move(prefix_object_footprint));
+    }
+  }
+
   for (const double future_offset_s : kFutureProjectionOffsetsSec) {
     const double query_time_s = failure_time_s + future_offset_s;
     const auto query_time = trajectory_start_time + rclcpp::Duration::from_seconds(query_time_s);
@@ -204,9 +239,11 @@ void populate_ttc_debug_horizon(
     const auto ego_polygon = create_pose_footprint(projected_pose, local_footprint);
 
     TTCWithinBoundHorizonFootprint ego_footprint;
+    ego_footprint.time_s = query_time_s;
     ego_footprint.future_offset_s = future_offset_s;
     ego_footprint.object_id = "ego";
     ego_footprint.object_label = "EGO";
+    ego_footprint.prefix = false;
     ego_footprint.failing = std::abs(future_offset_s - failure_future_offset_s) < 1.0e-6;
     ego_footprint.footprint = polygon_to_points(ego_polygon, projected_pose.position.z);
 
@@ -217,9 +254,11 @@ void populate_ttc_debug_horizon(
       debug_info.ego_horizon_footprints.push_back(ego_footprint);
 
       TTCWithinBoundHorizonFootprint object_footprint;
+      object_footprint.time_s = query_time_s;
       object_footprint.future_offset_s = future_offset_s;
       object_footprint.object_id = object_id;
       object_footprint.object_label = object_label;
+      object_footprint.prefix = false;
       object_footprint.overlap = overlap;
       object_footprint.failing = ego_footprint.failing;
       object_footprint.footprint =
@@ -352,7 +391,7 @@ TTCWithinBoundResult calculate_ttc_within_bound(
             ego_polygon, *object_state);
           result.debug_info.events.push_back(debug_event);
           populate_ttc_debug_horizon(
-            result.debug_info, point, velocity_world, local_footprint, object_track,
+            result.debug_info, trajectory, index, point, velocity_world, local_footprint, object_track,
             trajectory_start_time, time_s, future_offset_s, debug_event.object_id,
             debug_event.object_label);
           result.score = 0.0;
