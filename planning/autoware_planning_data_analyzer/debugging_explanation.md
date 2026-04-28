@@ -37,8 +37,8 @@ The NC debug output is intentionally compact.
 
 | Topic | Message type | Purpose |
 |---|---|---|
-| `/debug/nc/collision_summary` | `std_msgs/msg/String` | JSON summary for trajectories that contain NC collision events. This is the topic a custom Lichtblick panel should use for the clickable collision list. |
-| `/debug/nc/horizon_markers` | `visualization_msgs/msg/MarkerArray` | Combined full-horizon map markers: ego footprints, engaged-object footprints, highlighted overlap outlines, and labels. |
+| `/debug/epdms/nc/collision_summary` | `std_msgs/msg/String` | JSON summary for trajectories that contain NC collision events. This is the topic a custom Lichtblick panel should use for the clickable collision list. |
+| `/debug/epdms/nc/horizon_markers` | `visualization_msgs/msg/MarkerArray` | Combined full-horizon map markers: ego footprints, engaged-object footprints, highlighted overlap outlines, and labels. |
 
 The official metric topics still carry the scalar metric result:
 
@@ -54,22 +54,22 @@ The official metric topics still carry the scalar metric result:
 The earlier debug design had many separate topics such as:
 
 ```text
-/debug/nc/score
-/debug/nc/time_to_at_fault_collision_s
-/debug/nc/event_count
-/debug/nc/at_fault_event_count
-/debug/nc/reason
-/debug/nc/worst_event/...
-/debug/nc/events
-/debug/nc/ego_footprints
-/debug/nc/object_footprints
-/debug/nc/collision_pairs
-/debug/nc/front_bumper
-/debug/nc/bad_area
-/debug/nc/horizon_ego_footprints
-/debug/nc/horizon_object_footprints
-/debug/nc/horizon_overlap_areas
-/debug/nc/horizon_labels
+/debug/epdms/nc/score
+/debug/epdms/nc/time_to_at_fault_collision_s
+/debug/epdms/nc/event_count
+/debug/epdms/nc/at_fault_event_count
+/debug/epdms/nc/reason
+/debug/epdms/nc/worst_event/...
+/debug/epdms/nc/events
+/debug/epdms/nc/ego_footprints
+/debug/epdms/nc/object_footprints
+/debug/epdms/nc/collision_pairs
+/debug/epdms/nc/front_bumper
+/debug/epdms/nc/bad_area
+/debug/epdms/nc/horizon_ego_footprints
+/debug/epdms/nc/horizon_object_footprints
+/debug/epdms/nc/horizon_overlap_areas
+/debug/epdms/nc/horizon_labels
 ```
 
 Those are no longer the preferred output.
@@ -94,7 +94,7 @@ deleting each other at the same timestamp.
 
 ## Collision Summary JSON
 
-`/debug/nc/collision_summary` is published only for evaluated trajectories that contain
+`/debug/epdms/nc/collision_summary` is published only for evaluated trajectories that contain
 at least one NC collision event.
 
 Example:
@@ -161,7 +161,7 @@ The marker timestamp is the planner output time, not the future collision time.
 
 Recommended interpretation:
 
-| Marker namespace inside `/debug/nc/horizon_markers` | Meaning |
+| Marker namespace inside `/debug/epdms/nc/horizon_markers` | Meaning |
 |---|---|
 | `nc_horizon_ego_footprints` | The ego footprint at each trajectory sample in the 4 s horizon. |
 | `nc_horizon_object_footprints` | The engaged object's logged footprint at each matching future sample. |
@@ -189,12 +189,12 @@ NC Collision Timeline
 It subscribes to:
 
 ```text
-/debug/nc/collision_summary
+/debug/epdms/nc/collision_summary
 ```
 
 Panel behavior:
 
-1. Subscribe to `/debug/nc/collision_summary`.
+1. Subscribe to `/debug/epdms/nc/collision_summary`.
 2. Build a table of collision-producing trajectory timestamps.
 3. Show columns:
 
@@ -214,7 +214,7 @@ context.seekPlayback?.(trajectory_stamp_sec);
 7. In the 3D map panel, enable:
 
 ```text
-/debug/nc/horizon_markers
+/debug/epdms/nc/horizon_markers
 ```
 
 Then each click jumps to the planner output time where that collision-producing
@@ -260,12 +260,12 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 
 | Topic | Message type | Purpose |
 |---|---|---|
-| `/debug/dac/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DAC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DAC failure list. |
-| `/debug/dac/ego_footprints` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego footprint outlines. Non-drivable samples are highlighted. |
-| `/debug/dac/admissible_road_areas` | `visualization_msgs/msg/MarkerArray` | Road lanelet polygons used by DAC at the first failing timestep. |
-| `/debug/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
-| `/debug/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
-| `/debug/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
+| `/debug/epdms/dac/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DAC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DAC failure list. |
+| `/debug/epdms/dac/ego_footprints` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego footprint outlines. Non-drivable samples are highlighted. |
+| `/debug/epdms/dac/admissible_road_areas` | `visualization_msgs/msg/MarkerArray` | Road lanelet polygons used by DAC at the first failing timestep. |
+| `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
+| `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
+| `/debug/epdms/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
 
 The official metric topics still carry the scalar metric result:
 
@@ -277,7 +277,7 @@ The official metric topics still carry the scalar metric result:
 
 ## DAC Summary JSON
 
-`/debug/dac/violation_summary` is published only for evaluated trajectories whose DAC
+`/debug/epdms/dac/violation_summary` is published only for evaluated trajectories whose DAC
 score is below `1.0`.
 
 Example:
@@ -316,11 +316,11 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/dac/ego_footprints` | The ego footprint at each trajectory sample in the evaluated horizon. |
-| `/debug/dac/admissible_road_areas` | The road lanelet polygons used to judge the first failing DAC sample. |
-| `/debug/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
-| `/debug/dac/failing_corners` | The ego corners that were outside all admissible road and parking polygons. |
-| `/debug/dac/labels` | Human-readable DAC labels. |
+| `/debug/epdms/dac/ego_footprints` | The ego footprint at each trajectory sample in the evaluated horizon. |
+| `/debug/epdms/dac/admissible_road_areas` | The road lanelet polygons used to judge the first failing DAC sample. |
+| `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
+| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road and parking polygons. |
+| `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 
 Suggested visual semantics:
 
@@ -344,12 +344,12 @@ DAC Violation Timeline
 It subscribes to:
 
 ```text
-/debug/dac/violation_summary
+/debug/epdms/dac/violation_summary
 ```
 
 Panel behavior:
 
-1. Subscribe to `/debug/dac/violation_summary`.
+1. Subscribe to `/debug/epdms/dac/violation_summary`.
 2. Build a table of DAC-failing trajectory timestamps.
 3. Show columns:
 
@@ -367,11 +367,11 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 6. In the 3D map panel, enable:
 
 ```text
-/debug/dac/ego_footprints
-/debug/dac/admissible_road_areas
-/debug/dac/admissible_parking_areas
-/debug/dac/failing_corners
-/debug/dac/labels
+/debug/epdms/dac/ego_footprints
+/debug/epdms/dac/admissible_road_areas
+/debug/epdms/dac/admissible_parking_areas
+/debug/epdms/dac/failing_corners
+/debug/epdms/dac/labels
 ```
 
 Then each click jumps to the planner output time whose selected trajectory first left
@@ -394,12 +394,12 @@ DDC debugging should answer:
 
 | Topic | Message type | Purpose |
 |---|---|---|
-| `/debug/ddc/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DDC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DDC violation list. |
-| `/debug/ddc/ego_centers` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego-center polyline for the evaluated rollout. |
-| `/debug/ddc/oncoming_segments` | `visualization_msgs/msg/MarkerArray` | The ego-center segments whose progress counted toward wrong-way accumulation. |
-| `/debug/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-consistent admissible lane polygons used by the DDC center-point oncoming check inside the worst 1.0 s window. This historical topic name now also covers same-direction neighboring lanes and adjacent shoulders when they are part of the local admissible corridor. The published outlines include the current DDC soft admissible lane margin and are emitted per-sample within the worst window instead of being deduplicated to unique lane IDs. |
-| `/debug/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby `intersection_area` polygons used by the DDC intersection leniency check inside the worst 1.0 s window. The topic name is historical, but the markers now represent map intersection-area polygons rather than only turn-direction-tagged lanelets. |
-| `/debug/ddc/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DDC labels such as score, max wrong-way progress, and worst-window bounds. |
+| `/debug/epdms/ddc/violation_summary` | `std_msgs/msg/String` | JSON summary for trajectories whose DDC score is below `1.0`. This is the topic a custom Lichtblick panel should use for the clickable DDC violation list. |
+| `/debug/epdms/ddc/ego_centers` | `visualization_msgs/msg/MarkerArray` | Full trajectory-horizon ego-center polyline for the evaluated rollout. |
+| `/debug/epdms/ddc/oncoming_segments` | `visualization_msgs/msg/MarkerArray` | The ego-center segments whose progress counted toward wrong-way accumulation. |
+| `/debug/epdms/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-consistent admissible lane polygons used by the DDC center-point oncoming check inside the worst 1.0 s window. This historical topic name now also covers same-direction neighboring lanes and adjacent shoulders when they are part of the local admissible corridor. The published outlines include the current DDC soft admissible lane margin and are emitted per-sample within the worst window instead of being deduplicated to unique lane IDs. |
+| `/debug/epdms/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby `intersection_area` polygons used by the DDC intersection leniency check inside the worst 1.0 s window. The topic name is historical, but the markers now represent map intersection-area polygons rather than only turn-direction-tagged lanelets. |
+| `/debug/epdms/ddc/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DDC labels such as score, max wrong-way progress, and worst-window bounds. |
 
 The official metric topics still carry the scalar result:
 
@@ -412,7 +412,7 @@ The official metric topics still carry the scalar result:
 
 ## DDC Summary JSON
 
-`/debug/ddc/violation_summary` is published only for evaluated trajectories whose DDC
+`/debug/epdms/ddc/violation_summary` is published only for evaluated trajectories whose DDC
 score is below `1.0`.
 
 Example:
@@ -449,11 +449,11 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/ddc/ego_centers` | Ego-center path over the full evaluated horizon. |
-| `/debug/ddc/oncoming_segments` | Only the centerline segments that contributed to wrong-way accumulation because `Oncoming && !Intersection` held there. |
-| `/debug/ddc/route_lane_polygons` | Nearby route-consistent admissible lane polygons that counted as not-oncoming in the worst 1.0 s window. This can include same-direction neighboring lanes and adjacent shoulders. The outlines include the current DDC soft lane margin and are emitted for each sample in the worst window so the local boundary under the current ego position remains visible. |
-| `/debug/ddc/intersection_lane_polygons` | Nearby `intersection_area` polygons that granted intersection leniency in the worst 1.0 s window. |
-| `/debug/ddc/labels` | Human-readable DDC summary label. |
+| `/debug/epdms/ddc/ego_centers` | Ego-center path over the full evaluated horizon. |
+| `/debug/epdms/ddc/oncoming_segments` | Only the centerline segments that contributed to wrong-way accumulation because `Oncoming && !Intersection` held there. |
+| `/debug/epdms/ddc/route_lane_polygons` | Nearby route-consistent admissible lane polygons that counted as not-oncoming in the worst 1.0 s window. This can include same-direction neighboring lanes and adjacent shoulders. The outlines include the current DDC soft lane margin and are emitted for each sample in the worst window so the local boundary under the current ego position remains visible. |
+| `/debug/epdms/ddc/intersection_lane_polygons` | Nearby `intersection_area` polygons that granted intersection leniency in the worst 1.0 s window. |
+| `/debug/epdms/ddc/labels` | Human-readable DDC summary label. |
 
 Suggested visual semantics:
 
@@ -476,12 +476,12 @@ DDC Violation Timeline
 It should subscribe to:
 
 ```text
-/debug/ddc/violation_summary
+/debug/epdms/ddc/violation_summary
 ```
 
 Panel behavior:
 
-1. Subscribe to `/debug/ddc/violation_summary`.
+1. Subscribe to `/debug/epdms/ddc/violation_summary`.
 2. Build a table of DDC-non-perfect trajectory timestamps.
 3. Show columns:
 
@@ -498,11 +498,11 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 5. In the 3D map panel, enable:
 
 ```text
-/debug/ddc/ego_centers
-/debug/ddc/oncoming_segments
-/debug/ddc/route_lane_polygons
-/debug/ddc/intersection_lane_polygons
-/debug/ddc/labels
+/debug/epdms/ddc/ego_centers
+/debug/epdms/ddc/oncoming_segments
+/debug/epdms/ddc/route_lane_polygons
+/debug/epdms/ddc/intersection_lane_polygons
+/debug/epdms/ddc/labels
 ```
 
 Then each click jumps to the planner output time and shows:
@@ -525,15 +525,15 @@ TLC debug output is intended to answer:
 When TLC is enabled and a trajectory scores below `1.0`, the analyzer writes:
 
 ```text
-/debug/tlc/violation_summary
-/debug/tlc/ego_footprints
-/debug/tlc/stop_lines
-/debug/tlc/labels
+/debug/epdms/tlc/violation_summary
+/debug/epdms/tlc/ego_footprints
+/debug/epdms/tlc/stop_lines
+/debug/epdms/tlc/labels
 ```
 
 ### Summary Payload
 
-`/debug/tlc/violation_summary` is a `std_msgs/msg/String` JSON message.
+`/debug/epdms/tlc/violation_summary` is a `std_msgs/msg/String` JSON message.
 
 Expected shape:
 
@@ -571,9 +571,9 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/tlc/ego_footprints` | Ego footprint path over the full evaluated horizon. The failing sample is highlighted more strongly. |
-| `/debug/tlc/stop_lines` | Stop line belonging to the selected movement-compatible traffic-light regulatory element. This is the scoring primitive. |
-| `/debug/tlc/labels` | Human-readable TLC summary label. |
+| `/debug/epdms/tlc/ego_footprints` | Ego footprint path over the full evaluated horizon. The failing sample is highlighted more strongly. |
+| `/debug/epdms/tlc/stop_lines` | Stop line belonging to the selected movement-compatible traffic-light regulatory element. This is the scoring primitive. |
+| `/debug/epdms/tlc/labels` | Human-readable TLC summary label. |
 
 Suggested visual semantics:
 
@@ -595,12 +595,12 @@ TLC Violation Timeline
 It should subscribe to:
 
 ```text
-/debug/tlc/violation_summary
+/debug/epdms/tlc/violation_summary
 ```
 
 Panel behavior:
 
-1. Subscribe to `/debug/tlc/violation_summary`.
+1. Subscribe to `/debug/epdms/tlc/violation_summary`.
 2. Build a table of TLC-non-perfect trajectory timestamps.
 3. Show columns:
 
@@ -617,9 +617,9 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 5. In the 3D map panel, enable:
 
 ```text
-/debug/tlc/ego_footprints
-/debug/tlc/stop_lines
-/debug/tlc/labels
+/debug/epdms/tlc/ego_footprints
+/debug/epdms/tlc/stop_lines
+/debug/epdms/tlc/labels
 ```
 
 Then each click shows:
@@ -643,8 +643,8 @@ compliance.
 To inspect the exact evaluated 4-second horizon in 3D, the analyzer also writes:
 
 ```text
-/debug/trajectory/planned_horizon_4s
-/debug/trajectory/gt_horizon_4s
+/debug/epdms/trajectory/planned_horizon_4s
+/debug/epdms/trajectory/gt_horizon_4s
 ```
 
 Both are `visualization_msgs/msg/MarkerArray` topics rendered as filled footprint polygons
@@ -656,8 +656,8 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/trajectory/planned_horizon_4s` | Evaluated planner trajectory truncated to 4.0 s and drawn as exact ego-footprint rectangles at each sample. |
-| `/debug/trajectory/gt_horizon_4s` | Evaluated GT trajectory truncated to 4.0 s and drawn as exact ego-footprint rectangles at each sample. |
+| `/debug/epdms/trajectory/planned_horizon_4s` | Evaluated planner trajectory truncated to 4.0 s and drawn as exact ego-footprint rectangles at each sample. |
+| `/debug/epdms/trajectory/gt_horizon_4s` | Evaluated GT trajectory truncated to 4.0 s and drawn as exact ego-footprint rectangles at each sample. |
 
 Suggested visual semantics:
 

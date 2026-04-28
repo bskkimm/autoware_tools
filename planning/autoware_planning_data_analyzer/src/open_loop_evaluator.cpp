@@ -183,27 +183,27 @@ std::vector<TimedPredictedObjects> get_future_objects_for_trajectory(
 
 std::string nc_debug_topic(const std::string & topic_name)
 {
-  return "/debug/nc/" + topic_name;
+  return "/debug/epdms/nc/" + topic_name;
 }
 
 std::string dac_debug_topic(const std::string & topic_name)
 {
-  return "/debug/dac/" + topic_name;
+  return "/debug/epdms/dac/" + topic_name;
 }
 
 std::string ddc_debug_topic(const std::string & topic_name)
 {
-  return "/debug/ddc/" + topic_name;
+  return "/debug/epdms/ddc/" + topic_name;
 }
 
 std::string tlc_debug_topic(const std::string & topic_name)
 {
-  return "/debug/tlc/" + topic_name;
+  return "/debug/epdms/tlc/" + topic_name;
 }
 
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
-  return "/debug/trajectory/" + topic_name;
+  return "/debug/epdms/trajectory/" + topic_name;
 }
 
 std_msgs::msg::ColorRGBA make_color(
