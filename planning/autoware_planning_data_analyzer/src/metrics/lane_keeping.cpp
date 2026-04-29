@@ -26,6 +26,8 @@ LaneKeepingResult calculate_lane_keeping_result(
   const LaneKeepingParameters & parameters, const bool lane_change_intent_active,
   const std::vector<double> & lane_change_transition_times_s)
 {
+  (void)lane_change_intent_active;
+  (void)lane_change_transition_times_s;
   LaneKeepingResult result;
   if (
     evaluation_points.empty() || parameters.max_lateral_deviation < 0.0 ||
@@ -38,21 +40,29 @@ LaneKeepingResult calculate_lane_keeping_result(
   double max_violation_duration = 0.0;
   double peak_abs_lateral_deviation = 0.0;
   bool failure_recorded = false;
-  std::vector<double> lane_change_windows = lane_change_transition_times_s;
   std::optional<double> queue_release_until_s;
+  std::vector<std::pair<double, double>> lane_change_windows;
 
   result.debug.samples.reserve(evaluation_points.size());
 
-  if (lane_change_windows.empty() && lane_change_intent_active) {
-    for (std::size_t index = 1; index < evaluation_points.size(); ++index) {
-      const auto & previous = evaluation_points.at(index - 1U);
-      const auto & current = evaluation_points.at(index);
-      if (
-        previous.reference_lanelet_id >= 0 && current.reference_lanelet_id >= 0 &&
-        previous.reference_lanelet_id != current.reference_lanelet_id) {
-        lane_change_windows.push_back(current.time_from_start.seconds());
-      }
+  for (std::size_t index = 0; index < evaluation_points.size(); ++index) {
+    if (!evaluation_points.at(index).multiple_lanes) {
+      continue;
     }
+    const auto segment_start_time =
+      std::max(0.0, evaluation_points.at(index).time_from_start.seconds() -
+                      parameters.lane_change_pre_grace_time);
+    std::size_t segment_end_index = index;
+    while (
+      segment_end_index + 1U < evaluation_points.size() &&
+      evaluation_points.at(segment_end_index + 1U).multiple_lanes) {
+      ++segment_end_index;
+    }
+    const auto segment_end_time =
+      evaluation_points.at(segment_end_index).time_from_start.seconds() +
+      parameters.lane_change_post_grace_time;
+    lane_change_windows.emplace_back(segment_start_time, segment_end_time);
+    index = segment_end_index;
   }
 
   const auto reset_violation_run = [&]() {
@@ -67,9 +77,9 @@ LaneKeepingResult calculate_lane_keeping_result(
     const bool over_threshold =
       finite && std::abs(evaluation_point.lateral_deviation) > parameters.max_lateral_deviation;
     const bool lane_change_exempt = std::any_of(
-      lane_change_windows.begin(), lane_change_windows.end(), [&](const double change_time_s) {
-        return time_s >= change_time_s - parameters.lane_change_pre_grace_time &&
-               time_s <= change_time_s + parameters.lane_change_post_grace_time;
+      lane_change_windows.begin(), lane_change_windows.end(),
+      [&](const auto & window) {
+        return time_s >= window.first && time_s <= window.second;
       });
     const double progress_window_start =
       std::max(0.0, time_s - parameters.queue_progress_window_time);
@@ -99,6 +109,7 @@ LaneKeepingResult calculate_lane_keeping_result(
       evaluation_point.ego_center,
       evaluation_point.lateral_deviation,
       evaluation_point.is_in_intersection,
+      evaluation_point.multiple_lanes,
       over_threshold,
       false,
       lane_change_exempt,

@@ -819,7 +819,7 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven first by GT-derived lane-change periods, then by the indicator-based local lanelet-switch fallback. |
+| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven by the actual local `multiple_lanes` transfer segment on the evaluated horizon, with short pre/post grace around that segment. |
 | `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
 | `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
 

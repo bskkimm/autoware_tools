@@ -38,12 +38,13 @@ LaneKeepingEvaluationPoint make_evaluation_point(
 
 LaneKeepingEvaluationPoint make_exemptable_point(
   const double seconds, const double lateral_deviation, const std::int64_t lanelet_id,
-  const double speed_mps, const double cumulative_progress_m)
+  const double speed_mps, const double cumulative_progress_m, const bool multiple_lanes = false)
 {
   auto point = make_evaluation_point(seconds, lateral_deviation, false);
   point.reference_lanelet_id = lanelet_id;
   point.speed_mps = speed_mps;
   point.cumulative_progress_m = cumulative_progress_m;
+  point.multiple_lanes = multiple_lanes;
   return point;
 }
 
@@ -110,6 +111,24 @@ TEST(LaneKeepingTest, ReportsFailureRunMetadata)
 TEST(LaneKeepingTest, LaneChangeGraceSuppressesViolationRun)
 {
   const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_exemptable_point(0.0, 0.6, 1, 4.0, 0.0),
+    make_exemptable_point(0.5, 0.6, 1, 4.0, 2.0, true),
+    make_exemptable_point(1.0, 0.6, 2, 4.0, 4.0, true),
+    make_exemptable_point(1.5, 0.6, 2, 4.0, 6.0),
+    make_exemptable_point(2.1, 0.6, 2, 4.0, 8.0)};
+
+  const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
+    evaluation_points, LaneKeepingParameters{0.5, 2.0}, true);
+
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_TRUE(result.debug.samples.at(0).lane_change_exempt);
+  EXPECT_TRUE(result.debug.samples.at(1).lane_change_exempt);
+  EXPECT_TRUE(result.debug.samples.at(2).lane_change_exempt);
+}
+
+TEST(LaneKeepingTest, LaneletSwitchWithoutMultipleLanesDoesNotSuppressViolationRun)
+{
+  const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
     make_exemptable_point(0.0, 0.6, 1, 4.0, 0.0), make_exemptable_point(0.5, 0.6, 1, 4.0, 2.0),
     make_exemptable_point(1.0, 0.6, 2, 4.0, 4.0), make_exemptable_point(1.5, 0.6, 2, 4.0, 6.0),
     make_exemptable_point(2.1, 0.6, 2, 4.0, 8.0)};
@@ -117,10 +136,10 @@ TEST(LaneKeepingTest, LaneChangeGraceSuppressesViolationRun)
   const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
     evaluation_points, LaneKeepingParameters{0.5, 2.0}, true);
 
-  EXPECT_DOUBLE_EQ(result.score, 1.0);
-  EXPECT_FALSE(result.debug.samples.at(0).lane_change_exempt);
-  EXPECT_TRUE(result.debug.samples.at(1).lane_change_exempt);
-  EXPECT_TRUE(result.debug.samples.at(2).lane_change_exempt);
+  EXPECT_DOUBLE_EQ(result.score, 0.0);
+  for (const auto & sample : result.debug.samples) {
+    EXPECT_FALSE(sample.lane_change_exempt);
+  }
 }
 
 TEST(LaneKeepingTest, QueueAndReleaseGraceSuppressViolationRun)

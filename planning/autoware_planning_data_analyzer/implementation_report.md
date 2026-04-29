@@ -2261,8 +2261,8 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 - Intersection relaxation now reuses the shared local intersection context already used by DDC:
   local `intersection_area` polygons first, then route-intersection lanelets as fallback.
 - The migrated code now also suppresses LK accumulation during:
-  - GT-derived lane-change grace windows inferred from GT same-direction reference-lanelet switching
-  - fallback lane-change grace windows inferred from turn-indicator intent plus reference-lanelet switching
+  - local lane-transfer windows inferred from contiguous `multiple_lanes` segments on the
+    evaluated trajectory, expanded by short pre/post grace margins
   - low-speed / low-progress queue states
   - a short release-hysteresis window after queue motion resumes
 - Missing reference lanelets become unavailable in the migrated code rather than silently behaving like NAVSIM's always-available cached centerline path.
@@ -2362,15 +2362,14 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
   - local `intersection_area` polygons around the sample pose
   - route-intersection lanelets as fallback when no polygon directly contains the pose
 - Included for lane-change relaxation:
-  - GT lane-change periods derived from GT reference-lanelet switches
-  - fallback indicator-based lane-change periods when GT does not provide a usable switch period
-  - short grace windows around those lane-change transition times
+  - actual local lane-transfer periods where the evaluated footprint is on multiple lanes
+  - short grace windows immediately before entering and after leaving those multiple-lane segments
 - Included for queue / constrained-traffic relaxation:
   - low-speed, low-progress samples
   - a short release-grace window immediately after that queue state ends
 - Excluded:
   - a single globally cached route centerline shared across the whole rollout
-  - a blanket lane-change exemption without observed local lanelet-switch context
+  - GT- or indicator-only future lane-switch anchors without an observed local multiple-lane transfer
   - a blanket queue exemption without low-speed / low-progress evidence
   - non-intersection resets other than missing / non-finite reference-lanelet samples
 

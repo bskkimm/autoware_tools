@@ -217,7 +217,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const size_t num_points = trajectory.points.size();
   const auto shared_footprint_evaluations =
     (enabled_metrics.time_to_collision_within_bound || enabled_metrics.drivable_area_compliance ||
-     enabled_metrics.no_at_fault_collision || enabled_metrics.traffic_light_compliance) &&
+     enabled_metrics.no_at_fault_collision || enabled_metrics.traffic_light_compliance ||
+     enabled_metrics.lane_keeping) &&
         is_vehicle_info_valid(vehicle_info)
       ? evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler)
       : std::vector<TrajectoryFootprintEvaluation>{};
@@ -462,10 +463,15 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       const auto reference_lanelet = find_reference_lanelet(point.pose, route_handler);
       if (!reference_lanelet.has_value()) {
         metrics.lateral_deviations[i] = std::numeric_limits<double>::quiet_NaN();
+        const bool multiple_lanes =
+          i < shared_footprint_evaluations.size() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           false,
+          multiple_lanes,
           ego_center,
           {},
           -1,
@@ -474,10 +480,15 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       } else {
         metrics.lateral_deviations[i] =
           lanelet::utils::getLateralDistanceToCenterline(reference_lanelet.value(), point.pose);
+        const bool multiple_lanes =
+          i < shared_footprint_evaluations.size() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           is_pose_in_intersection(point.pose, route_handler),
+          multiple_lanes,
           ego_center,
           centerline_to_points(reference_lanelet.value(), point.pose.position.z),
           reference_lanelet->id(),

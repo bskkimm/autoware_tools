@@ -43,6 +43,7 @@ struct LaneKeepingEvaluationPoint
   rclcpp::Duration time_from_start{0, 0};
   double lateral_deviation{0.0};
   bool is_in_intersection{false};
+  bool multiple_lanes{false};
   geometry_msgs::msg::Point ego_center{};
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
@@ -56,6 +57,7 @@ struct LaneKeepingDebugSample
   geometry_msgs::msg::Point ego_center{};
   double lateral_deviation{0.0};
   bool is_in_intersection{false};
+  bool multiple_lanes{false};
   bool over_threshold{false};
   bool in_failure_run{false};
   bool lane_change_exempt{false};
