@@ -23,7 +23,8 @@ namespace autoware::planning_data_analyzer::metrics
 
 LaneKeepingResult calculate_lane_keeping_result(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters, const bool lane_change_intent_active)
+  const LaneKeepingParameters & parameters, const bool lane_change_intent_active,
+  const std::vector<double> & lane_change_transition_times_s)
 {
   LaneKeepingResult result;
   if (
@@ -37,12 +38,12 @@ LaneKeepingResult calculate_lane_keeping_result(
   double max_violation_duration = 0.0;
   double peak_abs_lateral_deviation = 0.0;
   bool failure_recorded = false;
-  std::vector<double> lane_change_windows;
+  std::vector<double> lane_change_windows = lane_change_transition_times_s;
   std::optional<double> queue_release_until_s;
 
   result.debug.samples.reserve(evaluation_points.size());
 
-  if (lane_change_intent_active) {
+  if (lane_change_windows.empty() && lane_change_intent_active) {
     for (std::size_t index = 1; index < evaluation_points.size(); ++index) {
       const auto & previous = evaluation_points.at(index - 1U);
       const auto & current = evaluation_points.at(index);
@@ -155,9 +156,11 @@ LaneKeepingResult calculate_lane_keeping_result(
 
 double calculate_lane_keeping_score(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters, const bool lane_change_intent_active)
+  const LaneKeepingParameters & parameters, const bool lane_change_intent_active,
+  const std::vector<double> & lane_change_transition_times_s)
 {
-  return calculate_lane_keeping_result(evaluation_points, parameters, lane_change_intent_active)
+  return calculate_lane_keeping_result(
+           evaluation_points, parameters, lane_change_intent_active, lane_change_transition_times_s)
     .score;
 }
 

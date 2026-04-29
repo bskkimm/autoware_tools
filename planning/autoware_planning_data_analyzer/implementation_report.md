@@ -2261,7 +2261,8 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 - Intersection relaxation now reuses the shared local intersection context already used by DDC:
   local `intersection_area` polygons first, then route-intersection lanelets as fallback.
 - The migrated code now also suppresses LK accumulation during:
-  - lane-change grace windows inferred from turn-indicator intent plus reference-lanelet switching
+  - GT-derived lane-change grace windows inferred from GT same-direction reference-lanelet switching
+  - fallback lane-change grace windows inferred from turn-indicator intent plus reference-lanelet switching
   - low-speed / low-progress queue states
   - a short release-hysteresis window after queue motion resumes
 - Missing reference lanelets become unavailable in the migrated code rather than silently behaving like NAVSIM's always-available cached centerline path.
@@ -2361,8 +2362,9 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
   - local `intersection_area` polygons around the sample pose
   - route-intersection lanelets as fallback when no polygon directly contains the pose
 - Included for lane-change relaxation:
-  - turn-indicator-active trajectories
-  - short grace windows around per-sample reference-lanelet switches
+  - GT lane-change periods derived from GT reference-lanelet switches
+  - fallback indicator-based lane-change periods when GT does not provide a usable switch period
+  - short grace windows around those lane-change transition times
 - Included for queue / constrained-traffic relaxation:
   - low-speed, low-progress samples
   - a short release-grace window immediately after that queue state ends

@@ -1277,7 +1277,7 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   const auto human_sync_data =
     clone_with_trajectory(eval_data.synchronized_data, eval_data.ground_truth_trajectory);
   const auto human_point_metrics = metrics::calculate_trajectory_point_metrics(
-    human_sync_data, route_handler, history_comfort_params, lane_keeping_params,
+    human_sync_data, &eval_data.ground_truth_trajectory, route_handler, history_comfort_params, lane_keeping_params,
     driving_direction_params, vehicle_info, enabled_metrics, future_objects);
 
   metrics::EpdmsMetricSnapshot human_snapshot;
@@ -1501,7 +1501,7 @@ void OpenLoopEvaluator::evaluate(
                 trajectory_evaluation_horizon_s_)
             : std::vector<TimedPredictedObjects>{};
         auto trajectory_metrics = metrics::calculate_trajectory_point_metrics(
-          eval_data.synchronized_data, route_handler_, history_comfort_params_,
+          eval_data.synchronized_data, &eval_data.ground_truth_trajectory, route_handler_, history_comfort_params_,
           lane_keeping_params_, driving_direction_params_, vehicle_info_, enabled_metrics_,
           future_objects);
         auto metrics = evaluate_trajectory(eval_data);

@@ -196,6 +196,7 @@ double calculate_ttc_between_points(
 
 TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const std::shared_ptr<SynchronizedData> & sync_data,
+  const autoware_planning_msgs::msg::Trajectory * ground_truth_trajectory,
   const std::shared_ptr<RouteHandler> & route_handler,
   const HistoryComfortParameters & history_comfort_params,
   const LaneKeepingParameters & lane_keeping_params,
@@ -439,6 +440,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     sync_data->turn_indicators_status &&
     (sync_data->turn_indicators_status->report == TurnIndicatorsReport::ENABLE_LEFT ||
      sync_data->turn_indicators_status->report == TurnIndicatorsReport::ENABLE_RIGHT);
+  std::vector<double> gt_lane_change_transition_times_s;
 
   // Calculate travel distances once and reuse them in LK queue/creep logic.
   for (size_t i = 0; i < num_points; ++i) {
@@ -483,6 +485,27 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
           metrics.travel_distances[i]});
       }
     }
+
+    if (ground_truth_trajectory) {
+      bool has_previous_gt_lanelet_id = false;
+      std::int64_t previous_gt_lanelet_id = -1;
+      for (const auto & gt_point : ground_truth_trajectory->points) {
+        const auto gt_reference_lanelet = find_reference_lanelet(gt_point.pose, route_handler);
+        if (!gt_reference_lanelet.has_value()) {
+          has_previous_gt_lanelet_id = false;
+          continue;
+        }
+        const auto gt_lanelet_id = gt_reference_lanelet->id();
+        if (
+          has_previous_gt_lanelet_id && previous_gt_lanelet_id != gt_lanelet_id &&
+          !autoware::experimental::lanelet2_utils::is_intersection_lanelet(*gt_reference_lanelet)) {
+          gt_lane_change_transition_times_s.push_back(
+            rclcpp::Duration(gt_point.time_from_start).seconds());
+        }
+        has_previous_gt_lanelet_id = true;
+        previous_gt_lanelet_id = gt_lanelet_id;
+      }
+    }
   }
   if (enabled_metrics.lane_keeping) {
     const auto has_finite_lane_keeping_sample = std::any_of(
@@ -493,7 +516,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     if (has_finite_lane_keeping_sample) {
       const auto lane_keeping_result =
         calculate_lane_keeping_result(
-          lane_keeping_evaluation_points, lane_keeping_params, lane_change_intent_active);
+          lane_keeping_evaluation_points, lane_keeping_params, lane_change_intent_active,
+          gt_lane_change_transition_times_s);
       metrics.lane_keeping = lane_keeping_result.score;
       metrics.lane_keeping_available = true;
       metrics.lane_keeping_reason = "available";
