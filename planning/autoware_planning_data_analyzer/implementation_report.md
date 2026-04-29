@@ -2260,6 +2260,10 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 - The migrated code measures distance to the route/reference lanelet centerline selected by `RouteHandler`.
 - Intersection relaxation now reuses the shared local intersection context already used by DDC:
   local `intersection_area` polygons first, then route-intersection lanelets as fallback.
+- The migrated code now also suppresses LK accumulation during:
+  - lane-change grace windows inferred from turn-indicator intent plus reference-lanelet switching
+  - low-speed / low-progress queue states
+  - a short release-hysteresis window after queue motion resumes
 - Missing reference lanelets become unavailable in the migrated code rather than silently behaving like NAVSIM's always-available cached centerline path.
 - **Impact:** **Low to moderate.** The core rule is ported closely; deviations come from centerline selection and availability.
 
@@ -2320,6 +2324,12 @@ Then:
 $$
 \mathrm{LKViolationSample}_{t}^{aw}
 =
+\neg\mathrm{LaneChangeExempt}_{t}^{aw}
+\land
+\neg\mathrm{QueueExempt}_{t}^{aw}
+\land
+\neg\mathrm{QueueReleaseExempt}_{t}^{aw}
+\land
 \neg\mathrm{Intersection}_t^{aw}
 \land
 \left[|d_t^{aw}|>0.5\right].
@@ -2350,9 +2360,16 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
 - Included for intersection relaxation:
   - local `intersection_area` polygons around the sample pose
   - route-intersection lanelets as fallback when no polygon directly contains the pose
+- Included for lane-change relaxation:
+  - turn-indicator-active trajectories
+  - short grace windows around per-sample reference-lanelet switches
+- Included for queue / constrained-traffic relaxation:
+  - low-speed, low-progress samples
+  - a short release-grace window immediately after that queue state ends
 - Excluded:
   - a single globally cached route centerline shared across the whole rollout
-  - lane-change-specific exemptions beyond the ordinary `0.5 m` / `2.0 s` sustained-run rule
+  - a blanket lane-change exemption without observed local lanelet-switch context
+  - a blanket queue exemption without low-speed / low-progress evidence
   - non-intersection resets other than missing / non-finite reference-lanelet samples
 
 **Main input gap.** The score shape is close, but NAVSIM measures against its cached

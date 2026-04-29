@@ -30,6 +30,12 @@ struct LaneKeepingParameters
 {
   double max_lateral_deviation{0.5};
   double max_continuous_violation_time{2.0};
+  double lane_change_pre_grace_time{0.5};
+  double lane_change_post_grace_time{1.0};
+  double queue_speed_threshold{1.0};
+  double queue_progress_window_time{1.0};
+  double queue_progress_threshold{1.5};
+  double queue_release_grace_time{1.5};
 };
 
 struct LaneKeepingEvaluationPoint
@@ -40,6 +46,8 @@ struct LaneKeepingEvaluationPoint
   geometry_msgs::msg::Point ego_center{};
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
+  double speed_mps{std::numeric_limits<double>::quiet_NaN()};
+  double cumulative_progress_m{std::numeric_limits<double>::quiet_NaN()};
 };
 
 struct LaneKeepingDebugSample
@@ -50,6 +58,9 @@ struct LaneKeepingDebugSample
   bool is_in_intersection{false};
   bool over_threshold{false};
   bool in_failure_run{false};
+  bool lane_change_exempt{false};
+  bool queue_exempt{false};
+  bool queue_release_exempt{false};
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
 };
@@ -79,11 +90,13 @@ struct LaneKeepingResult
  */
 LaneKeepingResult calculate_lane_keeping_result(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters = LaneKeepingParameters{});
+  const LaneKeepingParameters & parameters = LaneKeepingParameters{},
+  bool lane_change_intent_active = false);
 
 double calculate_lane_keeping_score(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters = LaneKeepingParameters{});
+  const LaneKeepingParameters & parameters = LaneKeepingParameters{},
+  bool lane_change_intent_active = false);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

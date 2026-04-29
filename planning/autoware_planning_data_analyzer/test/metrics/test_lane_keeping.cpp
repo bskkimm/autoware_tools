@@ -36,6 +36,17 @@ LaneKeepingEvaluationPoint make_evaluation_point(
   return point;
 }
 
+LaneKeepingEvaluationPoint make_exemptable_point(
+  const double seconds, const double lateral_deviation, const std::int64_t lanelet_id,
+  const double speed_mps, const double cumulative_progress_m)
+{
+  auto point = make_evaluation_point(seconds, lateral_deviation, false);
+  point.reference_lanelet_id = lanelet_id;
+  point.speed_mps = speed_mps;
+  point.cumulative_progress_m = cumulative_progress_m;
+  return point;
+}
+
 }  // namespace
 
 TEST(LaneKeepingTest, ReturnsOneWhenAllDeviationsStayWithinThreshold)
@@ -94,6 +105,40 @@ TEST(LaneKeepingTest, ReportsFailureRunMetadata)
   EXPECT_TRUE(result.debug.samples.at(1).in_failure_run);
   EXPECT_TRUE(result.debug.samples.at(2).in_failure_run);
   EXPECT_TRUE(result.debug.samples.at(3).in_failure_run);
+}
+
+TEST(LaneKeepingTest, LaneChangeGraceSuppressesViolationRun)
+{
+  const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_exemptable_point(0.0, 0.6, 1, 4.0, 0.0), make_exemptable_point(0.5, 0.6, 1, 4.0, 2.0),
+    make_exemptable_point(1.0, 0.6, 2, 4.0, 4.0), make_exemptable_point(1.5, 0.6, 2, 4.0, 6.0),
+    make_exemptable_point(2.1, 0.6, 2, 4.0, 8.0)};
+
+  const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
+    evaluation_points, LaneKeepingParameters{0.5, 2.0}, true);
+
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_FALSE(result.debug.samples.at(0).lane_change_exempt);
+  EXPECT_TRUE(result.debug.samples.at(1).lane_change_exempt);
+  EXPECT_TRUE(result.debug.samples.at(2).lane_change_exempt);
+}
+
+TEST(LaneKeepingTest, QueueAndReleaseGraceSuppressViolationRun)
+{
+  const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_exemptable_point(0.0, 0.59, 1, 0.0, 0.0),
+    make_exemptable_point(0.5, 0.59, 1, 0.2, 0.05),
+    make_exemptable_point(1.0, 0.59, 1, 0.3, 0.12),
+    make_exemptable_point(1.5, 0.59, 1, 0.8, 0.30),
+    make_exemptable_point(2.0, 0.59, 1, 1.2, 0.80),
+    make_exemptable_point(2.5, 0.59, 1, 1.3, 1.50)};
+
+  const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
+    evaluation_points, LaneKeepingParameters{0.5, 2.0});
+
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_TRUE(result.debug.samples.at(0).queue_exempt);
+  EXPECT_TRUE(result.debug.samples.at(4).queue_release_exempt);
 }
 
 TEST(LaneKeepingTest, IgnoresViolationsInsideIntersections)

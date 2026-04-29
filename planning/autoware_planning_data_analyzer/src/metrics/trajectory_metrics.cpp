@@ -435,6 +435,16 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
 
   std::vector<LaneKeepingEvaluationPoint> lane_keeping_evaluation_points;
   lane_keeping_evaluation_points.reserve(num_points);
+  const bool lane_change_intent_active =
+    sync_data->turn_indicators_status &&
+    (sync_data->turn_indicators_status->report == TurnIndicatorsReport::ENABLE_LEFT ||
+     sync_data->turn_indicators_status->report == TurnIndicatorsReport::ENABLE_RIGHT);
+
+  // Calculate travel distances once and reuse them in LK queue/creep logic.
+  for (size_t i = 0; i < num_points; ++i) {
+    metrics.travel_distances[i] =
+      autoware::motion_utils::calcSignedArcLength(trajectory.points, 0, i);
+  }
 
   // Calculate lateral deviation from the local route lane at each pose.
   if (!enabled_metrics.lane_keeping) {
@@ -451,15 +461,26 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       if (!reference_lanelet.has_value()) {
         metrics.lateral_deviations[i] = std::numeric_limits<double>::quiet_NaN();
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
-          point.time_from_start, metrics.lateral_deviations[i], false, ego_center, {}, -1});
+          point.time_from_start,
+          metrics.lateral_deviations[i],
+          false,
+          ego_center,
+          {},
+          -1,
+          std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps),
+          metrics.travel_distances[i]});
       } else {
         metrics.lateral_deviations[i] =
           lanelet::utils::getLateralDistanceToCenterline(reference_lanelet.value(), point.pose);
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
-          point.time_from_start, metrics.lateral_deviations[i],
-          is_pose_in_intersection(point.pose, route_handler), ego_center,
+          point.time_from_start,
+          metrics.lateral_deviations[i],
+          is_pose_in_intersection(point.pose, route_handler),
+          ego_center,
           centerline_to_points(reference_lanelet.value(), point.pose.position.z),
-          reference_lanelet->id()});
+          reference_lanelet->id(),
+          std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps),
+          metrics.travel_distances[i]});
       }
     }
   }
@@ -471,7 +492,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       });
     if (has_finite_lane_keeping_sample) {
       const auto lane_keeping_result =
-        calculate_lane_keeping_result(lane_keeping_evaluation_points, lane_keeping_params);
+        calculate_lane_keeping_result(
+          lane_keeping_evaluation_points, lane_keeping_params, lane_change_intent_active);
       metrics.lane_keeping = lane_keeping_result.score;
       metrics.lane_keeping_available = true;
       metrics.lane_keeping_reason = "available";
@@ -479,12 +501,6 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     } else if (metrics.lane_keeping_reason == "unavailable") {
       metrics.lane_keeping_reason = "unavailable_no_reference_lanelet";
     }
-  }
-
-  // Calculate travel distances using motion_utils
-  for (size_t i = 0; i < num_points; ++i) {
-    metrics.travel_distances[i] =
-      autoware::motion_utils::calcSignedArcLength(trajectory.points, 0, i);
   }
 
   return metrics;

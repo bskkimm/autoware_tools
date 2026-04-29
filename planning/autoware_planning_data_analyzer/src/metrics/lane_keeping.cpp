@@ -23,7 +23,7 @@ namespace autoware::planning_data_analyzer::metrics
 
 LaneKeepingResult calculate_lane_keeping_result(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters)
+  const LaneKeepingParameters & parameters, const bool lane_change_intent_active)
 {
   LaneKeepingResult result;
   if (
@@ -37,8 +37,22 @@ LaneKeepingResult calculate_lane_keeping_result(
   double max_violation_duration = 0.0;
   double peak_abs_lateral_deviation = 0.0;
   bool failure_recorded = false;
+  std::vector<double> lane_change_windows;
+  std::optional<double> queue_release_until_s;
 
   result.debug.samples.reserve(evaluation_points.size());
+
+  if (lane_change_intent_active) {
+    for (std::size_t index = 1; index < evaluation_points.size(); ++index) {
+      const auto & previous = evaluation_points.at(index - 1U);
+      const auto & current = evaluation_points.at(index);
+      if (
+        previous.reference_lanelet_id >= 0 && current.reference_lanelet_id >= 0 &&
+        previous.reference_lanelet_id != current.reference_lanelet_id) {
+        lane_change_windows.push_back(current.time_from_start.seconds());
+      }
+    }
+  }
 
   const auto reset_violation_run = [&]() {
     violation_start_time.reset();
@@ -51,6 +65,33 @@ LaneKeepingResult calculate_lane_keeping_result(
     const bool finite = std::isfinite(evaluation_point.lateral_deviation);
     const bool over_threshold =
       finite && std::abs(evaluation_point.lateral_deviation) > parameters.max_lateral_deviation;
+    const bool lane_change_exempt = std::any_of(
+      lane_change_windows.begin(), lane_change_windows.end(), [&](const double change_time_s) {
+        return time_s >= change_time_s - parameters.lane_change_pre_grace_time &&
+               time_s <= change_time_s + parameters.lane_change_post_grace_time;
+      });
+    const double progress_window_start =
+      std::max(0.0, time_s - parameters.queue_progress_window_time);
+    double progress_window_distance = 0.0;
+    for (std::size_t lookback = index; lookback > 0; --lookback) {
+      const auto & previous = evaluation_points.at(lookback - 1U);
+      const auto & current = evaluation_points.at(lookback);
+      if (current.time_from_start.seconds() < progress_window_start) {
+        break;
+      }
+      progress_window_distance =
+        evaluation_point.cumulative_progress_m - previous.cumulative_progress_m;
+    }
+    const bool queue_signal_available =
+      std::isfinite(evaluation_point.speed_mps) && std::isfinite(evaluation_point.cumulative_progress_m);
+    const bool queue_exempt =
+      queue_signal_available && evaluation_point.speed_mps <= parameters.queue_speed_threshold &&
+      progress_window_distance <= parameters.queue_progress_threshold;
+    if (queue_exempt) {
+      queue_release_until_s = time_s + parameters.queue_release_grace_time;
+    }
+    const bool queue_release_exempt =
+      !queue_exempt && queue_release_until_s.has_value() && time_s <= *queue_release_until_s;
 
     result.debug.samples.push_back(LaneKeepingDebugSample{
       time_s,
@@ -59,6 +100,9 @@ LaneKeepingResult calculate_lane_keeping_result(
       evaluation_point.is_in_intersection,
       over_threshold,
       false,
+      lane_change_exempt,
+      queue_exempt,
+      queue_release_exempt,
       evaluation_point.reference_centerline,
       evaluation_point.reference_lanelet_id});
 
@@ -70,7 +114,9 @@ LaneKeepingResult calculate_lane_keeping_result(
     peak_abs_lateral_deviation =
       std::max(peak_abs_lateral_deviation, std::abs(evaluation_point.lateral_deviation));
 
-    if (evaluation_point.is_in_intersection || !over_threshold) {
+    if (
+      evaluation_point.is_in_intersection || lane_change_exempt || queue_exempt ||
+      queue_release_exempt || !over_threshold) {
       reset_violation_run();
       continue;
     }
@@ -109,9 +155,10 @@ LaneKeepingResult calculate_lane_keeping_result(
 
 double calculate_lane_keeping_score(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
-  const LaneKeepingParameters & parameters)
+  const LaneKeepingParameters & parameters, const bool lane_change_intent_active)
 {
-  return calculate_lane_keeping_result(evaluation_points, parameters).score;
+  return calculate_lane_keeping_result(evaluation_points, parameters, lane_change_intent_active)
+    .score;
 }
 
 }  // namespace autoware::planning_data_analyzer::metrics
