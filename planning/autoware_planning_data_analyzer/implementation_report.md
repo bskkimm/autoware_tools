@@ -2249,7 +2249,7 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 | :--- | :--- | :--- | :--- | :--- |
 | **Cached Centerline** | Geometric target used for lateral deviation checks. | `autoware::route_handler::RouteHandler` centerlines | Center of the current road lanelet. | **Low.** Lanelet geometry is highly similar to NAVSIM centerlines. |
 | **Ego Center Positions** | Kinematic rollout center-of-gravity. | `autoware_planning_msgs::msg::Trajectory` (x,y points) | Ego vehicle's planned center path. | **Equivalent.** |
-| **Intersection Mask** | Used to relax LK scoring in junctions. | `is_intersection_lanelet()` | Lanelets labeled as intersections in the map. | **Equivalent.** |
+| **Intersection Mask** | Used to relax LK scoring in junctions. | local `intersection_area` / route-intersection context | Point-in-intersection-area check, with route-intersection lanelets as fallback. | **Low.** Closer to the local intersection semantics already used by DDC/TTC. |
 
 - **Semantic replacement meaning:** the lanelet centerline stands in for NAVSIM's cached `PDMPath` centerline.
 
@@ -2258,6 +2258,8 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 - Thresholds are preserved exactly: deviation limit $0.5\,m$, continuous violation duration $2.0\,s$.
 - NAVSIM measures distance from the ego center to `self._centerline.linestring`.
 - The migrated code measures distance to the route/reference lanelet centerline selected by `RouteHandler`.
+- Intersection relaxation now reuses the shared local intersection context already used by DDC:
+  local `intersection_area` polygons first, then route-intersection lanelets as fallback.
 - Missing reference lanelets become unavailable in the migrated code rather than silently behaving like NAVSIM's always-available cached centerline path.
 - **Impact:** **Low to moderate.** The core rule is ported closely; deviations come from centerline selection and availability.
 
@@ -2310,7 +2312,7 @@ Let:
 $$
 \mathrm{Intersection}_t^{aw}
 =
-\mathrm{isIntersectionLanelet}(\mathrm{referenceLanelet}_t).
+\mathrm{InIntersectionAreaOrRouteIntersectionLanelet}(\mathrm{pose}_t).
 $$
 
 Then:
@@ -2338,6 +2340,20 @@ $$
 Invalid or missing reference-lanelet samples reset the violation run in the migrated
 implementation. If no finite lane-keeping sample exists at all, the metric is marked
 unavailable instead of returning a binary score.
+
+**Admitted / excluded lane-space semantics.** LK intentionally keeps the Autoware-side
+per-sample centerline logic rather than NAVSIM's single cached route centerline:
+
+- Included for centerline selection:
+  - the per-sample `referenceLanelet_t` returned by the route handler
+  - that lanelet's geometric centerline for `d_t^{aw}`
+- Included for intersection relaxation:
+  - local `intersection_area` polygons around the sample pose
+  - route-intersection lanelets as fallback when no polygon directly contains the pose
+- Excluded:
+  - a single globally cached route centerline shared across the whole rollout
+  - lane-change-specific exemptions beyond the ordinary `0.5 m` / `2.0 s` sustained-run rule
+  - non-intersection resets other than missing / non-finite reference-lanelet samples
 
 **Main input gap.** The score shape is close, but NAVSIM measures against its cached
 centerline and intersection layers, while migrated Autoware measures against a

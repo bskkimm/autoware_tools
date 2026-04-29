@@ -115,6 +115,21 @@ std::vector<geometry_msgs::msg::Point> polygon_to_points(
   return points;
 }
 
+std::vector<geometry_msgs::msg::Point> centerline_to_points(
+  const lanelet::ConstLanelet & lanelet, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  points.reserve(lanelet.centerline3d().size());
+  for (const auto & point : lanelet.centerline3d()) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  return points;
+}
+
 /**
  * @brief Get velocity in world coordinate frame from trajectory point
  * Reference: autoware_trajectory_ranker/src/metrics/metrics_utils.cpp
@@ -431,18 +446,20 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   } else {
     for (size_t i = 0; i < num_points; ++i) {
       const auto & point = trajectory.points[i];
+      geometry_msgs::msg::Point ego_center = point.pose.position;
       const auto reference_lanelet = find_reference_lanelet(point.pose, route_handler);
       if (!reference_lanelet.has_value()) {
         metrics.lateral_deviations[i] = std::numeric_limits<double>::quiet_NaN();
-        lane_keeping_evaluation_points.push_back(
-          LaneKeepingEvaluationPoint{point.time_from_start, metrics.lateral_deviations[i], false});
+        lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
+          point.time_from_start, metrics.lateral_deviations[i], false, ego_center, {}, -1});
       } else {
         metrics.lateral_deviations[i] =
           lanelet::utils::getLateralDistanceToCenterline(reference_lanelet.value(), point.pose);
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start, metrics.lateral_deviations[i],
-          autoware::experimental::lanelet2_utils::is_intersection_lanelet(
-            reference_lanelet.value())});
+          is_pose_in_intersection(point.pose, route_handler), ego_center,
+          centerline_to_points(reference_lanelet.value(), point.pose.position.z),
+          reference_lanelet->id()});
       }
     }
   }
@@ -453,10 +470,12 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
         return std::isfinite(evaluation_point.lateral_deviation);
       });
     if (has_finite_lane_keeping_sample) {
-      metrics.lane_keeping =
-        calculate_lane_keeping_score(lane_keeping_evaluation_points, lane_keeping_params);
+      const auto lane_keeping_result =
+        calculate_lane_keeping_result(lane_keeping_evaluation_points, lane_keeping_params);
+      metrics.lane_keeping = lane_keeping_result.score;
       metrics.lane_keeping_available = true;
       metrics.lane_keeping_reason = "available";
+      metrics.lane_keeping_debug = lane_keeping_result.debug;
     } else if (metrics.lane_keeping_reason == "unavailable") {
       metrics.lane_keeping_reason = "unavailable_no_reference_lanelet";
     }

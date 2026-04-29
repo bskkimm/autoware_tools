@@ -28,8 +28,12 @@ namespace
 LaneKeepingEvaluationPoint make_evaluation_point(
   const double seconds, const double lateral_deviation, const bool is_in_intersection = false)
 {
-  return LaneKeepingEvaluationPoint{
-    rclcpp::Duration::from_seconds(seconds), lateral_deviation, is_in_intersection};
+  LaneKeepingEvaluationPoint point;
+  point.time_from_start = rclcpp::Duration::from_seconds(seconds);
+  point.lateral_deviation = lateral_deviation;
+  point.is_in_intersection = is_in_intersection;
+  point.reference_lanelet_id = -1;
+  return point;
 }
 
 }  // namespace
@@ -68,6 +72,28 @@ TEST(LaneKeepingTest, ReturnsZeroForContinuousViolationLongerThanWindow)
     evaluation_points, LaneKeepingParameters{0.5, 2.0});
 
   EXPECT_DOUBLE_EQ(score, 0.0);
+}
+
+TEST(LaneKeepingTest, ReportsFailureRunMetadata)
+{
+  const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_evaluation_point(0.0, 0.0), make_evaluation_point(0.5, 0.7),
+    make_evaluation_point(1.5, 0.8), make_evaluation_point(2.6, 0.9)};
+
+  const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
+    evaluation_points, LaneKeepingParameters{0.5, 2.0});
+
+  EXPECT_DOUBLE_EQ(result.score, 0.0);
+  EXPECT_DOUBLE_EQ(result.debug.first_failure_time_s, 2.6);
+  EXPECT_DOUBLE_EQ(result.debug.failure_run_start_time_s, 0.5);
+  EXPECT_DOUBLE_EQ(result.debug.failure_run_end_time_s, 2.6);
+  EXPECT_NEAR(result.debug.max_continuous_violation_time_s, 2.1, 1.0e-9);
+  EXPECT_DOUBLE_EQ(result.debug.peak_abs_lateral_deviation_m, 0.9);
+  ASSERT_EQ(result.debug.samples.size(), evaluation_points.size());
+  EXPECT_FALSE(result.debug.samples.front().in_failure_run);
+  EXPECT_TRUE(result.debug.samples.at(1).in_failure_run);
+  EXPECT_TRUE(result.debug.samples.at(2).in_failure_run);
+  EXPECT_TRUE(result.debug.samples.at(3).in_failure_run);
 }
 
 TEST(LaneKeepingTest, IgnoresViolationsInsideIntersections)

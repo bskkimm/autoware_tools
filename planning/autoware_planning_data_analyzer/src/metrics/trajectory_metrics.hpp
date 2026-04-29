@@ -85,6 +85,7 @@ struct TrajectoryPointMetrics
   double lane_keeping{0.0};
   bool lane_keeping_available{false};
   std::string lane_keeping_reason{"unavailable"};
+  LaneKeepingDebugInfo lane_keeping_debug;
   double drivable_area_compliance{0.0};
   bool drivable_area_compliance_available{false};
   std::string drivable_area_compliance_reason{"unavailable"};

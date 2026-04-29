@@ -760,6 +760,107 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/ttc/labels
 ```
 
+## LK Debugging
+
+LK debug output is intended to answer:
+
+- where the selected 4 s center path stayed normal
+- where intersection relaxation suppressed a would-be lane-keeping penalty
+- which continuous over-threshold run actually caused `LK=0`
+- which reference centerlines were used for the deviation check
+
+### Topics
+
+When LK is enabled and a trajectory scores below `1.0`, the analyzer writes:
+
+```text
+/debug/epdms/lk/violation_summary
+/debug/epdms/lk/ego_center_path
+/debug/epdms/lk/reference_centerlines
+/debug/epdms/lk/labels
+```
+
+### Summary Payload
+
+`/debug/epdms/lk/violation_summary` is a `std_msgs/msg/String` JSON message.
+
+Expected shape:
+
+```json
+{
+  "trajectory_stamp_sec": 1776838192.42,
+  "score": 0.0,
+  "reason": "available",
+  "first_failure_time_s": 2.6,
+  "failure_run_start_s": 0.5,
+  "failure_run_end_s": 2.6,
+  "max_continuous_violation_time_s": 2.1,
+  "peak_abs_lateral_deviation_m": 0.9,
+  "sample_count": 41
+}
+```
+
+The Lichtblick plugin should use `trajectory_stamp_sec` for click-to-seek:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+### MarkerArray Display
+
+All LK debug markers use:
+
+```text
+header.frame_id = "map"
+header.stamp = t0
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. |
+| `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
+| `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
+
+### Lichtblick Workflow
+
+The Lichtblick plugin should provide a panel named:
+
+```text
+LK Violation Timeline
+```
+
+It should subscribe to:
+
+```text
+/debug/epdms/lk/violation_summary
+```
+
+Panel behavior:
+
+1. Subscribe to `/debug/epdms/lk/violation_summary`.
+2. Build a table of LK-failing trajectory timestamps.
+3. Show columns:
+
+```text
+t0 | score | t_fail | run_start | run_end | max_run | peak_dev | reason
+```
+
+4. On row click, call:
+
+```ts
+context.seekPlayback?.(trajectory_stamp_sec + 0.005);
+```
+
+5. In the 3D map panel, enable:
+
+```text
+/debug/epdms/lk/ego_center_path
+/debug/epdms/lk/reference_centerlines
+/debug/epdms/lk/labels
+```
+
 This TTC horizon is not the full 4-second trajectory horizon. It is the local TTC
 check horizon for the selected failing trajectory sample:
 

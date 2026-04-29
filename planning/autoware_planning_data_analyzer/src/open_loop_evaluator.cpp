@@ -206,6 +206,11 @@ std::string ttc_debug_topic(const std::string & topic_name)
   return "/debug/epdms/ttc/" + topic_name;
 }
 
+std::string lk_debug_topic(const std::string & topic_name)
+{
+  return "/debug/epdms/lk/" + topic_name;
+}
+
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
   return "/debug/epdms/trajectory/" + topic_name;
@@ -409,6 +414,12 @@ bool should_write_ttc_debug(const metrics::TrajectoryPointMetrics & metrics)
 {
   return metrics.time_to_collision_within_bound_available &&
          metrics.time_to_collision_within_bound < 1.0;
+}
+
+bool should_write_lk_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return metrics.lane_keeping_available && metrics.lane_keeping < 1.0 &&
+         !metrics.lane_keeping_debug.samples.empty();
 }
 
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
@@ -639,6 +650,22 @@ nlohmann::json ttc_debug_summary_to_json(
     {"intersection", event ? event->intersection : false},
     {"bad_or_intersection", event ? event->bad_or_intersection : false},
     {"events", std::move(events)}};
+}
+
+nlohmann::json lk_debug_summary_to_json(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::LaneKeepingDebugInfo & debug_info, const rclcpp::Time & timestamp)
+{
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.lane_keeping},
+    {"reason", metrics.lane_keeping_reason},
+    {"first_failure_time_s", debug_info.first_failure_time_s},
+    {"failure_run_start_s", debug_info.failure_run_start_time_s},
+    {"failure_run_end_s", debug_info.failure_run_end_time_s},
+    {"max_continuous_violation_time_s", debug_info.max_continuous_violation_time_s},
+    {"peak_abs_lateral_deviation_m", debug_info.peak_abs_lateral_deviation_m},
+    {"sample_count", debug_info.samples.size()}};
 }
 
 void write_nc_debug_topics_to_bag(
@@ -1010,6 +1037,71 @@ void write_ttc_debug_topics_to_bag(
   bag_writer.write(object_footprints, ttc_debug_topic("object_footprints"), timestamp);
   bag_writer.write(overlap_areas, ttc_debug_topic("overlap_areas"), timestamp);
   bag_writer.write(labels, ttc_debug_topic("labels"), timestamp);
+}
+
+void write_lk_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_lk_debug(metrics)) {
+    return;
+  }
+
+  const auto & debug_info = metrics.lane_keeping_debug;
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = lk_debug_summary_to_json(metrics, debug_info, timestamp).dump();
+  bag_writer.write(summary_msg, lk_debug_topic("violation_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray ego_center_path;
+  visualization_msgs::msg::MarkerArray reference_centerlines;
+  visualization_msgs::msg::MarkerArray labels;
+  ego_center_path.markers.push_back(make_delete_all_marker(timestamp));
+  reference_centerlines.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (std::size_t index = 1; index < debug_info.samples.size(); ++index) {
+    const auto & previous = debug_info.samples.at(index - 1U);
+    const auto & sample = debug_info.samples.at(index);
+    const bool violating = sample.over_threshold && !sample.is_in_intersection;
+    const bool in_failure_run = sample.in_failure_run;
+    const auto color = in_failure_run   ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
+                       : sample.is_in_intersection
+                         ? make_color(0.2F, 1.0F, 0.4F, 0.95F)
+                       : violating ? make_color(1.0F, 0.65F, 0.0F, 0.95F)
+                                   : make_color(0.0F, 0.8F, 1.0F, 0.85F);
+    const double width = in_failure_run ? 0.18 : 0.12;
+    ego_center_path.markers.push_back(make_line_strip_marker(
+      timestamp, "lk_ego_center_path", marker_id++, {previous.ego_center, sample.ego_center},
+      color, width, false, marker_lifetime_s, 0.08));
+  }
+
+  std::set<std::int64_t> seen_lanelet_ids;
+  marker_id = 0;
+  for (const auto & sample : debug_info.samples) {
+    if (sample.reference_centerline.size() < 2U || sample.reference_lanelet_id < 0) {
+      continue;
+    }
+    if (!seen_lanelet_ids.insert(sample.reference_lanelet_id).second) {
+      continue;
+    }
+    reference_centerlines.markers.push_back(make_line_strip_marker(
+      timestamp, "lk_reference_centerlines", marker_id++, sample.reference_centerline,
+      make_color(0.95F, 0.90F, 0.20F, 0.80F), 0.08, false, marker_lifetime_s, 0.12));
+  }
+
+  std::ostringstream label;
+  label << "LK=" << metrics.lane_keeping << "\nmax run=" << std::fixed << std::setprecision(2)
+        << debug_info.max_continuous_violation_time_s << "s\npeak |d|="
+        << debug_info.peak_abs_lateral_deviation_m << "m";
+  labels.markers.push_back(make_text_marker(
+    timestamp, "lk_labels", 0, debug_info.label_anchor, label.str(),
+    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+
+  bag_writer.write(ego_center_path, lk_debug_topic("ego_center_path"), timestamp);
+  bag_writer.write(
+    reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
+  bag_writer.write(labels, lk_debug_topic("labels"), timestamp);
 }
 
 void write_trajectory_horizon_debug_topics_to_bag(
@@ -2469,6 +2561,10 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     write_ttc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.lane_keeping) {
+    write_lk_debug_topics_to_bag(
+      metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 std::string OpenLoopEvaluator::metric_topic(const std::string & metric_name) const
@@ -3266,6 +3362,10 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("lane_keeping_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("lane_keeping_reason"), "std_msgs/msg/String");
     add_topic(trajectory_metric_topic("lateral_deviations"), "std_msgs/msg/Float64MultiArray");
+    add_topic(lk_debug_topic("violation_summary"), "std_msgs/msg/String");
+    add_topic(lk_debug_topic("ego_center_path"), "visualization_msgs/msg/MarkerArray");
+    add_topic(lk_debug_topic("reference_centerlines"), "visualization_msgs/msg/MarkerArray");
+    add_topic(lk_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.ego_progress) {
     add_topic(metric_topic("ego_progress"), "std_msgs/msg/Float64");
