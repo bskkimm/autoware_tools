@@ -84,6 +84,21 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   oncoming traffic. Sidewalk / pedestrian-side / curbside non-drivable intrusion should
   be handled by DAC-style drivable-area logic, while DDC should only count meaningful
   wrong-way progress in opposite-direction vehicle-travel space.
+- NC future issue noted for later investigation:
+  - If the planned future ego footprint overlaps a pedestrian or other object that
+    remains effectively static over the evaluated future horizon, NC is expected to
+    fail (`0`) because NC is a future time-matched collision metric, not only a
+    current-time collision metric.
+  - A visual overlap in the combined 4-second footprint ribbon alone is not sufficient
+    evidence, but if the object is truly static and future time-matched sampled
+    footprints also overlap, then `NC=1` is suspicious.
+  - The concrete raised case is around `1774401659.95`, where TTC fails while NC stays
+    `1.0` even though the user observed a static pedestrian apparently overlapped by
+    the planned future horizon.
+  - When revisiting NC, explicitly inspect whether the issue comes from object
+    interpolation, object track continuity, sampled-time mismatch, collision
+    classification filtering, or inconsistency between the 4-second debug horizon and
+    the exact future samples NC checks.
 - When moving on to a different subscore, aggregated full EPDMS work, or human-filtered
   work, first commit the current state to the corresponding subscore branch, then create
   the next working branch on top of that committed state. Push and manage those subscore

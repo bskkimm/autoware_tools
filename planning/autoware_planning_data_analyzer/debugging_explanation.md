@@ -712,9 +712,11 @@ Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| TTC ego footprint, no overlap | transparent cyan |
+| TTC ego prefix before TTC base sample | pale cyan |
+| TTC ego checked TTC offsets, no overlap | deep blue |
 | TTC ego footprint, overlap offset | orange |
-| TTC object footprint, no overlap | transparent orange |
+| TTC object prefix before TTC base sample | pale orange |
+| TTC object checked TTC offsets, no overlap | strong amber |
 | TTC object footprint, overlap offset | yellow/orange |
 | TTC overlap | magenta |
 | TTC label | red text |
