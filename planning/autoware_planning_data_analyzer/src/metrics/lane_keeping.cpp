@@ -46,7 +46,9 @@ LaneKeepingResult calculate_lane_keeping_result(
   result.debug.samples.reserve(evaluation_points.size());
 
   for (std::size_t index = 0; index < evaluation_points.size(); ++index) {
-    if (!evaluation_points.at(index).multiple_lanes) {
+    if (
+      !evaluation_points.at(index).multiple_lanes ||
+      evaluation_points.at(index).non_drivable_area) {
       continue;
     }
     const auto segment_start_time =
@@ -55,7 +57,8 @@ LaneKeepingResult calculate_lane_keeping_result(
     std::size_t segment_end_index = index;
     while (
       segment_end_index + 1U < evaluation_points.size() &&
-      evaluation_points.at(segment_end_index + 1U).multiple_lanes) {
+      evaluation_points.at(segment_end_index + 1U).multiple_lanes &&
+      !evaluation_points.at(segment_end_index + 1U).non_drivable_area) {
       ++segment_end_index;
     }
     const auto segment_end_time =
@@ -110,6 +113,7 @@ LaneKeepingResult calculate_lane_keeping_result(
       evaluation_point.lateral_deviation,
       evaluation_point.is_in_intersection,
       evaluation_point.multiple_lanes,
+      evaluation_point.non_drivable_area,
       over_threshold,
       false,
       lane_change_exempt,

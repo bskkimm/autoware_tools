@@ -467,11 +467,16 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
           i < shared_footprint_evaluations.size() &&
           shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
           shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
+        const bool non_drivable_area =
+          i < shared_footprint_evaluations.size() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.non_drivable_area;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           false,
           multiple_lanes,
+          non_drivable_area,
           ego_center,
           {},
           -1,
@@ -484,11 +489,16 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
           i < shared_footprint_evaluations.size() &&
           shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
           shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
+        const bool non_drivable_area =
+          i < shared_footprint_evaluations.size() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
+          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.non_drivable_area;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           is_pose_in_intersection(point.pose, route_handler),
           multiple_lanes,
+          non_drivable_area,
           ego_center,
           centerline_to_points(reference_lanelet.value(), point.pose.position.z),
           reference_lanelet->id(),

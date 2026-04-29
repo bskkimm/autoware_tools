@@ -44,6 +44,7 @@ struct LaneKeepingEvaluationPoint
   double lateral_deviation{0.0};
   bool is_in_intersection{false};
   bool multiple_lanes{false};
+  bool non_drivable_area{false};
   geometry_msgs::msg::Point ego_center{};
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
@@ -58,6 +59,7 @@ struct LaneKeepingDebugSample
   double lateral_deviation{0.0};
   bool is_in_intersection{false};
   bool multiple_lanes{false};
+  bool non_drivable_area{false};
   bool over_threshold{false};
   bool in_failure_run{false};
   bool lane_change_exempt{false};
