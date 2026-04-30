@@ -92,6 +92,11 @@ struct OpenLoopTrajectoryMetrics
   std::string ego_progress_reason{"unavailable"};
   double ego_progress_raw_m{0.0};
   double ego_progress_best_raw_m{0.0};
+  double ego_progress_mask{0.0};
+  double ego_progress_denominator_m{0.0};
+  geometry_msgs::msg::Point ego_progress_start_point;
+  geometry_msgs::msg::Point ego_progress_end_point;
+  std::vector<geometry_msgs::msg::Point> ego_progress_route_reference_points;
   double drivable_area_compliance{0.0};  // Binary drivable area compliance subscore
   bool drivable_area_compliance_available{false};
   std::string drivable_area_compliance_reason{"unavailable"};

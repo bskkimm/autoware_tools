@@ -221,6 +221,11 @@ std::string ec_debug_topic(const std::string & topic_name)
   return "/debug/epdms/ec/" + topic_name;
 }
 
+std::string ep_debug_topic(const std::string & topic_name)
+{
+  return "/debug/epdms/ep/" + topic_name;
+}
+
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
   return "/debug/epdms/trajectory/" + topic_name;
@@ -787,6 +792,28 @@ nlohmann::json lk_debug_summary_to_json(
     {"sample_count", debug_info.samples.size()}};
 }
 
+nlohmann::json ep_debug_summary_to_json(
+  const OpenLoopTrajectoryMetrics & metrics, const rclcpp::Time & timestamp)
+{
+  return nlohmann::json{
+    {"trajectory_stamp_sec", timestamp.seconds()},
+    {"score", metrics.ego_progress},
+    {"available", metrics.ego_progress_available},
+    {"reason", metrics.ego_progress_reason},
+    {"raw_progress_m", metrics.ego_progress_raw_m},
+    {"masked_progress_m", metrics.ego_progress_denominator_m},
+    {"denominator_m", metrics.ego_progress_denominator_m},
+    {"multiplicative_mask", metrics.ego_progress_mask},
+    {"nc", metrics.no_at_fault_collision},
+    {"dac", metrics.drivable_area_compliance},
+    {"ddc", metrics.driving_direction_compliance},
+    {"tlc", metrics.traffic_light_compliance},
+    {"threshold_m", 5.0},
+    {"proposal_mode", "single_evaluated_trajectory"},
+    {"later_work",
+     "evaluate the full candidate proposal batch and compute candidate-level NC/DAC/DDC/TLC"}};
+}
+
 void write_nc_debug_topics_to_bag(
   const metrics::TrajectoryPointMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
   const rclcpp::Time & timestamp, const OpenLoopEvaluator::NCDebugMode debug_mode,
@@ -1221,6 +1248,55 @@ void write_lk_debug_topics_to_bag(
   bag_writer.write(
     reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
   bag_writer.write(labels, lk_debug_topic("labels"), timestamp);
+}
+
+void write_ep_debug_topics_to_bag(
+  const OpenLoopTrajectoryMetrics & metrics, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!metrics.ego_progress_available) {
+    return;
+  }
+
+  std_msgs::msg::String summary_msg;
+  summary_msg.data = ep_debug_summary_to_json(metrics, timestamp).dump();
+  bag_writer.write(summary_msg, ep_debug_topic("progress_summary"), timestamp);
+
+  visualization_msgs::msg::MarkerArray route_progress_points;
+  visualization_msgs::msg::MarkerArray route_reference;
+  visualization_msgs::msg::MarkerArray labels;
+  route_progress_points.markers.push_back(make_delete_all_marker(timestamp));
+  route_reference.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  route_progress_points.markers.push_back(make_line_strip_marker(
+    timestamp, "ep_start_point", 0, square_marker_points(metrics.ego_progress_start_point, 0.35),
+    make_color(0.1F, 0.9F, 1.0F, 1.0F), 0.18, true, marker_lifetime_s, 0.22));
+  route_progress_points.markers.push_back(make_line_strip_marker(
+    timestamp, "ep_end_point", 1, square_marker_points(metrics.ego_progress_end_point, 0.35),
+    make_color(0.0F, 1.0F, 0.35F, 1.0F), 0.18, true, marker_lifetime_s, 0.24));
+  route_progress_points.markers.push_back(make_line_strip_marker(
+    timestamp, "ep_progress_chord", 2,
+    {metrics.ego_progress_start_point, metrics.ego_progress_end_point},
+    make_color(0.0F, 0.8F, 1.0F, 0.9F), 0.16, false, marker_lifetime_s, 0.20));
+
+  if (metrics.ego_progress_route_reference_points.size() >= 2U) {
+    route_reference.markers.push_back(make_line_strip_marker(
+      timestamp, "ep_route_reference", 0, metrics.ego_progress_route_reference_points,
+      make_color(1.0F, 0.85F, 0.15F, 0.85F), 0.12, false, marker_lifetime_s, 0.14));
+  }
+
+  std::ostringstream label;
+  label << "EP=" << std::fixed << std::setprecision(2) << metrics.ego_progress
+        << "\nraw=" << metrics.ego_progress_raw_m << "m\nmask=" << metrics.ego_progress_mask
+        << "\nden=" << metrics.ego_progress_denominator_m << "m";
+  labels.markers.push_back(make_text_marker(
+    timestamp, "ep_labels", 0, metrics.ego_progress_end_point, label.str(),
+    make_color(1.0F, 0.95F, 0.25F, 1.0F), marker_lifetime_s));
+
+  bag_writer.write(route_progress_points, ep_debug_topic("route_progress_points"), timestamp);
+  bag_writer.write(route_reference, ep_debug_topic("route_reference"), timestamp);
+  bag_writer.write(labels, ep_debug_topic("labels"), timestamp);
 }
 
 void write_hc_debug_topics_to_bag(
@@ -1700,20 +1776,6 @@ void OpenLoopEvaluator::evaluate(
         metrics.lane_keeping = trajectory_metrics.lane_keeping;
         metrics.lane_keeping_available = trajectory_metrics.lane_keeping_available;
         metrics.lane_keeping_reason = trajectory_metrics.lane_keeping_reason;
-        if (enabled_metrics_.ego_progress) {
-          const auto ego_progress = metrics::calculate_ego_progress(
-            eval_data.synchronized_data ? eval_data.synchronized_data->trajectory : nullptr,
-            eval_data.synchronized_data ? eval_data.synchronized_data->candidate_trajectories
-                                        : nullptr,
-            route_handler_);
-          metrics.ego_progress = ego_progress.score;
-          metrics.ego_progress_available = ego_progress.available;
-          metrics.ego_progress_reason = ego_progress.reason;
-          metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
-          metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
-        } else {
-          metrics.ego_progress_reason = "disabled";
-        }
         metrics.drivable_area_compliance = trajectory_metrics.drivable_area_compliance;
         metrics.drivable_area_compliance_available =
           trajectory_metrics.drivable_area_compliance_available;
@@ -1735,6 +1797,26 @@ void OpenLoopEvaluator::evaluate(
           trajectory_metrics.traffic_light_compliance_available;
         metrics.traffic_light_compliance_reason =
           trajectory_metrics.traffic_light_compliance_reason;
+        if (enabled_metrics_.ego_progress) {
+          const auto ego_progress = metrics::calculate_ego_progress(
+            eval_data.synchronized_data ? eval_data.synchronized_data->trajectory : nullptr,
+            route_handler_, metrics.no_at_fault_collision, metrics.no_at_fault_collision_available,
+            metrics.drivable_area_compliance, metrics.drivable_area_compliance_available,
+            metrics.driving_direction_compliance, metrics.driving_direction_compliance_available,
+            metrics.traffic_light_compliance, metrics.traffic_light_compliance_available);
+          metrics.ego_progress = ego_progress.score;
+          metrics.ego_progress_available = ego_progress.available;
+          metrics.ego_progress_reason = ego_progress.reason;
+          metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
+          metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
+          metrics.ego_progress_mask = ego_progress.multiplicative_mask;
+          metrics.ego_progress_denominator_m = ego_progress.denominator_m;
+          metrics.ego_progress_start_point = ego_progress.start_point;
+          metrics.ego_progress_end_point = ego_progress.end_point;
+          metrics.ego_progress_route_reference_points = ego_progress.route_reference_points;
+        } else {
+          metrics.ego_progress_reason = "disabled";
+        }
 
         metrics::EpdmsMetricSnapshot human_snapshot;
         if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
@@ -2681,6 +2763,10 @@ void OpenLoopEvaluator::save_metrics_to_bag(
       *eval_data.synchronized_data->trajectory, ground_truth_trajectory, vehicle_info_, bag_writer,
       message_timestamp, nc_debug_marker_lifetime_s_);
   }
+  if (enabled_metrics_.ego_progress) {
+    write_ep_debug_topics_to_bag(
+      metrics, bag_writer, message_timestamp, nc_debug_marker_lifetime_s_);
+  }
 }
 
 void OpenLoopEvaluator::set_nc_debug_mode(const std::string & mode)
@@ -3362,6 +3448,8 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
     traj["ego_progress_reason"] = m.ego_progress_reason;
     traj["ego_progress_raw_m"] = m.ego_progress_raw_m;
     traj["ego_progress_best_raw_m"] = m.ego_progress_best_raw_m;
+    traj["ego_progress_multiplicative_mask"] = m.ego_progress_mask;
+    traj["ego_progress_denominator_m"] = m.ego_progress_denominator_m;
     traj["drivable_area_compliance"] = m.drivable_area_compliance;
     traj["drivable_area_compliance_available"] = m.drivable_area_compliance_available;
     traj["drivable_area_compliance_reason"] = m.drivable_area_compliance_reason;
@@ -3609,6 +3697,10 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("ego_progress"), "std_msgs/msg/Float64");
     add_topic(metric_topic("ego_progress_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("ego_progress_reason"), "std_msgs/msg/String");
+    add_topic(ep_debug_topic("progress_summary"), "std_msgs/msg/String");
+    add_topic(ep_debug_topic("route_progress_points"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ep_debug_topic("route_reference"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ep_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.drivable_area_compliance) {
     add_topic(metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64");

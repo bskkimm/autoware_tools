@@ -1035,6 +1035,42 @@ t0 | score | failed components | rms acceleration | rms jerk | rms yaw rate | rm
 a global trajectory-to-trajectory signal mismatch rather than a local spatial
 violation.
 
+## EP Ego Progress Debugging
+
+EP uses the same evaluated trajectory as NC/DAC/DDC/TLC and applies NAVSIM's
+progress equation in single-proposal form. The denominator is:
+
+```text
+raw_progress_m * NC * DAC * DDC * TLC
+```
+
+Because there is only one evaluated proposal in this mode, EP is expected to be
+`1.0` whenever route projection and the multiplicative inputs are available. The
+debug output is therefore mostly diagnostic: it explains whether EP saturated due
+to the NAVSIM ratio branch or the low-denominator fallback.
+
+EP-specific debug outputs:
+
+```text
+/debug/epdms/ep/progress_summary
+/debug/epdms/ep/route_progress_points
+/debug/epdms/ep/route_reference
+/debug/epdms/ep/labels
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/epdms/ep/progress_summary` | JSON summary with EP score, availability, raw route progress, masked denominator, NC/DAC/DDC/TLC values, and the single-proposal reason. |
+| `/debug/epdms/ep/route_progress_points` | Start/end ego center markers and the straight chord between the trajectory endpoints used for route-progress inspection. |
+| `/debug/epdms/ep/route_reference` | Route centerline points collected from the route lanelets used for arc-length projection. |
+| `/debug/epdms/ep/labels` | Human-readable 3D EP summary label. |
+
+Later work: full NAVSIM candidate-batch EP should evaluate NC/DAC/DDC/TLC for every
+candidate in `/diffusion_planner/output/trajectories`, then use
+`max_j(progress_j * NC_j * DAC_j * DDC_j * TLC_j)` as the denominator.
+
 ## 2D Camera Overlay
 
 The first implementation should use the 3D map.

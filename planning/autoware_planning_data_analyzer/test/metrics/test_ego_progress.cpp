@@ -18,10 +18,22 @@
 
 #include <memory>
 
+namespace
+{
+
+autoware::planning_data_analyzer::metrics::EgoProgressResult calculate_with_valid_scores(
+  const std::shared_ptr<autoware::planning_data_analyzer::Trajectory> & trajectory,
+  const std::shared_ptr<autoware::route_handler::RouteHandler> & route_handler)
+{
+  return autoware::planning_data_analyzer::metrics::calculate_ego_progress(
+    trajectory, route_handler, 1.0, true, 1.0, true, 1.0, true, 1.0, true);
+}
+
+}  // namespace
+
 TEST(EgoProgressTest, ReturnsUnavailableWhenSelectedTrajectoryIsMissing)
 {
-  const auto result =
-    autoware::planning_data_analyzer::metrics::calculate_ego_progress(nullptr, nullptr, nullptr);
+  const auto result = calculate_with_valid_scores(nullptr, nullptr);
 
   EXPECT_FALSE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 0.0);
@@ -34,8 +46,7 @@ TEST(EgoProgressTest, ReturnsUnavailableWhenRouteHandlerIsMissing)
   trajectory->header.frame_id = "map";
   trajectory->points.resize(2);
 
-  const auto result =
-    autoware::planning_data_analyzer::metrics::calculate_ego_progress(trajectory, nullptr, nullptr);
+  const auto result = calculate_with_valid_scores(trajectory, nullptr);
 
   EXPECT_FALSE(result.available);
   EXPECT_DOUBLE_EQ(result.score, 0.0);
