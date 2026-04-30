@@ -164,6 +164,13 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   tf_topic_name_ = get_or_declare_parameter<std::string>(*this, "tf_topic");
   acceleration_topic_name_ = get_or_declare_parameter<std::string>(*this, "acceleration_topic");
   steering_topic_name_ = get_or_declare_parameter<std::string>(*this, "steering_topic");
+  if (has_parameter("hazard_lights_topic")) {
+    hazard_lights_topic_name_ = get_parameter("hazard_lights_topic").get_value<std::string>();
+  } else {
+    hazard_lights_topic_name_ =
+      declare_parameter<std::string>(
+        "hazard_lights_topic", "/vehicle/status/hazard_lights_status");
+  }
   turn_indicators_topic_name_ =
     get_or_declare_parameter<std::string>(*this, "turn_indicators_topic");
 
@@ -487,6 +494,7 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
   topic_names.tf_topic = tf_topic_name_;
   topic_names.acceleration_topic = acceleration_topic_name_;
   topic_names.steering_topic = steering_topic_name_;
+  topic_names.hazard_lights_topic = hazard_lights_topic_name_;
   topic_names.turn_indicators_topic = turn_indicators_topic_name_;
   topic_names.evaluation_interval_ms = evaluation_interval_ms_;
   topic_names.sync_tolerance_ms = sync_tolerance_ms_;

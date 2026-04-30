@@ -71,6 +71,8 @@ struct BagData
       max_buffer_msgs);
     create_buffer<SteeringReport>(
       "/vehicle/status/steering_status", buffer_duration_sec, max_buffer_msgs);
+    create_buffer<HazardLightsReport>(
+      "/vehicle/status/hazard_lights_status", buffer_duration_sec, max_buffer_msgs);
     create_buffer<TurnIndicatorsReport>(
       "/vehicle/status/turn_indicators_status", buffer_duration_sec, max_buffer_msgs);
   }
@@ -106,6 +108,8 @@ struct BagData
         topic_names.traffic_signals_topic, buffer_duration_sec, max_buffer_msgs);
     }
     create_buffer<SteeringReport>(topic_names.steering_topic, buffer_duration_sec, max_buffer_msgs);
+    create_buffer<HazardLightsReport>(
+      topic_names.hazard_lights_topic, buffer_duration_sec, max_buffer_msgs);
     create_buffer<TurnIndicatorsReport>(
       topic_names.turn_indicators_topic, buffer_duration_sec, max_buffer_msgs);
   }
@@ -234,6 +238,29 @@ struct BagData
       synchronized_data->steering_status = steer_buffer->get_closest(target_time, tolerance_ms);
     }
 
+    std::shared_ptr<Buffer<HazardLightsReport>> hazard_lights_buffer;
+    for (const auto & [topic, buffer] : buffers) {
+      if (auto hb = std::dynamic_pointer_cast<Buffer<HazardLightsReport>>(buffer)) {
+        hazard_lights_buffer = hb;
+        break;
+      }
+    }
+    if (hazard_lights_buffer && synchronized_data->trajectory) {
+      const auto traj_stamp_ns =
+        rclcpp::Time(synchronized_data->trajectory->header.stamp).nanoseconds();
+      synchronized_data->hazard_lights_status =
+        hazard_lights_buffer->get_closest(traj_stamp_ns, tolerance_ms);
+      const auto history_start_ns = traj_stamp_ns - static_cast<rcutils_time_point_value_t>(2.0e9);
+      const auto history_end_ns = traj_stamp_ns +
+                                  static_cast<rcutils_time_point_value_t>(
+                                    (trajectory_evaluation_horizon_s + 2.0) * 1.0e9);
+      synchronized_data->hazard_lights_history =
+        hazard_lights_buffer->get_range(history_start_ns, history_end_ns);
+    } else if (hazard_lights_buffer) {
+      synchronized_data->hazard_lights_status =
+        hazard_lights_buffer->get_closest(target_time, tolerance_ms);
+    }
+
     std::shared_ptr<Buffer<TurnIndicatorsReport>> turn_indicators_buffer;
     for (const auto & [topic, buffer] : buffers) {
       if (auto tb = std::dynamic_pointer_cast<Buffer<TurnIndicatorsReport>>(buffer)) {
@@ -246,6 +273,12 @@ struct BagData
         rclcpp::Time(synchronized_data->trajectory->header.stamp).nanoseconds();
       synchronized_data->turn_indicators_status =
         turn_indicators_buffer->get_closest(traj_stamp_ns, tolerance_ms);
+      const auto history_start_ns = traj_stamp_ns - static_cast<rcutils_time_point_value_t>(2.0e9);
+      const auto history_end_ns = traj_stamp_ns +
+                                  static_cast<rcutils_time_point_value_t>(
+                                    (trajectory_evaluation_horizon_s + 2.0) * 1.0e9);
+      synchronized_data->turn_indicators_history =
+        turn_indicators_buffer->get_range(history_start_ns, history_end_ns);
     } else if (turn_indicators_buffer) {
       synchronized_data->turn_indicators_status =
         turn_indicators_buffer->get_closest(target_time, tolerance_ms);

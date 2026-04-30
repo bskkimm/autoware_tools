@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <limits>
+#include <utility>
 #include <vector>
 
 using autoware::planning_data_analyzer::metrics::LaneKeepingEvaluationPoint;
@@ -118,7 +119,7 @@ TEST(LaneKeepingTest, LaneChangeGraceSuppressesViolationRun)
     make_exemptable_point(2.1, 0.6, 2, 4.0, 8.0)};
 
   const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
-    evaluation_points, LaneKeepingParameters{0.5, 2.0}, true);
+    evaluation_points, LaneKeepingParameters{0.5, 2.0}, {{0.0, 2.0}});
 
   EXPECT_DOUBLE_EQ(result.score, 1.0);
   EXPECT_TRUE(result.debug.samples.at(0).lane_change_exempt);
@@ -126,7 +127,7 @@ TEST(LaneKeepingTest, LaneChangeGraceSuppressesViolationRun)
   EXPECT_TRUE(result.debug.samples.at(2).lane_change_exempt);
 }
 
-TEST(LaneKeepingTest, LaneletSwitchWithoutMultipleLanesDoesNotSuppressViolationRun)
+TEST(LaneKeepingTest, NoLaneChangeWindowDoesNotSuppressViolationRun)
 {
   const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
     make_exemptable_point(0.0, 0.6, 1, 4.0, 0.0), make_exemptable_point(0.5, 0.6, 1, 4.0, 2.0),
@@ -134,7 +135,7 @@ TEST(LaneKeepingTest, LaneletSwitchWithoutMultipleLanesDoesNotSuppressViolationR
     make_exemptable_point(2.1, 0.6, 2, 4.0, 8.0)};
 
   const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
-    evaluation_points, LaneKeepingParameters{0.5, 2.0}, true);
+    evaluation_points, LaneKeepingParameters{0.5, 2.0});
 
   EXPECT_DOUBLE_EQ(result.score, 0.0);
   for (const auto & sample : result.debug.samples) {

@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -95,14 +96,12 @@ struct LaneKeepingResult
 LaneKeepingResult calculate_lane_keeping_result(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
   const LaneKeepingParameters & parameters = LaneKeepingParameters{},
-  bool lane_change_intent_active = false,
-  const std::vector<double> & lane_change_transition_times_s = {});
+  const std::vector<std::pair<double, double>> & lane_change_windows_s = {});
 
 double calculate_lane_keeping_score(
   const std::vector<LaneKeepingEvaluationPoint> & evaluation_points,
   const LaneKeepingParameters & parameters = LaneKeepingParameters{},
-  bool lane_change_intent_active = false,
-  const std::vector<double> & lane_change_transition_times_s = {});
+  const std::vector<std::pair<double, double>> & lane_change_windows_s = {});
 
 }  // namespace autoware::planning_data_analyzer::metrics
 
