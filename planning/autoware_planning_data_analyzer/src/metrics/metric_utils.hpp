@@ -154,6 +154,9 @@ std::array<uint8_t, 16> object_id_key(const unique_identifier_msgs::msg::UUID & 
 bool is_agent_classification(
   const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification);
 
+bool is_unknown_classification(
+  const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification);
+
 std::vector<LoggedObjectTrack> build_logged_object_tracks(
   const std::vector<TimedTrackedObjects> & future_objects);
 

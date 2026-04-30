@@ -420,6 +420,9 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
       if (!object_state.has_value()) {
         continue;
       }
+      if (is_unknown_classification(object_state->classification)) {
+        continue;
+      }
       if (!bg::intersects(ego_polygon, object_state->polygon)) {
         continue;
       }

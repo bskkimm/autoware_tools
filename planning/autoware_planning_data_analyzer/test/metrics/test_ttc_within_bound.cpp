@@ -90,6 +90,11 @@ autoware_perception_msgs::msg::TrackedObject make_stationary_object(
   object.shape.dimensions.y = 1.0;
   object.shape.dimensions.z = 1.5;
 
+  autoware_perception_msgs::msg::ObjectClassification classification;
+  classification.label = autoware_perception_msgs::msg::ObjectClassification::CAR;
+  classification.probability = 1.0f;
+  object.classification.push_back(classification);
+
   return object;
 }
 
@@ -181,6 +186,24 @@ TEST(TTCWithinBound, AheadCollisionFails)
   EXPECT_FALSE(result.debug_info.overlap_areas.empty());
 }
 
+TEST(TTCWithinBound, UnknownCollisionIsIgnored)
+{
+  const auto trajectory = make_straight_trajectory(5.0);
+  auto objects = std::make_shared<TrackedObjects>();
+  auto object = make_stationary_object(4.0, 0.0);
+  object.classification.front().label =
+    autoware_perception_msgs::msg::ObjectClassification::UNKNOWN;
+  objects->objects.push_back(object);
+
+  const auto result = calculate_ttc_within_bound(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "available");
+  EXPECT_TRUE(result.debug_info.events.empty());
+}
+
 TEST(TTCWithinBound, BehindCollisionDoesNotFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);
@@ -206,6 +229,10 @@ TEST(TTCWithinBound, UsesTrackedObjectPose)
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
   object.shape.dimensions.z = 1.5;
+  autoware_perception_msgs::msg::ObjectClassification classification;
+  classification.label = autoware_perception_msgs::msg::ObjectClassification::CAR;
+  classification.probability = 1.0f;
+  object.classification.push_back(classification);
 
   objects->objects.push_back(object);
 

@@ -695,6 +695,14 @@ bool is_agent_classification(
          label == ObjectClassification::PEDESTRIAN || label == ObjectClassification::ANIMAL;
 }
 
+bool is_unknown_classification(
+  const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification)
+{
+  using autoware_perception_msgs::msg::ObjectClassification;
+  return autoware::object_recognition_utils::getHighestProbLabel(classification) ==
+         ObjectClassification::UNKNOWN;
+}
+
 std::vector<LoggedObjectTrack> build_logged_object_tracks(
   const std::vector<TimedTrackedObjects> & future_objects)
 {

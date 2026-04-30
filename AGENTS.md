@@ -102,6 +102,11 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
     interpolation, object track continuity, sampled-time mismatch, collision
     classification filtering, or inconsistency between the 4-second debug horizon and
     the exact future samples NC checks.
+- NC/TTC x2_odaiba artifact note:
+  - The run `/home/beomseokkim2/rosbag/x2_odaiba/run_logs/20260501_015616` showed NC/TTC
+    failures dominated by tiny short-lived `UNKNOWN` polygon tracked objects.
+  - Current NC/TTC logic intentionally skips tracked objects whose highest-probability label
+    is `UNKNOWN`; revisit this if future bags contain real but unclassified obstacles.
 - When moving on to a different subscore, aggregated full EPDMS work, or human-filtered
   work, first commit the current state to the corresponding subscore branch, then create
   the next working branch on top of that committed state. Push and manage those subscore

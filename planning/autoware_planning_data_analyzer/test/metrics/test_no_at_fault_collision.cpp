@@ -387,6 +387,22 @@ TEST(NoAtFaultCollision, FrontCollisionWithNonAgentGetsHalfPenalty)
   EXPECT_EQ(result.reason, "at_fault_collision_with_non_agent");
 }
 
+TEST(NoAtFaultCollision, UnknownCollisionIsIgnored)
+{
+  const auto trajectory = make_straight_trajectory(5.0);
+  auto objects = std::make_shared<TrackedObjects>();
+  objects->objects.push_back(
+    make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::UNKNOWN));
+
+  const auto result = calculate_no_at_fault_collision(
+    trajectory, make_future_objects(objects->objects), make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "available");
+  EXPECT_TRUE(result.debug_info.events.empty());
+}
+
 TEST(NoAtFaultCollision, RearCollisionDoesNotFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);

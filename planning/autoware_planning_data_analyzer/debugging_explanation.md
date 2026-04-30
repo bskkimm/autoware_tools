@@ -35,6 +35,11 @@ the trajectory that was generated at `t0`.
 
 The NC debug output is intentionally compact.
 
+NC ignores tracked objects whose highest-probability label is `UNKNOWN`. This Autoware-specific
+guard was added after x2_odaiba produced many NC failures from tiny short-lived `UNKNOWN` polygon
+tracks rather than meaningful actors. Such skipped objects do not produce NC collision summaries
+or horizon markers.
+
 | Topic | Message type | Purpose |
 |---|---|---|
 | `/debug/epdms/nc/collision_summary` | `std_msgs/msg/String` | JSON summary for trajectories that contain NC collision events. This is the topic a custom Lichtblick panel should use for the clickable collision list. |
@@ -650,6 +655,9 @@ TTC debug output is intended to answer:
 ### Topics
 
 When TTC is enabled and a trajectory scores below `1.0`, the analyzer writes:
+
+TTC uses the same `UNKNOWN` tracked-object exclusion as NC. Skipped `UNKNOWN` objects do not
+produce TTC violation summaries or 3D marker output.
 
 ```text
 /debug/epdms/ttc/violation_summary
