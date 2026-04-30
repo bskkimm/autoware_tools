@@ -981,6 +981,60 @@ For component-level plots, use the trajectory-point signal topics together with
 `/debug/epdms/hc/sample_times` and `/debug/epdms/hc/segments` to separate past,
 boundary, and future portions of the padded sequence.
 
+## EC Extended Comfort Debugging
+
+EC now follows the NAVSIM-style adjacent-frame overlap comparison. For trajectory
+`i`, the previous trajectory `i-1` is shifted forward by the observed publish-time
+interval before comparing the overlapping future sequence. With 10 Hz planning and
+0.1 s trajectory samples, the usual comparison is:
+
+```text
+current[0..38] vs previous[1..39]
+```
+
+If two adjacent messages carry the same trajectory header stamp at startup, EC falls
+back to one trajectory sample interval so the comparison remains available instead of
+creating a non-semantic unavailable case.
+
+EC-specific debug outputs:
+
+```text
+/debug/epdms/ec/comparison_summary
+/debug/epdms/ec/sample_times
+/debug/epdms/ec/delta_acceleration
+/debug/epdms/ec/delta_jerk
+/debug/epdms/ec/delta_yaw_rate
+/debug/epdms/ec/delta_yaw_accel
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/epdms/ec/comparison_summary` | JSON summary for the adjacent comparison: score, reason, RMS values, failed components, worst component, worst sample time, and worst delta. |
+| `/debug/epdms/ec/sample_times` | Time axis for the aligned overlap samples. |
+| `/debug/epdms/ec/delta_acceleration` | Per-sample current-minus-previous acceleration-magnitude difference. |
+| `/debug/epdms/ec/delta_jerk` | Per-sample current-minus-previous jerk-magnitude difference. |
+| `/debug/epdms/ec/delta_yaw_rate` | Per-sample current-minus-previous yaw-rate difference. |
+| `/debug/epdms/ec/delta_yaw_accel` | Per-sample current-minus-previous yaw-acceleration difference. |
+
+Lichtblick panel expectation:
+
+```text
+EC Violation Timeline
+```
+
+The panel should subscribe to `/debug/epdms/ec/comparison_summary`, list non-perfect
+EC comparisons, and show columns:
+
+```text
+t0 | score | failed components | rms acceleration | rms jerk | rms yaw rate | rms yaw accel | worst component | worst time | worst delta
+```
+
+3D polygon visualization is intentionally not required for EC because the failure is
+a global trajectory-to-trajectory signal mismatch rather than a local spatial
+violation.
+
 ## 2D Camera Overlay
 
 The first implementation should use the 3D map.

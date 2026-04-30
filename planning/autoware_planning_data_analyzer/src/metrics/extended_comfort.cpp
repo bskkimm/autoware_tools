@@ -14,12 +14,15 @@
 
 #include "extended_comfort.hpp"
 
-#include "metric_utils.hpp"
+#include "comfort_signal.hpp"
 
-#include <autoware_utils_math/normalization.hpp>
+#include <rclcpp/rclcpp.hpp>
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
+#include <sstream>
+#include <string>
 #include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
@@ -28,13 +31,7 @@ namespace autoware::planning_data_analyzer::metrics
 namespace
 {
 
-struct DynamicSignals
-{
-  std::vector<double> accelerations;
-  std::vector<double> jerks;
-  std::vector<double> yaw_rates;
-  std::vector<double> yaw_accelerations;
-};
+constexpr double kDefaultTrajectoryDt = 0.1;
 
 double get_time_seconds(const builtin_interfaces::msg::Duration & time_from_start)
 {
@@ -42,69 +39,67 @@ double get_time_seconds(const builtin_interfaces::msg::Duration & time_from_star
          static_cast<double>(time_from_start.nanosec) * 1e-9;
 }
 
-double compute_rms_difference(const std::vector<double> & lhs, const std::vector<double> & rhs)
+double trajectory_dt_s(const autoware_planning_msgs::msg::Trajectory & trajectory)
 {
-  const auto count = std::min(lhs.size(), rhs.size());
-  if (count == 0U) {
-    return 0.0;
+  if (trajectory.points.size() < 2U) {
+    return kDefaultTrajectoryDt;
   }
-
-  double sum_squared_error = 0.0;
-  for (std::size_t i = 0; i < count; ++i) {
-    const double error = lhs.at(i) - rhs.at(i);
-    sum_squared_error += error * error;
-  }
-
-  return std::sqrt(sum_squared_error / static_cast<double>(count));
+  const double dt =
+    get_time_seconds(trajectory.points.at(1).time_from_start) -
+    get_time_seconds(trajectory.points.front().time_from_start);
+  return dt > 0.0 ? dt : kDefaultTrajectoryDt;
 }
 
-DynamicSignals calculate_dynamic_signals(
-  const autoware_planning_msgs::msg::Trajectory & trajectory, const double epsilon)
+std::vector<ComfortSignalInput> make_overlap_signal_inputs(
+  const autoware_planning_msgs::msg::Trajectory & trajectory, const std::size_t start_index,
+  const std::size_t count, const double dt)
 {
-  DynamicSignals signals;
-  const auto num_points = trajectory.points.size();
-  if (num_points < 2U) {
-    return signals;
+  std::vector<ComfortSignalInput> inputs;
+  inputs.reserve(count);
+  for (std::size_t index = 0; index < count; ++index) {
+    const auto & point = trajectory.points.at(start_index + index);
+    inputs.push_back(
+      ComfortSignalInput{static_cast<double>(index) * dt, point.pose, point.acceleration_mps2, 0.0});
   }
+  return inputs;
+}
 
-  signals.accelerations.resize(num_points - 1U, 0.0);
-  signals.yaw_rates.resize(num_points - 1U, 0.0);
-
-  for (std::size_t i = 0; i + 1U < num_points; ++i) {
-    const auto & point = trajectory.points.at(i);
-    const auto & next_point = trajectory.points.at(i + 1U);
-    const double dt = std::max(
-      get_time_seconds(next_point.time_from_start) - get_time_seconds(point.time_from_start),
-      epsilon);
-
-    const double speed = std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps);
-    const double next_speed =
-      std::hypot(next_point.longitudinal_velocity_mps, next_point.lateral_velocity_mps);
-    signals.accelerations.at(i) = (next_speed - speed) / dt;
-
-    const double yaw = get_yaw(point.pose.orientation);
-    const double next_yaw = get_yaw(next_point.pose.orientation);
-    const double delta_yaw = autoware_utils_math::normalize_radian(next_yaw - yaw);
-    signals.yaw_rates.at(i) = delta_yaw / dt;
+std::vector<double> subtract_signals(const std::vector<double> & current, const std::vector<double> & previous)
+{
+  const auto count = std::min(current.size(), previous.size());
+  std::vector<double> delta;
+  delta.reserve(count);
+  for (std::size_t index = 0; index < count; ++index) {
+    delta.push_back(current.at(index) - previous.at(index));
   }
+  return delta;
+}
 
-  if (signals.accelerations.size() >= 2U) {
-    signals.jerks.resize(signals.accelerations.size() - 1U, 0.0);
-    signals.yaw_accelerations.resize(signals.yaw_rates.size() - 1U, 0.0);
+double rms(const std::vector<double> & values)
+{
+  if (values.empty()) {
+    return 0.0;
+  }
+  double sum_squared = 0.0;
+  for (const auto value : values) {
+    sum_squared += value * value;
+  }
+  return std::sqrt(sum_squared / static_cast<double>(values.size()));
+}
 
-    for (std::size_t i = 0; i + 1U < signals.accelerations.size(); ++i) {
-      const auto & point = trajectory.points.at(i);
-      const auto & next_point = trajectory.points.at(i + 1U);
-      const double dt = std::max(
-        get_time_seconds(next_point.time_from_start) - get_time_seconds(point.time_from_start),
-        epsilon);
-      signals.jerks.at(i) = (signals.accelerations.at(i + 1U) - signals.accelerations.at(i)) / dt;
-      signals.yaw_accelerations.at(i) =
-        (signals.yaw_rates.at(i + 1U) - signals.yaw_rates.at(i)) / dt;
+std::pair<double, double> abs_max_with_time(
+  const std::vector<double> & values, const std::vector<double> & sample_times)
+{
+  double max_abs = 0.0;
+  double time_s = 0.0;
+  for (std::size_t index = 0; index < values.size() && index < sample_times.size(); ++index) {
+    const double abs_value = std::abs(values.at(index));
+    if (abs_value > max_abs) {
+      max_abs = abs_value;
+      time_s = sample_times.at(index);
     }
   }
-
-  return signals;
+  return {max_abs, time_s};
 }
 
 bool are_parameters_valid(const ExtendedComfortParameters & parameters)
@@ -114,6 +109,42 @@ bool are_parameters_valid(const ExtendedComfortParameters & parameters)
          parameters.finite_difference_epsilon > 0.0;
 }
 
+void append_failed_component(
+  std::ostringstream & summary, bool & first, const std::string & name, const bool ok)
+{
+  if (ok) {
+    return;
+  }
+  if (!first) {
+    summary << ",";
+  }
+  summary << "\"" << name << "\"";
+  first = false;
+}
+
+std::string build_summary(
+  const double score, const std::string & reason, const double rms_acceleration,
+  const double rms_jerk, const double rms_yaw_rate, const double rms_yaw_accel,
+  const bool acceleration_ok, const bool jerk_ok, const bool yaw_rate_ok,
+  const bool yaw_accel_ok, const std::string & worst_component, const double worst_sample_time_s,
+  const double worst_delta)
+{
+  std::ostringstream summary;
+  summary << "{\"score\":" << score << ",\"reason\":\"" << reason << "\""
+          << ",\"rms_acceleration\":" << rms_acceleration << ",\"rms_jerk\":" << rms_jerk
+          << ",\"rms_yaw_rate\":" << rms_yaw_rate << ",\"rms_yaw_accel\":" << rms_yaw_accel
+          << ",\"failed_components\":[";
+  bool first = true;
+  append_failed_component(summary, first, "acceleration", acceleration_ok);
+  append_failed_component(summary, first, "jerk", jerk_ok);
+  append_failed_component(summary, first, "yaw_rate", yaw_rate_ok);
+  append_failed_component(summary, first, "yaw_accel", yaw_accel_ok);
+  summary << "],\"worst_component\":\"" << worst_component
+          << "\",\"worst_sample_time_s\":" << worst_sample_time_s
+          << ",\"worst_delta\":" << worst_delta << "}";
+  return summary.str();
+}
+
 }  // namespace
 
 ExtendedComfortResult calculate_extended_comfort(
@@ -121,43 +152,88 @@ ExtendedComfortResult calculate_extended_comfort(
   const autoware_planning_msgs::msg::Trajectory & current_trajectory,
   const ExtendedComfortParameters & parameters)
 {
+  ExtendedComfortResult result;
   if (!are_parameters_valid(parameters)) {
-    return {0.0, false, "unavailable_invalid_parameters"};
+    result.reason = "unavailable_invalid_parameters";
+    return result;
   }
 
-  if (previous_trajectory.points.size() < 3U || current_trajectory.points.size() < 3U) {
-    return {0.0, false, "unavailable_short_trajectory"};
+  const double dt = trajectory_dt_s(current_trajectory);
+  const double raw_observation_interval =
+    (rclcpp::Time(current_trajectory.header.stamp) - rclcpp::Time(previous_trajectory.header.stamp))
+      .seconds();
+  const double observation_interval = raw_observation_interval > 0.0 ? raw_observation_interval : dt;
+  const auto overlap_shift = static_cast<std::size_t>(std::llround(observation_interval / dt));
+  if (dt <= 0.0 || overlap_shift == 0U) {
+    result.reason = "unavailable_invalid_time_alignment";
+    return result;
   }
 
-  auto previous_signals =
-    calculate_dynamic_signals(previous_trajectory, parameters.finite_difference_epsilon);
-  auto current_signals =
-    calculate_dynamic_signals(current_trajectory, parameters.finite_difference_epsilon);
-
-  if (
-    previous_signals.accelerations.empty() || current_signals.accelerations.empty() ||
-    previous_signals.jerks.empty() || current_signals.jerks.empty() ||
-    previous_signals.yaw_rates.empty() || current_signals.yaw_rates.empty() ||
-    previous_signals.yaw_accelerations.empty() || current_signals.yaw_accelerations.empty()) {
-    return {0.0, false, "unavailable_short_trajectory"};
+  const auto previous_size = previous_trajectory.points.size();
+  const auto current_size = current_trajectory.points.size();
+  if (previous_size < 3U || current_size < 3U || overlap_shift >= previous_size) {
+    result.reason = "unavailable_short_trajectory";
+    return result;
   }
 
-  const double acceleration_rms =
-    compute_rms_difference(previous_signals.accelerations, current_signals.accelerations);
-  const double jerk_rms = compute_rms_difference(previous_signals.jerks, current_signals.jerks);
-  const double yaw_rate_rms =
-    compute_rms_difference(previous_signals.yaw_rates, current_signals.yaw_rates);
-  const double yaw_acceleration_rms =
-    compute_rms_difference(previous_signals.yaw_accelerations, current_signals.yaw_accelerations);
-
-  if (
-    acceleration_rms > parameters.max_acceleration_rms || jerk_rms > parameters.max_jerk_rms ||
-    yaw_rate_rms > parameters.max_yaw_rate_rms ||
-    yaw_acceleration_rms > parameters.max_yaw_acceleration_rms) {
-    return {0.0, true, "available"};
+  const auto overlap_count = std::min(current_size, previous_size - overlap_shift);
+  if (overlap_count < 3U) {
+    result.reason = "unavailable_short_overlap";
+    return result;
   }
 
-  return {1.0, true, "available"};
+  result.sample_times.reserve(overlap_count);
+  for (std::size_t index = 0; index < overlap_count; ++index) {
+    result.sample_times.push_back(static_cast<double>(index) * dt);
+  }
+
+  const auto current_inputs = make_overlap_signal_inputs(current_trajectory, 0U, overlap_count, dt);
+  const auto previous_inputs =
+    make_overlap_signal_inputs(previous_trajectory, overlap_shift, overlap_count, dt);
+  const auto current_signals = compute_comfort_signals(current_inputs);
+  const auto previous_signals = compute_comfort_signals(previous_inputs);
+
+  result.delta_acceleration = subtract_signals(
+    current_signals.acceleration_magnitudes, previous_signals.acceleration_magnitudes);
+  result.delta_jerk =
+    subtract_signals(current_signals.jerk_magnitudes, previous_signals.jerk_magnitudes);
+  result.delta_yaw_rate = subtract_signals(current_signals.yaw_rates, previous_signals.yaw_rates);
+  result.delta_yaw_accel =
+    subtract_signals(current_signals.yaw_accelerations, previous_signals.yaw_accelerations);
+
+  const double rms_acceleration = rms(result.delta_acceleration);
+  const double rms_jerk = rms(result.delta_jerk);
+  const double rms_yaw_rate = rms(result.delta_yaw_rate);
+  const double rms_yaw_accel = rms(result.delta_yaw_accel);
+
+  const bool acceleration_ok = rms_acceleration <= parameters.max_acceleration_rms;
+  const bool jerk_ok = rms_jerk <= parameters.max_jerk_rms;
+  const bool yaw_rate_ok = rms_yaw_rate <= parameters.max_yaw_rate_rms;
+  const bool yaw_accel_ok = rms_yaw_accel <= parameters.max_yaw_acceleration_rms;
+
+  std::string worst_component = "acceleration";
+  auto [worst_delta, worst_sample_time_s] =
+    abs_max_with_time(result.delta_acceleration, result.sample_times);
+  const auto update_worst = [&](const std::string & name, const std::vector<double> & values) {
+    const auto [component_delta, component_time] = abs_max_with_time(values, result.sample_times);
+    if (component_delta > worst_delta) {
+      worst_component = name;
+      worst_delta = component_delta;
+      worst_sample_time_s = component_time;
+    }
+  };
+  update_worst("jerk", result.delta_jerk);
+  update_worst("yaw_rate", result.delta_yaw_rate);
+  update_worst("yaw_accel", result.delta_yaw_accel);
+
+  result.available = true;
+  result.reason = "available";
+  result.score = acceleration_ok && jerk_ok && yaw_rate_ok && yaw_accel_ok ? 1.0 : 0.0;
+  result.debug_summary = build_summary(
+    result.score, result.reason, rms_acceleration, rms_jerk, rms_yaw_rate, rms_yaw_accel,
+    acceleration_ok, jerk_ok, yaw_rate_ok, yaw_accel_ok, worst_component, worst_sample_time_s,
+    worst_delta);
+  return result;
 }
 
 }  // namespace autoware::planning_data_analyzer::metrics

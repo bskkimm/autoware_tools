@@ -44,8 +44,8 @@ In the ownership subsections below, the NAVSIM ownership wording follows the "Ex
 | EP | Different | No | Important migration deviation |
 | TTC | Similar but not same | No | Important migration deviation |
 | LK | Same core rule | Close | Near-port with lanelet-based centerline substitution |
-| HC | Different | No | Not history-comfort in NAVSIM sense |
-| EC | Different | No | Same thresholds, different compared signals |
+| HC | Same core rule | Close | Close port with Autoware kinematic-history source |
+| EC | Same core rule | Partial | Overlap/RMS port with Autoware trajectory source |
 | Aggregation (raw EPDMS) | Same final 16-weight form | Partial | Formula ported, inputs not fully ported |
 | Human-filtered | Different | Partial | Code behavior differs materially from NAVSIM |
 
@@ -2613,9 +2613,9 @@ Semantically, EC captures planning smoothness over time at the evaluation-pipeli
 ### Platform deviations and impact
 
 - NAVSIM extracts acceleration, jerk, yaw rate, and yaw acceleration from state arrays using the comfort helper stack and compares only the overlap region.
-- The migrated code extracts the same four signal categories from raw trajectory points and compares the whole previous/current trajectories up to the shorter length.
+- The migrated code now extracts the same four signal categories with the shared HC/EC comfort-signal helper and compares the time-overlapped adjacent trajectories.
 - Thresholds are preserved exactly: acceleration $0.7$, jerk $0.5$, yaw rate $0.1$, yaw acceleration $0.1$.
-- **Impact:** **High.** The migration keeps the threshold form but not the signal source or overlap semantics.
+- **Impact:** **Medium.** The overlap and threshold semantics are now close to NAVSIM. The remaining gap is that Autoware compares published planner trajectories rather than NAVSIM's simulated `ego_simulated_states`.
 
 ### Equation comparison
 
@@ -2674,34 +2674,35 @@ $$
 Q^{prev},\quad Q^{curr}.
 $$
 
-For a trajectory $Q$, it computes:
+Let:
 
 $$
-a_n(Q)=
-\frac{\|v_{n+1}\|_2-\|v_n\|_2}{\Delta t_n},
-\qquad
-\dot{\psi}_n(Q)
-=
-\frac{\mathrm{normalize}(\psi_{n+1}-\psi_n)}{\Delta t_n},
+\Delta T = t(Q^{curr})-t(Q^{prev}),\qquad
+\Delta q = \mathrm{dt}(Q^{curr}),\qquad
+k = \mathrm{round}(\Delta T / \Delta q).
 $$
 
-then:
+If the adjacent Autoware trajectory header stamps are non-increasing at startup, the
+implementation falls back to $\Delta T=\Delta q$ to avoid creating a non-semantic
+unavailable comparison from duplicate initial stamps.
+
+The compared overlap sequences are:
 
 $$
-j_n(Q)
-=
-\frac{a_{n+1}(Q)-a_n(Q)}{\Delta t_n},
-\qquad
-\ddot{\psi}_n(Q)
-=
-\frac{\dot{\psi}_{n+1}(Q)-\dot{\psi}_n(Q)}{\Delta t_n}.
+S^{prev}_{aw}=Q^{prev}_{k:},\qquad
+S^{curr}_{aw}=Q^{curr}_{:-k}.
+$$
+
+For 10 Hz Autoware planning with 0.1 s trajectory samples, this is normally:
+
+$$
+Q^{curr}_{0..38}\quad\mathrm{vs.}\quad Q^{prev}_{1..39}.
 $$
 
 For each signal:
 
 $$
-s\in
-\{a,j,\dot{\psi},\ddot{\psi}\},
+s\in\{a,j,\dot{\psi},\ddot{\psi}\},
 $$
 
 the RMS difference is:
@@ -2713,14 +2714,17 @@ $$
 \frac{1}{N_s}
 \sum_{n=0}^{N_s-1}
 \left(
-s_n(Q^{prev})-s_n(Q^{curr})
+s_n(S^{curr}_{aw})-s_n(S^{prev}_{aw})
 \right)^2
 }.
 $$
 
-Here $N_s=\min(|s(Q^{prev})|,|s(Q^{curr})|)$, so the comparison uses the shared prefix
-of each dynamic-signal vector. If either trajectory has fewer than three points, EC is
-marked unavailable.
+The Autoware signal extraction uses the same local-polynomial smoothing and derivative
+helper as HC. Planned-trajectory acceleration uses `TrajectoryPoint::acceleration_mps2`
+as the longitudinal acceleration input and assumes zero lateral acceleration because
+the Autoware trajectory message does not carry a lateral acceleration field. If either
+trajectory has fewer than three points, the time alignment is invalid, or the overlap
+has fewer than three samples, EC is marked unavailable.
 
 The configured default thresholds are:
 
@@ -2751,13 +2755,23 @@ $$
 The first evaluated trajectory has no previous trajectory, so EC is marked unavailable
 for that frame.
 
+EC debug output is intentionally non-geometric. The implementation writes a JSON
+comparison summary and aligned delta arrays:
+
+$$
+\Delta a,\quad \Delta j,\quad \Delta\dot{\psi},\quad \Delta\ddot{\psi}.
+$$
+
 **Main input gap.** NAVSIM EC is injected after base PDM scoring from NAVSIM's
-two-frame extended-comfort path. Migrated Autoware EC compares consecutive selected
-trajectory messages in time, so its input pairing and availability behavior differ.
+two-frame extended-comfort path and compares simulated ego states. Migrated Autoware EC
+compares consecutive selected trajectory messages in time, so the paired object is still
+not identical even though overlap alignment and signal thresholds are now close.
 
 ### Assessment
 
-EC is a **major semantic deviation**. The threshold gate is ported, but the compared objects are different.
+EC is now a **close partial port**. The overlap alignment, smoothed signal extraction,
+RMS gate, and thresholds follow NAVSIM. The remaining deviation is the state source:
+published Autoware planner trajectories replace NAVSIM's simulated ego-state rollouts.
 
 ---
 

@@ -14,14 +14,12 @@
 
 #include "history_comfort.hpp"
 
+#include "comfort_signal.hpp"
 #include "metric_utils.hpp"
-
-#include <autoware_utils_math/normalization.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <optional>
 #include <sstream>
 #include <vector>
 
@@ -46,114 +44,6 @@ struct ComfortState
 double stamp_to_seconds(const rclcpp::Time & stamp)
 {
   return static_cast<double>(stamp.nanoseconds()) * 1.0e-9;
-}
-
-double factorial(const int n)
-{
-  double value = 1.0;
-  for (int i = 2; i <= n; ++i) {
-    value *= static_cast<double>(i);
-  }
-  return value;
-}
-
-std::vector<double> unwrap_angles(const std::vector<double> & values)
-{
-  if (values.empty()) {
-    return {};
-  }
-  std::vector<double> unwrapped(values.size(), 0.0);
-  unwrapped.front() = values.front();
-  for (std::size_t i = 1; i < values.size(); ++i) {
-    const double delta = autoware_utils_math::normalize_radian(values.at(i) - values.at(i - 1U));
-    unwrapped.at(i) = unwrapped.at(i - 1U) + delta;
-  }
-  return unwrapped;
-}
-
-std::optional<std::vector<double>> solve_linear_system(
-  std::vector<std::vector<double>> lhs, std::vector<double> rhs)
-{
-  const std::size_t n = rhs.size();
-  for (std::size_t pivot = 0; pivot < n; ++pivot) {
-    std::size_t best = pivot;
-    for (std::size_t row = pivot + 1U; row < n; ++row) {
-      if (std::abs(lhs.at(row).at(pivot)) > std::abs(lhs.at(best).at(pivot))) {
-        best = row;
-      }
-    }
-    if (std::abs(lhs.at(best).at(pivot)) < 1.0e-12) {
-      return std::nullopt;
-    }
-    if (best != pivot) {
-      std::swap(lhs.at(best), lhs.at(pivot));
-      std::swap(rhs.at(best), rhs.at(pivot));
-    }
-    const double divisor = lhs.at(pivot).at(pivot);
-    for (std::size_t col = pivot; col < n; ++col) {
-      lhs.at(pivot).at(col) /= divisor;
-    }
-    rhs.at(pivot) /= divisor;
-    for (std::size_t row = 0; row < n; ++row) {
-      if (row == pivot) {
-        continue;
-      }
-      const double factor = lhs.at(row).at(pivot);
-      for (std::size_t col = pivot; col < n; ++col) {
-        lhs.at(row).at(col) -= factor * lhs.at(pivot).at(col);
-      }
-      rhs.at(row) -= factor * rhs.at(pivot);
-    }
-  }
-  return rhs;
-}
-
-std::vector<double> local_polynomial_filter(
-  const std::vector<double> & values, const std::vector<double> & times, const int window_length,
-  const int poly_order, const int derivative_order)
-{
-  std::vector<double> output(values.size(), 0.0);
-  if (values.empty() || values.size() != times.size()) {
-    return output;
-  }
-  const int effective_poly_order =
-    std::min<int>(poly_order, std::max<int>(0, static_cast<int>(values.size()) - 1));
-  if (derivative_order > effective_poly_order) {
-    return output;
-  }
-
-  const std::size_t coefficients = static_cast<std::size_t>(effective_poly_order + 1);
-  const std::size_t target_window =
-    std::max<std::size_t>(coefficients, std::min<std::size_t>(window_length, values.size()));
-
-  for (std::size_t i = 0; i < values.size(); ++i) {
-    std::size_t start = i > target_window / 2U ? i - target_window / 2U : 0U;
-    std::size_t end = std::min(values.size(), start + target_window);
-    if (end - start < target_window) {
-      start = end > target_window ? end - target_window : 0U;
-    }
-    std::vector<std::vector<double>> lhs(coefficients, std::vector<double>(coefficients, 0.0));
-    std::vector<double> rhs(coefficients, 0.0);
-    for (std::size_t sample = start; sample < end; ++sample) {
-      const double centered_t = times.at(sample) - times.at(i);
-      std::vector<double> powers(coefficients, 1.0);
-      for (std::size_t power = 1; power < coefficients; ++power) {
-        powers.at(power) = powers.at(power - 1U) * centered_t;
-      }
-      for (std::size_t row = 0; row < coefficients; ++row) {
-        rhs.at(row) += powers.at(row) * values.at(sample);
-        for (std::size_t col = 0; col < coefficients; ++col) {
-          lhs.at(row).at(col) += powers.at(row) * powers.at(col);
-        }
-      }
-    }
-    const auto solution = solve_linear_system(std::move(lhs), std::move(rhs));
-    if (solution.has_value()) {
-      output.at(i) = solution->at(static_cast<std::size_t>(derivative_order)) *
-                     factorial(derivative_order);
-    }
-  }
-  return output;
 }
 
 template <typename MessageT>
@@ -302,46 +192,29 @@ void calculate_history_comfort_metrics(
     return;
   }
 
-  std::vector<double> times;
-  std::vector<double> yaws;
-  std::vector<double> longitudinal_accelerations_raw;
-  std::vector<double> lateral_accelerations_raw;
-  std::vector<double> acceleration_magnitudes_raw;
-  times.reserve(states.size());
+  std::vector<ComfortSignalInput> signal_inputs;
+  signal_inputs.reserve(states.size());
   metrics.history_comfort_sample_times.reserve(states.size());
   metrics.history_comfort_segment_ids.reserve(states.size());
   metrics.history_comfort_sample_poses.reserve(states.size());
-  yaws.reserve(states.size());
-  longitudinal_accelerations_raw.reserve(states.size());
-  lateral_accelerations_raw.reserve(states.size());
-  acceleration_magnitudes_raw.reserve(states.size());
 
   for (const auto & state : states) {
-    times.push_back(state.time_s + history_comfort_params.past_horizon_s);
     metrics.history_comfort_sample_times.push_back(state.time_s);
     metrics.history_comfort_segment_ids.push_back(state.segment_id);
     metrics.history_comfort_sample_poses.push_back(state.pose);
-    yaws.push_back(state.yaw);
-    longitudinal_accelerations_raw.push_back(state.longitudinal_acceleration_mps2);
-    lateral_accelerations_raw.push_back(state.lateral_acceleration_mps2);
-    acceleration_magnitudes_raw.push_back(
-      std::hypot(state.longitudinal_acceleration_mps2, state.lateral_acceleration_mps2));
+    signal_inputs.push_back(
+      ComfortSignalInput{state.time_s, state.pose, state.longitudinal_acceleration_mps2,
+                         state.lateral_acceleration_mps2});
   }
 
-  metrics.longitudinal_accelerations = local_polynomial_filter(
-    longitudinal_accelerations_raw, times, 8, 2, 0);
-  metrics.lateral_accelerations = local_polynomial_filter(lateral_accelerations_raw, times, 8, 2, 0);
-  const auto acceleration_magnitudes =
-    local_polynomial_filter(acceleration_magnitudes_raw, times, 8, 2, 0);
-  metrics.longitudinal_jerks = local_polynomial_filter(
-    metrics.longitudinal_accelerations, times, 15, 2, 1);
-  metrics.lateral_jerks =
-    local_polynomial_filter(metrics.lateral_accelerations, times, 15, 2, 1);
-  metrics.jerk_magnitudes = local_polynomial_filter(acceleration_magnitudes, times, 15, 2, 1);
-
-  const auto unwrapped_yaws = unwrap_angles(yaws);
-  metrics.yaw_rates = local_polynomial_filter(unwrapped_yaws, times, 15, 2, 1);
-  metrics.yaw_accelerations = local_polynomial_filter(unwrapped_yaws, times, 15, 3, 2);
+  const auto signals = compute_comfort_signals(signal_inputs, history_comfort_params.past_horizon_s);
+  metrics.longitudinal_accelerations = signals.longitudinal_accelerations;
+  metrics.lateral_accelerations = signals.lateral_accelerations;
+  metrics.longitudinal_jerks = signals.longitudinal_jerks;
+  metrics.lateral_jerks = signals.lateral_jerks;
+  metrics.jerk_magnitudes = signals.jerk_magnitudes;
+  metrics.yaw_rates = signals.yaw_rates;
+  metrics.yaw_accelerations = signals.yaw_accelerations;
 
   const bool longitudinal_acceleration_ok = is_within(
     metrics.longitudinal_accelerations, history_comfort_params.min_longitudinal_acceleration,

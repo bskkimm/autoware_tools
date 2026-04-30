@@ -216,6 +216,11 @@ std::string hc_debug_topic(const std::string & topic_name)
   return "/debug/epdms/hc/" + topic_name;
 }
 
+std::string ec_debug_topic(const std::string & topic_name)
+{
+  return "/debug/epdms/ec/" + topic_name;
+}
+
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
   return "/debug/epdms/trajectory/" + topic_name;
@@ -1821,6 +1826,13 @@ void OpenLoopEvaluator::evaluate(
             metrics.extended_comfort = extended_comfort_result.score;
             metrics.extended_comfort_available = extended_comfort_result.available;
             metrics.extended_comfort_reason = extended_comfort_result.reason;
+            metrics.extended_comfort_debug_summary = extended_comfort_result.debug_summary;
+            metrics.extended_comfort_sample_times = extended_comfort_result.sample_times;
+            metrics.extended_comfort_delta_acceleration =
+              extended_comfort_result.delta_acceleration;
+            metrics.extended_comfort_delta_jerk = extended_comfort_result.delta_jerk;
+            metrics.extended_comfort_delta_yaw_rate = extended_comfort_result.delta_yaw_rate;
+            metrics.extended_comfort_delta_yaw_accel = extended_comfort_result.delta_yaw_accel;
           }
         }
 
@@ -2606,6 +2618,20 @@ void OpenLoopEvaluator::save_metrics_to_bag(
   if (enabled_metrics_.extended_comfort) {
     reason_msg.data = metrics.extended_comfort_reason;
     bag_writer.write(reason_msg, metric_topic("extended_comfort_reason"), message_timestamp);
+    if (!metrics.extended_comfort_debug_summary.empty()) {
+      reason_msg.data = metrics.extended_comfort_debug_summary;
+      bag_writer.write(reason_msg, ec_debug_topic("comparison_summary"), message_timestamp);
+      array_msg.data = metrics.extended_comfort_sample_times;
+      bag_writer.write(array_msg, ec_debug_topic("sample_times"), message_timestamp);
+      array_msg.data = metrics.extended_comfort_delta_acceleration;
+      bag_writer.write(array_msg, ec_debug_topic("delta_acceleration"), message_timestamp);
+      array_msg.data = metrics.extended_comfort_delta_jerk;
+      bag_writer.write(array_msg, ec_debug_topic("delta_jerk"), message_timestamp);
+      array_msg.data = metrics.extended_comfort_delta_yaw_rate;
+      bag_writer.write(array_msg, ec_debug_topic("delta_yaw_rate"), message_timestamp);
+      array_msg.data = metrics.extended_comfort_delta_yaw_accel;
+      bag_writer.write(array_msg, ec_debug_topic("delta_yaw_accel"), message_timestamp);
+    }
   }
   if (enabled_metrics_.time_to_collision_within_bound) {
     reason_msg.data = metrics.time_to_collision_within_bound_reason;
@@ -3318,6 +3344,12 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
     traj["extended_comfort"] = m.extended_comfort;
     traj["extended_comfort_available"] = m.extended_comfort_available;
     traj["extended_comfort_reason"] = m.extended_comfort_reason;
+    traj["extended_comfort_debug_summary"] = m.extended_comfort_debug_summary;
+    traj["extended_comfort_sample_times"] = m.extended_comfort_sample_times;
+    traj["extended_comfort_delta_acceleration"] = m.extended_comfort_delta_acceleration;
+    traj["extended_comfort_delta_jerk"] = m.extended_comfort_delta_jerk;
+    traj["extended_comfort_delta_yaw_rate"] = m.extended_comfort_delta_yaw_rate;
+    traj["extended_comfort_delta_yaw_accel"] = m.extended_comfort_delta_yaw_accel;
     traj["time_to_collision_within_bound"] = m.time_to_collision_within_bound;
     traj["time_to_collision_within_bound_available"] = m.time_to_collision_within_bound_available;
     traj["time_to_collision_within_bound_reason"] = m.time_to_collision_within_bound_reason;
@@ -3556,6 +3588,12 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("extended_comfort"), "std_msgs/msg/Float64");
     add_topic(metric_topic("extended_comfort_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("extended_comfort_reason"), "std_msgs/msg/String");
+    add_topic(ec_debug_topic("comparison_summary"), "std_msgs/msg/String");
+    add_topic(ec_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
+    add_topic(ec_debug_topic("delta_acceleration"), "std_msgs/msg/Float64MultiArray");
+    add_topic(ec_debug_topic("delta_jerk"), "std_msgs/msg/Float64MultiArray");
+    add_topic(ec_debug_topic("delta_yaw_rate"), "std_msgs/msg/Float64MultiArray");
+    add_topic(ec_debug_topic("delta_yaw_accel"), "std_msgs/msg/Float64MultiArray");
   }
   if (enabled_metrics_.lane_keeping) {
     add_topic(metric_topic("lane_keeping"), "std_msgs/msg/Float64");
