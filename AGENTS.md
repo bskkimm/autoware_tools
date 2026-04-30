@@ -58,6 +58,9 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   - the previously integrated subscores still produce consistent results and debug topics.
 - The purpose of that accumulated run is to catch regressions where a new subscore or
   debug path breaks existing subscores.
+- For future full-pipeline validation runs, run the accumulated command on both
+  `~/rosbag/x2_takanawa` and `~/rosbag/x2_odaiba` unless the user explicitly limits the
+  validation to one bag.
 - When patching equations in `implementation_report.md`, prefer the subset of math that
   actually renders cleanly in the user's Markdown preview. If preview rendering is mixed,
   do not broadly rewrite unrelated equations. Patch only the failing expressions and
