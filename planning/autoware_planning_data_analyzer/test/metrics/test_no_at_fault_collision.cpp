@@ -97,12 +97,12 @@ autoware_planning_msgs::msg::Trajectory make_single_point_trajectory(
   return trajectory;
 }
 
-autoware_perception_msgs::msg::PredictedObject make_object(
+autoware_perception_msgs::msg::TrackedObject make_object(
   const double x, const double y, const std::uint8_t label, const double speed_mps = 0.0)
 {
-  autoware_perception_msgs::msg::PredictedObject object;
-  object.kinematics.initial_pose_with_covariance.pose = make_pose(x, y);
-  object.kinematics.initial_twist_with_covariance.twist.linear.x = speed_mps;
+  autoware_perception_msgs::msg::TrackedObject object;
+  object.kinematics.pose_with_covariance.pose = make_pose(x, y);
+  object.kinematics.twist_with_covariance.twist.linear.x = speed_mps;
   object.shape.type = autoware_perception_msgs::msg::Shape::BOUNDING_BOX;
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
@@ -113,13 +113,6 @@ autoware_perception_msgs::msg::PredictedObject make_object(
   classification.probability = 1.0f;
   object.classification.push_back(classification);
 
-  autoware_perception_msgs::msg::PredictedPath path;
-  path.time_step = rclcpp::Duration::from_seconds(0.5);
-  path.confidence = 1.0;
-  path.path.push_back(make_pose(x, y));
-  path.path.push_back(make_pose(x + 0.5 * speed_mps, y));
-  path.path.push_back(make_pose(x + speed_mps, y));
-  object.kinematics.predicted_paths.push_back(path);
   return object;
 }
 
@@ -153,7 +146,7 @@ std::shared_ptr<RouteHandler> make_route_handler(const lanelet::Lanelets & lanel
   return route_handler;
 }
 
-void set_object_id(autoware_perception_msgs::msg::PredictedObject & object, const uint8_t value)
+void set_object_id(autoware_perception_msgs::msg::TrackedObject & object, const uint8_t value)
 {
   object.object_id.uuid.fill(0U);
   object.object_id.uuid.at(15) = value;
@@ -168,23 +161,23 @@ builtin_interfaces::msg::Time make_stamp(const double stamp_s)
   return stamp;
 }
 
-std::vector<TimedPredictedObjects> make_future_objects(
-  std::vector<autoware_perception_msgs::msg::PredictedObject> objects, const double stamp_s = 0.0)
+std::vector<TimedTrackedObjects> make_future_objects(
+  std::vector<autoware_perception_msgs::msg::TrackedObject> objects, const double stamp_s = 0.0)
 {
-  auto msg = std::make_shared<PredictedObjects>();
+  auto msg = std::make_shared<TrackedObjects>();
   msg->header.stamp = make_stamp(stamp_s);
   msg->objects = std::move(objects);
-  return {TimedPredictedObjects{rclcpp::Time(msg->header.stamp), msg}};
+  return {TimedTrackedObjects{rclcpp::Time(msg->header.stamp), msg}};
 }
 
-std::vector<TimedPredictedObjects> append_future_objects(
-  std::vector<TimedPredictedObjects> future_objects,
-  std::vector<autoware_perception_msgs::msg::PredictedObject> objects, const double stamp_s)
+std::vector<TimedTrackedObjects> append_future_objects(
+  std::vector<TimedTrackedObjects> future_objects,
+  std::vector<autoware_perception_msgs::msg::TrackedObject> objects, const double stamp_s)
 {
-  auto msg = std::make_shared<PredictedObjects>();
+  auto msg = std::make_shared<TrackedObjects>();
   msg->header.stamp = make_stamp(stamp_s);
   msg->objects = std::move(objects);
-  future_objects.push_back(TimedPredictedObjects{rclcpp::Time(msg->header.stamp), msg});
+  future_objects.push_back(TimedTrackedObjects{rclcpp::Time(msg->header.stamp), msg});
   return future_objects;
 }
 
@@ -207,13 +200,13 @@ TEST(NoAtFaultCollision, LoggedBoundingBoxYawFlipDoesNotInterpolateThroughSidewa
   auto first = make_object(5.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR);
   first.shape.dimensions.x = 4.0;
   first.shape.dimensions.y = 2.0;
-  first.kinematics.initial_pose_with_covariance.pose.orientation =
+  first.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(0.0);
   set_object_id(first, 10U);
 
   auto second = first;
-  second.kinematics.initial_pose_with_covariance.pose.position.x = 5.1;
-  second.kinematics.initial_pose_with_covariance.pose.orientation =
+  second.kinematics.pose_with_covariance.pose.position.x = 5.1;
+  second.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(kPi);
 
   auto future_objects = make_future_objects({first}, 0.0);
@@ -246,13 +239,13 @@ TEST(NoAtFaultCollision, LoggedObjectInterpolationUsesObjectYawNotPositionJitter
   constexpr double kYaw = 10.0 * M_PI / 180.0;
 
   auto first = make_object(5.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR);
-  first.kinematics.initial_pose_with_covariance.pose.orientation =
+  first.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(kYaw);
   set_object_id(first, 11U);
 
   auto second = first;
-  second.kinematics.initial_pose_with_covariance.pose.position.y = 0.02;
-  second.kinematics.initial_pose_with_covariance.pose.orientation =
+  second.kinematics.pose_with_covariance.pose.position.y = 0.02;
+  second.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(kYaw);
 
   auto future_objects = make_future_objects({first}, 0.0);
@@ -275,14 +268,14 @@ TEST(NoAtFaultCollision, SlowLongTrailerYawJumpIsHeldWhenTranslationIsTiny)
     make_object(10.0, 1.0, autoware_perception_msgs::msg::ObjectClassification::TRAILER, 0.3);
   first.shape.dimensions.x = 17.8;
   first.shape.dimensions.y = 2.8;
-  first.kinematics.initial_pose_with_covariance.pose.orientation =
+  first.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(kFirstYaw);
   set_object_id(first, 12U);
 
   auto second = first;
-  second.kinematics.initial_pose_with_covariance.pose.position.x += 0.2;
-  second.kinematics.initial_pose_with_covariance.pose.position.y += 0.02;
-  second.kinematics.initial_pose_with_covariance.pose.orientation =
+  second.kinematics.pose_with_covariance.pose.position.x += 0.2;
+  second.kinematics.pose_with_covariance.pose.position.y += 0.02;
+  second.kinematics.pose_with_covariance.pose.orientation =
     autoware_utils_geometry::create_quaternion_from_yaw(kSecondYaw);
 
   auto future_objects = make_future_objects({first}, 0.0);
@@ -299,7 +292,7 @@ TEST(NoAtFaultCollision, SlowLongTrailerYawJumpIsHeldWhenTranslationIsTiny)
 TEST(NoAtFaultCollision, EmptyObjectsPasses)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   const auto result = calculate_no_at_fault_collision(
     trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
@@ -311,7 +304,7 @@ TEST(NoAtFaultCollision, EmptyObjectsPasses)
 TEST(NoAtFaultCollision, FrontCollisionWithAgentFails)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
 
@@ -351,12 +344,7 @@ TEST(NoAtFaultCollision, DebugFootprintsUseEgoSurfaceZ)
 
   auto object =
     make_object(3.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 0.0);
-  object.kinematics.initial_pose_with_covariance.pose.position.z = 40.5;
-  for (auto & path : object.kinematics.predicted_paths) {
-    for (auto & pose : path.path) {
-      pose.position.z = 40.5;
-    }
-  }
+  object.kinematics.pose_with_covariance.pose.position.z = 40.5;
 
   const auto result =
     calculate_no_at_fault_collision(trajectory, make_future_objects({object}), make_vehicle_info());
@@ -387,7 +375,7 @@ TEST(NoAtFaultCollision, DebugFootprintsUseEgoSurfaceZ)
 TEST(NoAtFaultCollision, FrontCollisionWithNonAgentGetsHalfPenalty)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::HAZARD));
 
@@ -402,7 +390,7 @@ TEST(NoAtFaultCollision, FrontCollisionWithNonAgentGetsHalfPenalty)
 TEST(NoAtFaultCollision, RearCollisionDoesNotFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(-3.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR));
 
@@ -417,7 +405,7 @@ TEST(NoAtFaultCollision, RearCollisionDoesNotFail)
 TEST(NoAtFaultCollision, MovingRearAgentCollisionDoesNotFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(-1.5, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
 
@@ -432,7 +420,7 @@ TEST(NoAtFaultCollision, MovingRearAgentCollisionDoesNotFail)
 TEST(NoAtFaultCollision, SlowRearAgentCollisionIsStoppedTrackAndFails)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(-1.5, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 0.04));
 
@@ -447,7 +435,7 @@ TEST(NoAtFaultCollision, SlowRearAgentCollisionIsStoppedTrackAndFails)
 TEST(NoAtFaultCollision, NonAgentRearCollisionIsStoppedTrackByDefinition)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(-1.5, 0.0, autoware_perception_msgs::msg::ObjectClassification::HAZARD, 2.0));
 
@@ -462,7 +450,7 @@ TEST(NoAtFaultCollision, NonAgentRearCollisionIsStoppedTrackByDefinition)
 TEST(NoAtFaultCollision, LaterAgentCollisionCanReduceEarlierNonAgentHalfPenalty)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
 
   auto non_agent =
     make_object(4.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::HAZARD, 0.0);
@@ -472,11 +460,11 @@ TEST(NoAtFaultCollision, LaterAgentCollisionCanReduceEarlierNonAgentHalfPenalty)
   auto agent =
     make_object(20.0, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 0.0);
   set_object_id(agent, 2U);
-  agent.kinematics.initial_twist_with_covariance.twist.linear.x = 10.0;
+  agent.kinematics.twist_with_covariance.twist.linear.x = 10.0;
   objects->objects.push_back(agent);
 
   auto agent_later = agent;
-  agent_later.kinematics.initial_pose_with_covariance.pose = make_pose(8.5, 0.0);
+  agent_later.kinematics.pose_with_covariance.pose = make_pose(8.5, 0.0);
   auto future_objects = make_future_objects(objects->objects);
   future_objects = append_future_objects(future_objects, {agent_later}, 1.0);
 
@@ -492,7 +480,7 @@ TEST(NoAtFaultCollision, LaterAgentCollisionCanReduceEarlierNonAgentHalfPenalty)
 TEST(NoAtFaultCollision, AlreadyCollidedObjectIsSkippedAtLaterTimesteps)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
 
   auto object =
     make_object(-1.5, 0.0, autoware_perception_msgs::msg::ObjectClassification::CAR, 10.0);
@@ -500,7 +488,7 @@ TEST(NoAtFaultCollision, AlreadyCollidedObjectIsSkippedAtLaterTimesteps)
   objects->objects.push_back(object);
 
   auto object_later = object;
-  object_later.kinematics.initial_pose_with_covariance.pose = make_pose(8.5, 0.0);
+  object_later.kinematics.pose_with_covariance.pose = make_pose(8.5, 0.0);
   auto future_objects = make_future_objects(objects->objects);
   future_objects = append_future_objects(future_objects, {object_later}, 1.0);
 
@@ -515,7 +503,7 @@ TEST(NoAtFaultCollision, AlreadyCollidedObjectIsSkippedAtLaterTimesteps)
 TEST(NoAtFaultCollision, LateralCollisionInsideRoadLaneIsNotAtFault)
 {
   const auto trajectory = make_single_point_trajectory(0.0, 0.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(1.0, 0.9, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
   const auto route_handler = make_route_handler({make_road_lanelet(1, -2.0, 2.0)});
@@ -531,7 +519,7 @@ TEST(NoAtFaultCollision, LateralCollisionInsideRoadLaneIsNotAtFault)
 TEST(NoAtFaultCollision, LateralCollisionWithCornerOutsideDrivableAreaIsAtFault)
 {
   const auto trajectory = make_single_point_trajectory(0.0, 1.5);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(1.0, 2.4, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
   const auto route_handler = make_route_handler({make_road_lanelet(1, -2.0, 2.0)});
@@ -547,7 +535,7 @@ TEST(NoAtFaultCollision, LateralCollisionWithCornerOutsideDrivableAreaIsAtFault)
 TEST(NoAtFaultCollision, NonRouteRoadSurfaceIsStillDrivableForLateralAssessment)
 {
   const auto trajectory = make_single_point_trajectory(0.0, 3.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(1.0, 3.9, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
   const auto route_handler =
@@ -564,7 +552,7 @@ TEST(NoAtFaultCollision, NonRouteRoadSurfaceIsStillDrivableForLateralAssessment)
 TEST(NoAtFaultCollision, LateralCollisionStraddlingMultipleLanesIsAtFault)
 {
   const auto trajectory = make_single_point_trajectory(0.0, 1.9);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(
     make_object(1.0, 2.8, autoware_perception_msgs::msg::ObjectClassification::CAR, 2.0));
   const auto route_handler =
@@ -578,13 +566,13 @@ TEST(NoAtFaultCollision, LateralCollisionStraddlingMultipleLanesIsAtFault)
   EXPECT_EQ(result.reason, "at_fault_lateral_collision_with_agent");
 }
 
-TEST(NoAtFaultCollision, IgnoresPredictedPathsAndUsesLoggedObjectPose)
+TEST(NoAtFaultCollision, UsesTrackedObjectPose)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
 
-  autoware_perception_msgs::msg::PredictedObject object;
-  object.kinematics.initial_pose_with_covariance.pose = make_pose(4.0, 0.0);
+  autoware_perception_msgs::msg::TrackedObject object;
+  object.kinematics.pose_with_covariance.pose = make_pose(4.0, 0.0);
   object.shape.type = autoware_perception_msgs::msg::Shape::BOUNDING_BOX;
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
@@ -595,21 +583,6 @@ TEST(NoAtFaultCollision, IgnoresPredictedPathsAndUsesLoggedObjectPose)
   classification.probability = 1.0f;
   object.classification.push_back(classification);
 
-  autoware_perception_msgs::msg::PredictedPath colliding_path;
-  colliding_path.time_step = rclcpp::Duration::from_seconds(0.5);
-  colliding_path.confidence = 0.1;
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-
-  autoware_perception_msgs::msg::PredictedPath safe_path;
-  safe_path.time_step = rclcpp::Duration::from_seconds(0.5);
-  safe_path.confidence = 0.9;
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-
-  object.kinematics.predicted_paths = {colliding_path, safe_path};
   objects->objects.push_back(object);
 
   const auto result = calculate_no_at_fault_collision(

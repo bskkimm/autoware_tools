@@ -97,7 +97,7 @@ BaseEvaluator::BagProcessingResult BaseEvaluator::process_bag_common(
       process_and_append_message<TurnIndicatorsReport>(
         serialized_message, bag_data, topic_names.turn_indicators_topic, false, logger_);
     } else if (topic_name == topic_names.objects_topic) {
-      process_and_append_message<PredictedObjects>(
+      process_and_append_message<TrackedObjects>(
         serialized_message, bag_data, topic_names.objects_topic, use_bag_timestamp, logger_);
     } else if (
       topic_name == topic_names.traffic_signals_topic &&
@@ -118,11 +118,11 @@ BaseEvaluator::BagProcessingResult BaseEvaluator::process_bag_common(
   if (const auto object_itr = bag_data->buffers.find(topic_names.objects_topic);
       object_itr != bag_data->buffers.end()) {
     if (const auto object_buffer =
-          std::dynamic_pointer_cast<Buffer<PredictedObjects>>(object_itr->second)) {
+          std::dynamic_pointer_cast<Buffer<TrackedObjects>>(object_itr->second)) {
       result.object_timeline.reserve(object_buffer->msgs.size());
       for (const auto & objects : object_buffer->msgs) {
         result.object_timeline.push_back(
-          TimedPredictedObjects{message_stamp(objects), std::make_shared<PredictedObjects>(objects)});
+          TimedTrackedObjects{message_stamp(objects), std::make_shared<TrackedObjects>(objects)});
       }
     }
   }

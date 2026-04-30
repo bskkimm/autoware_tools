@@ -57,7 +57,7 @@ TEST_F(ReplayEvaluationTest, TopicDefinitions)
   topic_names.tf_topic = "/tf";
   topic_names.odometry_topic = "/localization/kinematic_state";
   topic_names.acceleration_topic = "/localization/acceleration";
-  topic_names.objects_topic = "/perception/object_recognition/objects";
+  topic_names.objects_topic = "/perception/object_recognition/tracking/objects";
   topic_names.trajectory_topic = "/planning/trajectory";
   topic_names.gt_trajectory_topic = "/planning/ground_truth_trajectory";
   topic_names.steering_topic = "/vehicle/status/steering_status";
@@ -69,7 +69,7 @@ TEST_F(ReplayEvaluationTest, TopicDefinitions)
   EXPECT_EQ(topic_names.tf_topic, "/tf");
   EXPECT_EQ(topic_names.odometry_topic, "/localization/kinematic_state");
   EXPECT_EQ(topic_names.acceleration_topic, "/localization/acceleration");
-  EXPECT_EQ(topic_names.objects_topic, "/perception/object_recognition/objects");
+  EXPECT_EQ(topic_names.objects_topic, "/perception/object_recognition/tracking/objects");
   EXPECT_EQ(topic_names.trajectory_topic, "/planning/trajectory");
   EXPECT_EQ(topic_names.gt_trajectory_topic, "/planning/ground_truth_trajectory");
   EXPECT_EQ(topic_names.steering_topic, "/vehicle/status/steering_status");

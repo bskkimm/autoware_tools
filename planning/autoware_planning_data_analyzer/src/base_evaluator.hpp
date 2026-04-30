@@ -145,7 +145,7 @@ protected:
   struct BagProcessingResult
   {
     std::vector<std::shared_ptr<SynchronizedData>> synchronized_data_list;
-    std::vector<TimedPredictedObjects> object_timeline;
+    std::vector<TimedTrackedObjects> object_timeline;
     rclcpp::Time evaluation_start_time;
     rclcpp::Time evaluation_end_time;
     tf2_msgs::msg::TFMessage tf_static_msgs;

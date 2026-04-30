@@ -696,7 +696,7 @@ bool is_agent_classification(
 }
 
 std::vector<LoggedObjectTrack> build_logged_object_tracks(
-  const std::vector<TimedPredictedObjects> & future_objects)
+  const std::vector<TimedTrackedObjects> & future_objects)
 {
   std::map<std::array<uint8_t, 16>, LoggedObjectTrack> keyed_tracks;
   std::vector<LoggedObjectTrack> invalid_id_tracks;
@@ -708,8 +708,8 @@ std::vector<LoggedObjectTrack> build_logged_object_tracks(
     for (const auto & object : timed_objects.objects->objects) {
       LoggedObjectState state;
       state.stamp = timed_objects.stamp;
-      state.pose = object.kinematics.initial_pose_with_covariance.pose;
-      state.twist = object.kinematics.initial_twist_with_covariance.twist;
+      state.pose = object.kinematics.pose_with_covariance.pose;
+      state.twist = object.kinematics.twist_with_covariance.twist;
       state.shape = object.shape;
       state.classification = object.classification;
 

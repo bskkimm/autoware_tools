@@ -377,7 +377,7 @@ private:
   metrics::DrivingDirectionComplianceParameters driving_direction_params_;
   metrics::EnabledMetrics enabled_metrics_;
   autoware::vehicle_info_utils::VehicleInfo vehicle_info_;
-  std::vector<TimedPredictedObjects> object_timeline_;
+  std::vector<TimedTrackedObjects> object_timeline_;
   OpenLoopEvaluationSummary summary_;
   std::string metric_variant_;
   GTSourceMode gt_source_mode_;

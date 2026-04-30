@@ -18,8 +18,8 @@
 #include <rclcpp/rclcpp.hpp>
 
 #include <autoware_internal_planning_msgs/msg/candidate_trajectories.hpp>
-#include <autoware_perception_msgs/msg/predicted_objects.hpp>
 #include <autoware_perception_msgs/msg/traffic_light_group_array.hpp>
+#include <autoware_perception_msgs/msg/tracked_objects.hpp>
 #include <autoware_planning_msgs/msg/trajectory.hpp>
 #include <autoware_vehicle_msgs/msg/steering_report.hpp>
 #include <autoware_vehicle_msgs/msg/hazard_lights_report.hpp>
@@ -40,17 +40,17 @@ using Trajectory = autoware_planning_msgs::msg::Trajectory;
 using CandidateTrajectories = autoware_internal_planning_msgs::msg::CandidateTrajectories;
 using TFMessage = tf2_msgs::msg::TFMessage;
 using Odometry = nav_msgs::msg::Odometry;
-using PredictedObjects = autoware_perception_msgs::msg::PredictedObjects;
+using TrackedObjects = autoware_perception_msgs::msg::TrackedObjects;
 using TrafficLightGroupArray = autoware_perception_msgs::msg::TrafficLightGroupArray;
 using AccelWithCovarianceStamped = geometry_msgs::msg::AccelWithCovarianceStamped;
 using SteeringReport = autoware_vehicle_msgs::msg::SteeringReport;
 using HazardLightsReport = autoware_vehicle_msgs::msg::HazardLightsReport;
 using TurnIndicatorsReport = autoware_vehicle_msgs::msg::TurnIndicatorsReport;
 
-struct TimedPredictedObjects
+struct TimedTrackedObjects
 {
   rclcpp::Time stamp;
-  std::shared_ptr<const PredictedObjects> objects;
+  std::shared_ptr<const TrackedObjects> objects;
 };
 
 // Synchronized data from multiple topics at a specific timestamp
@@ -62,8 +62,8 @@ struct SynchronizedData
   std::shared_ptr<Trajectory> ground_truth_trajectory_msg;
   std::shared_ptr<AccelWithCovarianceStamped> acceleration;
   std::shared_ptr<SteeringReport> steering_status;
-  std::shared_ptr<PredictedObjects> objects;
-  std::vector<TimedPredictedObjects> future_objects;
+  std::shared_ptr<TrackedObjects> objects;
+  std::vector<TimedTrackedObjects> future_objects;
   std::vector<std::shared_ptr<const Odometry>> kinematic_state_history;
   std::vector<std::shared_ptr<const AccelWithCovarianceStamped>> acceleration_history;
   std::shared_ptr<TrafficLightGroupArray> traffic_signals;

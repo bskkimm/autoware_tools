@@ -49,7 +49,7 @@ TEST_F(BagHandlerTest, BagDataConstruction)
   EXPECT_TRUE(bag_data->buffers.count("/localization/acceleration"));
   EXPECT_TRUE(bag_data->buffers.count("/planning/trajectory"));
   EXPECT_TRUE(bag_data->buffers.count("/diffusion_planner/output/trajectories"));
-  EXPECT_TRUE(bag_data->buffers.count("/perception/object_recognition/objects"));
+  EXPECT_TRUE(bag_data->buffers.count("/perception/object_recognition/tracking/objects"));
   EXPECT_TRUE(bag_data->buffers.count("/perception/traffic_light_recognition/traffic_signals"));
   EXPECT_TRUE(bag_data->buffers.count("/vehicle/status/steering_status"));
 }

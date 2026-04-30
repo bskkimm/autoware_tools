@@ -290,7 +290,7 @@ void populate_ttc_debug_horizon(
 
 TTCWithinBoundResult calculate_ttc_within_bound(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const std::vector<TimedPredictedObjects> & future_objects,
+  const std::vector<TimedTrackedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler,
   const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations)

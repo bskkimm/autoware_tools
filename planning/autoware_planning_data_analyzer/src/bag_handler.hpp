@@ -64,8 +64,8 @@ struct BagData
     candidate_trajectories_topic_key = "/diffusion_planner/output/trajectories";
     create_buffer<CandidateTrajectories>(
       candidate_trajectories_topic_key, buffer_duration_sec, max_buffer_msgs);
-    create_buffer<PredictedObjects>(
-      "/perception/object_recognition/objects", buffer_duration_sec, max_buffer_msgs);
+    create_buffer<TrackedObjects>(
+      "/perception/object_recognition/tracking/objects", buffer_duration_sec, max_buffer_msgs);
     create_buffer<TrafficLightGroupArray>(
       "/perception/traffic_light_recognition/traffic_signals", buffer_duration_sec,
       max_buffer_msgs);
@@ -101,8 +101,7 @@ struct BagData
       create_buffer<Trajectory>(
         topic_names.gt_trajectory_topic, buffer_duration_sec, max_buffer_msgs);
     }
-    create_buffer<PredictedObjects>(
-      topic_names.objects_topic, buffer_duration_sec, max_buffer_msgs);
+    create_buffer<TrackedObjects>(topic_names.objects_topic, buffer_duration_sec, max_buffer_msgs);
     if (!topic_names.traffic_signals_topic.empty()) {
       create_buffer<TrafficLightGroupArray>(
         topic_names.traffic_signals_topic, buffer_duration_sec, max_buffer_msgs);
@@ -292,9 +291,9 @@ struct BagData
 
     // Get objects
     // Find objects buffer
-    std::shared_ptr<Buffer<PredictedObjects>> obj_buffer;
+    std::shared_ptr<Buffer<TrackedObjects>> obj_buffer;
     for (const auto & [topic, buffer] : buffers) {
-      if (auto ob = std::dynamic_pointer_cast<Buffer<PredictedObjects>>(buffer)) {
+      if (auto ob = std::dynamic_pointer_cast<Buffer<TrackedObjects>>(buffer)) {
         obj_buffer = ob;
         break;
       }

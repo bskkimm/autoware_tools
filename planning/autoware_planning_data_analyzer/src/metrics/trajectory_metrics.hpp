@@ -130,7 +130,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info =
     autoware::vehicle_info_utils::VehicleInfo{},
   const EnabledMetrics & enabled_metrics = EnabledMetrics{},
-  const std::vector<TimedPredictedObjects> & future_objects = {});
+  const std::vector<TimedTrackedObjects> & future_objects = {});
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

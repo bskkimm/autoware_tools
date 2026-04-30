@@ -80,28 +80,20 @@ autoware_planning_msgs::msg::Trajectory make_straight_trajectory(const double sp
   return trajectory;
 }
 
-autoware_perception_msgs::msg::PredictedObject make_stationary_object(
+autoware_perception_msgs::msg::TrackedObject make_stationary_object(
   const double x, const double y)
 {
-  autoware_perception_msgs::msg::PredictedObject object;
-  object.kinematics.initial_pose_with_covariance.pose = make_pose(x, y);
+  autoware_perception_msgs::msg::TrackedObject object;
+  object.kinematics.pose_with_covariance.pose = make_pose(x, y);
   object.shape.type = autoware_perception_msgs::msg::Shape::BOUNDING_BOX;
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
   object.shape.dimensions.z = 1.5;
 
-  autoware_perception_msgs::msg::PredictedPath path;
-  path.time_step = rclcpp::Duration::from_seconds(0.5);
-  path.confidence = 1.0;
-  path.path.push_back(make_pose(x, y));
-  path.path.push_back(make_pose(x, y));
-  path.path.push_back(make_pose(x, y));
-  object.kinematics.predicted_paths.push_back(path);
-
   return object;
 }
 
-autoware_perception_msgs::msg::PredictedObject make_box_object(
+autoware_perception_msgs::msg::TrackedObject make_box_object(
   const double x, const double y, const unique_identifier_msgs::msg::UUID & object_id)
 {
   auto object = make_stationary_object(x, y);
@@ -118,13 +110,13 @@ builtin_interfaces::msg::Time make_stamp(const double stamp_s)
   return stamp;
 }
 
-std::vector<TimedPredictedObjects> make_future_objects(
-  std::vector<autoware_perception_msgs::msg::PredictedObject> objects, const double stamp_s = 0.0)
+std::vector<TimedTrackedObjects> make_future_objects(
+  std::vector<autoware_perception_msgs::msg::TrackedObject> objects, const double stamp_s = 0.0)
 {
-  auto msg = std::make_shared<PredictedObjects>();
+  auto msg = std::make_shared<TrackedObjects>();
   msg->header.stamp = make_stamp(stamp_s);
   msg->objects = std::move(objects);
-  return {TimedPredictedObjects{rclcpp::Time(msg->header.stamp), msg}};
+  return {TimedTrackedObjects{rclcpp::Time(msg->header.stamp), msg}};
 }
 
 unique_identifier_msgs::msg::UUID make_uuid(const std::array<uint8_t, 16> & bytes)
@@ -158,7 +150,7 @@ std::vector<TrajectoryFootprintEvaluation> make_footprint_evaluations(
 TEST(TTCWithinBound, EmptyObjectsPasses)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   const auto result = calculate_ttc_within_bound(
     trajectory, make_future_objects(objects->objects), make_vehicle_info());
 
@@ -170,7 +162,7 @@ TEST(TTCWithinBound, EmptyObjectsPasses)
 TEST(TTCWithinBound, AheadCollisionFails)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(make_stationary_object(4.0, 0.0));
 
   const auto result = calculate_ttc_within_bound(
@@ -192,7 +184,7 @@ TEST(TTCWithinBound, AheadCollisionFails)
 TEST(TTCWithinBound, BehindCollisionDoesNotFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(make_stationary_object(-4.0, 0.0));
 
   const auto result = calculate_ttc_within_bound(
@@ -203,33 +195,18 @@ TEST(TTCWithinBound, BehindCollisionDoesNotFail)
   EXPECT_EQ(result.reason, "available");
 }
 
-TEST(TTCWithinBound, IgnoresPredictedPathsAndUsesLoggedObjectPose)
+TEST(TTCWithinBound, UsesTrackedObjectPose)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
 
-  autoware_perception_msgs::msg::PredictedObject object;
-  object.kinematics.initial_pose_with_covariance.pose = make_pose(4.0, 0.0);
+  autoware_perception_msgs::msg::TrackedObject object;
+  object.kinematics.pose_with_covariance.pose = make_pose(4.0, 0.0);
   object.shape.type = autoware_perception_msgs::msg::Shape::BOUNDING_BOX;
   object.shape.dimensions.x = 2.0;
   object.shape.dimensions.y = 1.0;
   object.shape.dimensions.z = 1.5;
 
-  autoware_perception_msgs::msg::PredictedPath colliding_path;
-  colliding_path.time_step = rclcpp::Duration::from_seconds(0.5);
-  colliding_path.confidence = 0.1;
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-  colliding_path.path.push_back(make_pose(4.0, 0.0));
-
-  autoware_perception_msgs::msg::PredictedPath safe_path;
-  safe_path.time_step = rclcpp::Duration::from_seconds(0.5);
-  safe_path.confidence = 0.9;
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-  safe_path.path.push_back(make_pose(20.0, 0.0));
-
-  object.kinematics.predicted_paths = {colliding_path, safe_path};
   objects->objects.push_back(object);
 
   const auto result = calculate_ttc_within_bound(
@@ -243,7 +220,7 @@ TEST(TTCWithinBound, IgnoresPredictedPathsAndUsesLoggedObjectPose)
 TEST(TTCWithinBound, NuplanAheadAngleDoesNotFailForLargeLateralOffset)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(make_stationary_object(1.0, 1.2));
 
   const auto result = calculate_ttc_within_bound(
@@ -257,7 +234,7 @@ TEST(TTCWithinBound, NuplanAheadAngleDoesNotFailForLargeLateralOffset)
 TEST(TTCWithinBound, BadAreaAllowsLateralOverlapToFail)
 {
   const auto trajectory = make_straight_trajectory(5.0);
-  auto objects = std::make_shared<PredictedObjects>();
+  auto objects = std::make_shared<TrackedObjects>();
   objects->objects.push_back(make_stationary_object(1.0, 1.2));
   const auto evaluations = make_footprint_evaluations(
     trajectory, make_vehicle_info(), false, true);
@@ -279,17 +256,17 @@ TEST(TTCWithinBound, PreviouslyCollidedObjectIsIgnored)
   const auto trajectory = make_straight_trajectory(5.0);
   const auto object_id = make_uuid({1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1});
 
-  auto objects_t0 = std::make_shared<PredictedObjects>();
+  auto objects_t0 = std::make_shared<TrackedObjects>();
   objects_t0->header.stamp = make_stamp(0.0);
   objects_t0->objects.push_back(make_box_object(-1.5, 0.0, object_id));
 
-  auto objects_t1 = std::make_shared<PredictedObjects>();
+  auto objects_t1 = std::make_shared<TrackedObjects>();
   objects_t1->header.stamp = make_stamp(1.0);
   objects_t1->objects.push_back(make_box_object(6.0, 0.0, object_id));
 
-  const std::vector<TimedPredictedObjects> future_objects = {
-    TimedPredictedObjects{rclcpp::Time(objects_t0->header.stamp), objects_t0},
-    TimedPredictedObjects{rclcpp::Time(objects_t1->header.stamp), objects_t1}};
+  const std::vector<TimedTrackedObjects> future_objects = {
+    TimedTrackedObjects{rclcpp::Time(objects_t0->header.stamp), objects_t0},
+    TimedTrackedObjects{rclcpp::Time(objects_t1->header.stamp), objects_t1}};
 
   const auto result = calculate_ttc_within_bound(
     trajectory, future_objects, make_vehicle_info());

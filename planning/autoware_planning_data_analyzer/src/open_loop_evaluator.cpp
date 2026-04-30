@@ -144,11 +144,11 @@ autoware_planning_msgs::msg::Trajectory truncate_trajectory_by_horizon(
   return truncated;
 }
 
-std::vector<TimedPredictedObjects> get_future_objects_for_trajectory(
+std::vector<TimedTrackedObjects> get_future_objects_for_trajectory(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const std::vector<TimedPredictedObjects> & object_timeline, const double horizon_s)
+  const std::vector<TimedTrackedObjects> & object_timeline, const double horizon_s)
 {
-  std::vector<TimedPredictedObjects> future_objects;
+  std::vector<TimedTrackedObjects> future_objects;
   if (trajectory.points.empty() || object_timeline.empty()) {
     return future_objects;
   }
@@ -168,7 +168,7 @@ std::vector<TimedPredictedObjects> get_future_objects_for_trajectory(
 
   const auto first = std::lower_bound(
     object_timeline.begin(), object_timeline.end(), trajectory_start_ns,
-    [](const TimedPredictedObjects & timed_objects, const rcutils_time_point_value_t stamp_ns) {
+    [](const TimedTrackedObjects & timed_objects, const rcutils_time_point_value_t stamp_ns) {
       return timed_objects.stamp.nanoseconds() < stamp_ns;
     });
 
@@ -1456,7 +1456,7 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   const metrics::DrivingDirectionComplianceParameters & driving_direction_params,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const metrics::EnabledMetrics & enabled_metrics,
-  const std::vector<TimedPredictedObjects> & future_objects)
+  const std::vector<TimedTrackedObjects> & future_objects)
 {
   const auto human_sync_data =
     clone_with_trajectory(eval_data.synchronized_data, eval_data.ground_truth_trajectory);
@@ -1683,7 +1683,7 @@ void OpenLoopEvaluator::evaluate(
             ? get_future_objects_for_trajectory(
                 *eval_data.synchronized_data->trajectory, object_timeline_,
                 trajectory_evaluation_horizon_s_)
-            : std::vector<TimedPredictedObjects>{};
+            : std::vector<TimedTrackedObjects>{};
         auto trajectory_metrics = metrics::calculate_trajectory_point_metrics(
           eval_data.synchronized_data, &eval_data.ground_truth_trajectory, route_handler_, history_comfort_params_,
           lane_keeping_params_, driving_direction_params_, vehicle_info_, enabled_metrics_,
@@ -3668,7 +3668,8 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
   if (enabled_metrics_.trajectory_errors) {
     add_topic(compared_trajectory_topic(), "autoware_planning_msgs/msg/Trajectory");
   }
-  add_topic("/perception/object_recognition/objects", "autoware_perception_msgs/msg/PredictedObjects");
+  add_topic(
+    "/perception/object_recognition/tracking/objects", "autoware_perception_msgs/msg/TrackedObjects");
   add_topic("/tf", "tf2_msgs/msg/TFMessage");
   add_topic("/tf_static", "tf2_msgs/msg/TFMessage");
   return topics;

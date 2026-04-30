@@ -94,7 +94,7 @@ struct NoAtFaultCollisionResult
 
 NoAtFaultCollisionResult calculate_no_at_fault_collision(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
-  const std::vector<TimedPredictedObjects> & future_objects,
+  const std::vector<TimedTrackedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler = nullptr,
   const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations = nullptr);

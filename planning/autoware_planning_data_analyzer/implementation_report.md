@@ -65,7 +65,7 @@ Semantically, NC represents the most direct "did this planned behavior crash in 
 - **NAVSIM outsourced helper logic:** `pdm_scorer_utils.py::get_collision_type()`
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_polygons`, `self._ego_areas`, `self._states`, `self._collision_time_idcs`
 - **Migrated owner:** `src/metrics/no_at_fault_collision.cpp::calculate_no_at_fault_collision()`
-- **Migrated local helpers:** `classify_collision()`, `compute_ego_area_flags()`, `highest_confidence_path()`, `is_agent_behind()`
+- **Migrated local helpers:** `classify_collision()`, `compute_ego_area_flags()`, `build_logged_object_tracks()`, `interpolate_logged_object_state()`, `is_agent_behind()`
 
 ### Required inputs: same availability or replacement?
 
@@ -74,10 +74,10 @@ Semantically, NC represents the most direct "did this planned behavior crash in 
 | NC ingredient | NAVSIM input / logic | Migrated Autoware input / logic | Semantic match? | Judgement / impact |
 | :--- | :--- | :--- | :--- | :--- |
 | **Ego polygon** | $P_{i,t}=\mathrm{footprint}(S_{i,t})$ from simulated proposal state. NAVSIM evaluates every proposal $i$ at every scorer time $t$. | $P_t^{aw}$ from selected `TrajectoryPoint.pose` plus `VehicleInfo.createFootprint(0.0)`. The pose is expected to be the future `base_link` / rear-axle-center pose. | **Mostly matched** | Same per-time footprint concept. Main difference is source: NAVSIM simulated proposal state vs one selected Autoware trajectory. |
-| **Object polygon** | $O_{t,o}$ from NAVSIM non-reactive scenario future tracked objects, interpolated to the scorer grid. | $O_{t,o}^{aw}$ from current `PredictedObjects` message: `initial_pose` at $t=0$, highest-confidence `predicted_path` interpolation for $t>0$. | **Unmatched** | This is one of the largest gaps. NAVSIM uses logged/scenario future tracks; Autoware uses perception-predicted futures. |
-| **Collision candidate** | Valid candidate requires polygon overlap, no red-light pseudo-object token, and not already in proposal-local collided-track memory: $\mathrm{Overlap}(P_{i,t}, O_{t,o})$, `red_light_token not in o`, and $\neg(o\in C_{i,t})$. | Valid candidate is polygon overlap only: $\mathrm{Overlap}(P_t^{aw}, O_{t,o}^{aw})$. There is no NAVSIM red-light pseudo-object topic in `PredictedObjects`, and no collided-object memory. | **Partially unmatched** | Red-light exclusion is not needed for Autoware NC because those pseudo objects are absent. The missing collided-track memory is a real semantic gap. |
+| **Object polygon** | $O_{t,o}$ from NAVSIM non-reactive scenario future tracked objects, interpolated to the scorer grid. | $O_{t,o}^{aw}$ from recorded `/perception/object_recognition/tracking/objects` `TrackedObjects`: each message contributes current tracked pose/twist/shape/class/object ID, object tracks are keyed by UUID, and object pose is interpolated at the NC query time. | **Close replacement** | This intentionally uses recorded tracked object states rather than perception `PredictedObjects.predicted_paths`, so the object source is much closer to NAVSIM's logged future observations. Remaining gaps are Autoware tracking quality, timestamp alignment, and class/shape conventions. |
+| **Collision candidate** | Valid candidate requires polygon overlap, no red-light pseudo-object token, and not already in proposal-local collided-track memory: $\mathrm{Overlap}(P_{i,t}, O_{t,o})$, `red_light_token not in o`, and $\neg(o\in C_{i,t})$. | Valid candidate is polygon overlap against the interpolated tracked-object polygon: $\mathrm{Overlap}(P_t^{aw}, O_{t,o}^{aw})$. There is no NAVSIM red-light pseudo-object in tracked objects; repeated contacts are suppressed by collided object ID within the evaluated trajectory. | **Mostly matched** | Red-light exclusion is not needed for Autoware NC because those pseudo objects are absent. Object-ID collision memory is now kept locally for the evaluated trajectory. |
 | **Ego stopped flag** | $\mathrm{StoppedEgo}_{i,t}=[\|\mathbf{v}^{ego}_{i,t}\|_2\le0.05]$. | $\mathrm{StoppedEgo}_{t}^{aw}=[\|\mathbf{v}^{ego}_{t}\|_2\le0.05]$ from trajectory longitudinal/lateral velocity. | **Mostly matched** | Same threshold form and same ego-stopped meaning. |
-| **Tracked-object stopped flag** | `is_track_stopped(o)`: non-agent nuPlan tracked objects are stopped by definition; agent objects use velocity threshold $\|\mathbf{v}_o\|_2\le0.05$. | $\mathrm{StoppedTrack}_{t,o}^{aw}=[v_{t,o}^{aw}\le0.05]$, where $v_{t,o}^{aw}$ is current twist speed at $t=0$ and predicted-path segment speed for $t>0$. | **Partially unmatched** | Same speed-threshold form for dynamic objects, but different velocity source and different non-agent rule. |
+| **Tracked-object stopped flag** | `is_track_stopped(o)`: non-agent nuPlan tracked objects are stopped by definition; agent objects use velocity threshold $\|\mathbf{v}_o\|_2\le0.05$. | $\mathrm{StoppedTrack}_{t,o}^{aw}=[v_{t,o}^{aw}\le0.05]$, where $v_{t,o}^{aw}$ comes from tracked-object twist when available, otherwise from neighboring recorded tracked poses during interpolation. | **Mostly matched** | Same speed-threshold form for dynamic objects. The non-agent-by-definition stopped rule remains a semantic gap. |
 | **Behind judgement** | nuPlan `is_agent_behind()`: relative angle between ego heading and ego-to-object vector is greater than $150^\circ$. | Local helper: forward offset in ego frame is negative, equivalent to relative angle greater than $90^\circ$. | **Unmatched** | Autoware's behind region is much broader, so rear-side objects can become `ACTIVE_REAR` instead of front/lateral. |
 | **Front-bumper intersection** | $F_{i,t}=\mathrm{LineString}(P_{i,t}^{ext}[0],P_{i,t}^{ext}[3])$, then $\mathrm{Overlap}(F_{i,t}, O_{t,o})$. | $F_t^{aw}=\mathrm{LineString}(T_t(x_f,y_{min}),T_t(x_f,y_{max}))$ from `VehicleInfo` front and lateral offsets, then $\mathrm{Overlap}(F_t^{aw}, O_{t,o}^{aw})$. | **Mostly matched** | Same concept: line segment across the ego front bumper intersected with object polygon. Autoware constructs it explicitly from vehicle offsets. |
 | **Collision type** | Priority order after overlap: `STOPPED_EGO`, `STOPPED_TRACK`, `ACTIVE_REAR`, `ACTIVE_FRONT`, otherwise `ACTIVE_LATERAL`. | Same priority order in `classify_collision()`. | **Structurally matched, input-unmatched** | The decision tree shape matches, but `StoppedTrack`, `Behind`, object pose/source, and collision-memory behavior differ. |
@@ -86,7 +86,7 @@ Semantically, NC represents the most direct "did this planned behavior crash in 
 | **Per-collision score** | $\phi_{i,t,o}=0.0$ for at-fault agent collision, $0.5$ for at-fault non-agent collision, $1.0$ otherwise. | Same score set using `is_agent_type()` from highest-probability Autoware object label: vehicle, pedestrian, or animal are agents. | **Partially unmatched** | Score values match, but Autoware returns on first at-fault event, so an earlier $0.5$ can hide a later $0.0$. |
 | **Full NAVSIM equation** | $\mathrm{NC}_{nav,i}=\min(1.0,\phi_{i,t,o}\text{ over }(t,o)\in K_i)$, with $K_i=\mathrm{ValidCollisionPairs}_i$. | Conceptual Autoware analogue is the same minimum form, but current C++ returns immediately on the first at-fault collision. | **Partially unmatched** | To match the minimum-over-events behavior, Autoware should keep scanning after a $0.5$ event and only safely early-return on $0.0$. |
 
-- **Semantic replacement meaning:** NAVSIM scores against simulated ego proposals and scenario future tracked objects; the migrated code scores one selected Autoware trajectory against highest-confidence Autoware perception predicted object paths.
+- **Semantic replacement meaning:** NAVSIM scores against simulated ego proposals and scenario future tracked objects; the migrated code scores one selected Autoware trajectory against recorded Autoware tracked-object states from `/perception/object_recognition/tracking/objects`, interpolated across the bag timeline.
 
 ### Platform deviations and impact
 
@@ -2026,7 +2026,7 @@ Semantically, TTC is an anticipatory safety measure: whereas NC penalizes realiz
 - **NAVSIM outsourced helper logic:** nuPlan helpers `is_agent_ahead`, `is_agent_behind`; shapely polygon creation
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_coords`, `self._ego_areas`, `self._states`, `self._drivable_area_map`, `self._ttc_time_idcs`
 - **Migrated owner:** `src/metrics/ttc_within_bound.cpp::calculate_ttc_within_bound()`
-- **Migrated local helpers:** `highest_confidence_path()`, `interpolate_object_pose()`, `project_pose()`, `is_agent_ahead()`, `is_agent_behind()`
+- **Migrated local helpers:** `build_logged_object_tracks()`, `interpolate_logged_object_state()`, `project_pose()`, `is_agent_ahead()`, `is_agent_behind()`
 
 ### Required inputs: same availability or replacement?
 
@@ -2034,11 +2034,11 @@ Semantically, TTC is an anticipatory safety measure: whereas NC penalizes realiz
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Reactive Observation States** | Future object positions (Non-reactive; following logs). | `autoware_perception_msgs::msg::PredictedObjects` (Predicted Path) | Perception-based projection of other agents. | **Moderate.** Both are non-reactive; depends on prediction accuracy. |
+| **Reactive Observation States** | Future object positions (Non-reactive; following logs). | `autoware_perception_msgs::msg::TrackedObjects` from `/perception/object_recognition/tracking/objects`; keyed by object UUID and interpolated at each TTC query time. | Recorded tracked-object state sequence from the bag. | **Close.** This avoids `PredictedObjects.predicted_paths` and uses recorded future tracked states, making the object source closer to NAVSIM's logged observation rollout. |
 | **Simulated Ego States** | Ego's projected kinematic rollout. | `autoware_planning_msgs::msg::Trajectory` (using `project_pose`) | Planning's kinematic intent. | **Equivalent.** Both use forward projections for lookahead. |
 | **Drivable Area Map** | Used for "bad area" exception (off-road/intersections). | `autoware::route_handler::RouteHandler` (Intersection check) | Map-based identification of junctions. | **Low.** The migrated code simplifies this, dropping the "bad area" check. |
 
-- **Semantic replacement meaning:** NAVSIM evaluates future collision against the simulated environment rollout; the migration evaluates it against perception prediction.
+- **Semantic replacement meaning:** NAVSIM evaluates future collision against the simulated environment rollout; the migration evaluates it against recorded tracked-object states from the bag.
 
 ### Platform deviations and impact
 

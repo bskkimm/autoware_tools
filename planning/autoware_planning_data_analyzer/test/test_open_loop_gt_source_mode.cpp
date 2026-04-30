@@ -229,7 +229,7 @@ TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
   EXPECT_FALSE(has_topic("/debug/nc/horizon_overlap_areas"));
   EXPECT_FALSE(has_topic("/debug/nc/horizon_labels"));
   EXPECT_TRUE(has_topic("/planning/trajectory"));
-  EXPECT_TRUE(has_topic("/perception/object_recognition/objects"));
+  EXPECT_TRUE(has_topic("/perception/object_recognition/tracking/objects"));
 
   EXPECT_FALSE(has_topic("/open_loop/metrics/raw/time_to_collision_within_bound"));
   EXPECT_FALSE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));

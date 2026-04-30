@@ -263,7 +263,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const DrivingDirectionComplianceParameters & driving_direction_params,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const EnabledMetrics & enabled_metrics,
-  const std::vector<TimedPredictedObjects> & future_objects)
+  const std::vector<TimedTrackedObjects> & future_objects)
 {
   (void)ground_truth_trajectory;
   TrajectoryPointMetrics metrics;

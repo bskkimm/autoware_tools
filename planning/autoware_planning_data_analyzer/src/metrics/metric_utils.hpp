@@ -155,7 +155,7 @@ bool is_agent_classification(
   const std::vector<autoware_perception_msgs::msg::ObjectClassification> & classification);
 
 std::vector<LoggedObjectTrack> build_logged_object_tracks(
-  const std::vector<TimedPredictedObjects> & future_objects);
+  const std::vector<TimedTrackedObjects> & future_objects);
 
 std::optional<InterpolatedLoggedObject> interpolate_logged_object_state(
   const LoggedObjectTrack & track, const rclcpp::Time & query_time);
