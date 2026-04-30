@@ -130,6 +130,12 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   gt_sync_tolerance_ms_ = get_or_declare_parameter<double>(*this, "open_loop.gt_sync_tolerance_ms");
   history_comfort_params_.finite_difference_epsilon =
     get_or_declare_parameter<double>(*this, "open_loop.hc.finite_difference_epsilon");
+  history_comfort_params_.past_horizon_s =
+    get_or_declare_parameter<double>(*this, "open_loop.hc.past_horizon_s");
+  history_comfort_params_.sample_interval_s =
+    get_or_declare_parameter<double>(*this, "open_loop.hc.sample_interval_s");
+  history_comfort_params_.future_horizon_s =
+    get_or_declare_parameter<double>(*this, "open_loop.hc.future_horizon_s");
   history_comfort_params_.max_longitudinal_acceleration =
     get_or_declare_parameter<double>(*this, "open_loop.hc.max_longitudinal_acceleration");
   history_comfort_params_.min_longitudinal_acceleration =

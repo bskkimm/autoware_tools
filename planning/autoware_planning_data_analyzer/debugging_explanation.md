@@ -902,6 +902,68 @@ Suggested visual semantics:
 | planned 4 s horizon | orange |
 | GT 4 s horizon | cyan |
 
+## HC History Comfort Debugging
+
+HC now follows the NAVSIM-style padded-sequence workflow. For every evaluated
+trajectory, the analyzer builds:
+
+```text
+[recorded ego kinematic history from -1.5 s to -0.1 s ; planned trajectory from 0.0 s to 4.0 s]
+```
+
+The padded sequence is sampled at `0.1 s` and the comfort signals are computed over
+the whole sequence using NAVSIM-style local polynomial smoothing / derivatives.
+
+Core scalar output:
+
+```text
+/open_loop/metrics/raw/history_comfort
+```
+
+Per-sample signal outputs:
+
+```text
+/open_loop/metrics/raw/trajectory_point/longitudinal_accelerations
+/open_loop/metrics/raw/trajectory_point/lateral_accelerations
+/open_loop/metrics/raw/trajectory_point/jerk_magnitudes
+/open_loop/metrics/raw/trajectory_point/longitudinal_jerks
+/open_loop/metrics/raw/trajectory_point/yaw_rates
+/open_loop/metrics/raw/trajectory_point/yaw_accelerations
+```
+
+HC-specific debug outputs:
+
+```text
+/debug/epdms/hc/component_status
+/debug/epdms/hc/sample_times
+/debug/epdms/hc/segments
+```
+
+Recommended interpretation:
+
+| Topic | Meaning |
+|---|---|
+| `/debug/epdms/hc/component_status` | JSON summary for the evaluated trajectory: score, sample count, failed components, and peak values/times for `ax`, `ay`, jerk, `jx`, yaw rate, and yaw acceleration. |
+| `/debug/epdms/hc/sample_times` | Time coordinate for each padded sample relative to the trajectory stamp. Negative values are past human history; non-negative values are the planned future. |
+| `/debug/epdms/hc/segments` | Segment id per padded sample. `0` means past human/ego kinematic history; `2` means planned trajectory. |
+
+Lichtblick panel expectation:
+
+```text
+HC Comfort Timeline
+```
+
+The panel should subscribe to `/debug/epdms/hc/component_status`, list non-perfect
+HC events, and show columns:
+
+```text
+t0 | score | failed components | ax range | ay max | jerk max | jx max | yaw rate max | yaw accel max
+```
+
+For component-level plots, use the trajectory-point signal topics together with
+`/debug/epdms/hc/sample_times` and `/debug/epdms/hc/segments` to separate past,
+boundary, and future portions of the padded sequence.
+
 ## 2D Camera Overlay
 
 The first implementation should use the 3D map.

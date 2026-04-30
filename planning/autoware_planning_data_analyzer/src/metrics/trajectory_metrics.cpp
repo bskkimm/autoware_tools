@@ -294,7 +294,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   }
 
   if (enabled_metrics.history_comfort) {
-    calculate_history_comfort_metrics(trajectory, history_comfort_params, metrics);
+    calculate_history_comfort_metrics(*sync_data, history_comfort_params, metrics);
   }
 
   if (enabled_metrics.time_to_collision_within_bound) {

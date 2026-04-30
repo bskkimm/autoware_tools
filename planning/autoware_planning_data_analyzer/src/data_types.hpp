@@ -64,6 +64,8 @@ struct SynchronizedData
   std::shared_ptr<SteeringReport> steering_status;
   std::shared_ptr<PredictedObjects> objects;
   std::vector<TimedPredictedObjects> future_objects;
+  std::vector<std::shared_ptr<const Odometry>> kinematic_state_history;
+  std::vector<std::shared_ptr<const AccelWithCovarianceStamped>> acceleration_history;
   std::shared_ptr<TrafficLightGroupArray> traffic_signals;
   std::shared_ptr<HazardLightsReport> hazard_lights_status;
   std::shared_ptr<TurnIndicatorsReport> turn_indicators_status;

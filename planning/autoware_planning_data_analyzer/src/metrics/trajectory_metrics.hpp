@@ -39,6 +39,9 @@ using autoware::route_handler::RouteHandler;
 struct HistoryComfortParameters
 {
   double finite_difference_epsilon{1.0e-3};
+  double past_horizon_s{1.5};
+  double sample_interval_s{0.1};
+  double future_horizon_s{4.0};
   double max_longitudinal_acceleration{2.40};
   double min_longitudinal_acceleration{-4.05};
   double max_lateral_acceleration{4.89};
@@ -73,10 +76,13 @@ struct TrajectoryPointMetrics
   std::vector<double> longitudinal_jerks;
   std::vector<double> yaw_rates;
   std::vector<double> yaw_accelerations;
+  std::vector<double> history_comfort_sample_times;
+  std::vector<double> history_comfort_segment_ids;
   std::vector<double> ttc_values;
   std::vector<double> lateral_deviations;
   std::vector<double> travel_distances;
   double history_comfort{0.0};
+  std::string history_comfort_debug_summary;
   double time_to_collision_within_bound{0.0};
   bool time_to_collision_within_bound_available{false};
   std::string time_to_collision_within_bound_reason{"unavailable"};

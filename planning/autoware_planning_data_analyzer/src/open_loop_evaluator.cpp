@@ -211,6 +211,11 @@ std::string lk_debug_topic(const std::string & topic_name)
   return "/debug/epdms/lk/" + topic_name;
 }
 
+std::string hc_debug_topic(const std::string & topic_name)
+{
+  return "/debug/epdms/hc/" + topic_name;
+}
+
 std::string trajectory_debug_topic(const std::string & topic_name)
 {
   return "/debug/epdms/trajectory/" + topic_name;
@@ -2512,6 +2517,13 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
 
   if (enabled_metrics_.history_comfort) {
     std_msgs::msg::Float64MultiArray msg;
+    std_msgs::msg::String summary_msg;
+    summary_msg.data = metrics.history_comfort_debug_summary;
+    bag_writer.write(summary_msg, hc_debug_topic("component_status"), normalized_timestamp);
+    msg.data = metrics.history_comfort_sample_times;
+    bag_writer.write(msg, hc_debug_topic("sample_times"), normalized_timestamp);
+    msg.data = metrics.history_comfort_segment_ids;
+    bag_writer.write(msg, hc_debug_topic("segments"), normalized_timestamp);
     msg.data = metrics.longitudinal_accelerations;
     bag_writer.write(
       msg, trajectory_metric_topic("longitudinal_accelerations"), normalized_timestamp);
@@ -3242,10 +3254,16 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
       traj["trajectory_point_metrics"]["longitudinal_jerks"] = pm.longitudinal_jerks;
       traj["trajectory_point_metrics"]["yaw_rates"] = pm.yaw_rates;
       traj["trajectory_point_metrics"]["yaw_accelerations"] = pm.yaw_accelerations;
+      traj["trajectory_point_metrics"]["history_comfort_sample_times"] =
+        pm.history_comfort_sample_times;
+      traj["trajectory_point_metrics"]["history_comfort_segment_ids"] =
+        pm.history_comfort_segment_ids;
       traj["trajectory_point_metrics"]["ttc_values"] = pm.ttc_values;
       traj["trajectory_point_metrics"]["lateral_deviations"] = pm.lateral_deviations;
       traj["trajectory_point_metrics"]["travel_distances"] = pm.travel_distances;
       traj["trajectory_point_metrics"]["history_comfort"] = pm.history_comfort;
+      traj["trajectory_point_metrics"]["history_comfort_debug_summary"] =
+        pm.history_comfort_debug_summary;
       traj["trajectory_point_metrics"]["time_to_collision_within_bound"] =
         pm.time_to_collision_within_bound;
       traj["trajectory_point_metrics"]["time_to_collision_within_bound_available"] =
@@ -3344,6 +3362,9 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
   }
   if (enabled_metrics_.history_comfort) {
     add_topic(metric_topic("history_comfort"), "std_msgs/msg/Float64");
+    add_topic(hc_debug_topic("component_status"), "std_msgs/msg/String");
+    add_topic(hc_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
+    add_topic(hc_debug_topic("segments"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray");

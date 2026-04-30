@@ -40,6 +40,9 @@
       hc:
         # NAVSIM-aligned default thresholds for the History Comfort (HC) subscore.
         finite_difference_epsilon: 0.001
+        past_horizon_s: 1.5
+        sample_interval_s: 0.1
+        future_horizon_s: 4.0
         max_longitudinal_acceleration: 2.40
         min_longitudinal_acceleration: -4.05
         max_lateral_acceleration: 4.89

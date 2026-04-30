@@ -2418,26 +2418,34 @@ Semantically, HC captures ride quality and control smoothness across the transit
 
 ### Required inputs: same availability or replacement?
 
-- **Same NAVSIM inputs available?** **No**
+- **Same NAVSIM inputs available?** **Mostly yes**
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Human Past Trajectory** | Car's real history used for history-padded comfort. | *(Vacant)* | N/A (Starts from $t=0$). | **High.** Missing past history prevents checking for jerk/acceleration jumps at the $t=0$ transition. |
-| **Simulated Proposal States** | The car's planned future rollout. | `autoware_planning_msgs::msg::Trajectory` | The planner's output points. | **Equivalent.** |
-| **Interval Length** | Standardized time-step for derivative extraction. | `HistoryComfortParameters::finite_difference_epsilon` | Small epsilon for numerical stability. | **Close.** AW uses raw points, while NAVSIM uses a smoothed/fixed interval. |
+| **Human Past Trajectory** | Car's real history used for history-padded comfort. | `/localization/kinematic_state` plus `/localization/acceleration` history. | Recorded ego kinematic history before the trajectory stamp. | **Close.** Autoware now pads the proposal with a `1.5s` past history window sampled at `0.1s`. |
+| **Simulated Proposal States** | The car's planned future rollout. | `autoware_planning_msgs::msg::Trajectory` | The planner's output points, including pose, velocity, and `acceleration_mps2`. | **Equivalent with platform field mapping.** |
+| **Interval Length** | Standardized time-step for derivative extraction. | `HistoryComfortParameters::sample_interval_s` | NAVSIM-style `0.1s` padded-sequence sampling. | **Equivalent.** |
 
-- **Semantic replacement meaning:** the migrated code computes comfort from the single current trajectory only, using trajectory-point finite differences.
+- **Semantic replacement meaning:** the migrated code now computes comfort from a padded
+  sequence of recorded past ego kinematics and the current planned trajectory.
 
 ### Platform deviations and impact
 
 - NAVSIM pads the planned rollout with human past states before evaluating comfort.
-- NAVSIM uses `ego_is_comfortable()` over state arrays extracted with smoothing / derivative helpers from `pdm_comfort_metrics.py`.
-- The migrated code uses raw trajectory-point finite differences, no past history, no Savitzky-Golay smoothing, and a different lateral-acceleration construction:
-  $$
-  a_y = v_{long}\cdot \dot\psi.
-  $$
+- The migrated Autoware code now pads the planned rollout with recorded ego kinematics before
+  evaluating comfort.
+- NAVSIM uses Savitzky-Golay smoothing and derivatives. The migrated code uses local
+  polynomial regression with the same window and polynomial orders to avoid an extra runtime
+  dependency while preserving the same smoothing/derivative semantics.
+- Planned-horizon longitudinal acceleration is taken from `TrajectoryPoint::acceleration_mps2`.
+  Past-horizon acceleration is taken from `/localization/acceleration`.
+- Lateral acceleration is currently mapped from the available lateral acceleration source when
+  present; with the current trajectory messages it is zero for the planned horizon because the
+  trajectory has no lateral acceleration field.
 - Threshold values are preserved exactly.
-- **Impact:** **High.** The migrated HC is not "history comfort" in the NAVSIM sense; it is closer to a single-trajectory comfort gate.
+- **Impact:** **Low to medium.** The major NAVSIM history-padding gap is closed. Remaining
+  differences are field-level platform mappings and the local C++ polynomial implementation
+  rather than SciPy's exact Savitzky-Golay filter.
 
 ### Equation comparison
 
@@ -2497,83 +2505,71 @@ If no past human trajectory is available, NAVSIM leaves HC initialized to `1.0`.
 
 #### Migrated Autoware HC
 
-**Migrated Autoware inputs.** The migrated code uses only the current selected
-trajectory. For adjacent samples:
+**Migrated Autoware inputs.** The migrated code builds a padded state sequence:
 
 $$
-\Delta t_n=\max(t_{n+1}-t_n,\epsilon),
-$$
-
-$$
-\dot{\psi}_n
+S^{HC}_{aw}
 =
-\frac{\mathrm{normalize}(\psi_{n+1}-\psi_n)}{\Delta t_n},
+\left[
+S^{ego\_past}_{kinematic};
+S^{trajectory}_{proposal}
+\right].
+$$
+
+The past segment uses recorded odometry and acceleration messages in
+`[-1.5s, -0.1s]` relative to the trajectory stamp. The future segment uses the
+planned trajectory in `[0.0s, 4.0s]`.
+
+$$
+a_x(t),\;a_y(t),\;j(t),\;j_x(t),\;\dot{\psi}(t),\;\ddot{\psi}(t)
+$$
+
+are computed over the full padded sequence using NAVSIM-style local polynomial
+smoothing / derivatives:
+
+$$
+\mathrm{Smooth}_{8,2}(a_x),\quad
+\mathrm{Smooth}_{8,2}(a_y),
 $$
 
 $$
-a_{x,n}
-=
-\frac{v_{long,n+1}-v_{long,n}}{\Delta t_n},
-\qquad
-a_{y,n}
-=
-v_{long,n}\dot{\psi}_n.
+\mathrm{Deriv}_{15,2}(a),\quad
+\mathrm{Deriv}_{15,2}(a_x),\quad
+\mathrm{Deriv}_{15,2}(\psi),\quad
+\mathrm{Deriv}^{2}_{15,3}(\psi).
 $$
 
-Then:
-
-$$
-j_{x,n}
-=
-\frac{a_{x,n+1}-a_{x,n}}{\Delta t_n},
-\qquad
-j_{y,n}
-=
-\frac{a_{y,n+1}-a_{y,n}}{\Delta t_n},
-$$
-
-$$
-j_n=\sqrt{j_{x,n}^2+j_{y,n}^2},
-\qquad
-\ddot{\psi}_n
-=
-\frac{\dot{\psi}_{n+1}-\dot{\psi}_n}{\Delta t_n}.
-$$
-
-The final score uses the same threshold constants:
+The final score uses the NAVSIM threshold constants:
 
 $$
 \mathrm{HC}_{aw}
 =
 \mathbf{1}
 \left[
-\forall n,\;
--4.05<a_{x,n}<2.40
+\forall t,\;
+-4.05<a_x(t)<2.40
 \land
-|a_{y,n}|<4.89
+|a_y(t)|<4.89
 \land
-|j_n|<8.37
+|j(t)|<8.37
 \land
-|j_{x,n}|<4.13
+|j_x(t)|<4.13
 \land
-|\dot{\psi}_n|<0.95
+|\dot{\psi}(t)|<0.95
 \land
-|\ddot{\psi}_n|<1.93
+|\ddot{\psi}(t)|<1.93
 \right].
 $$
 
-The implementation backfills the final acceleration, jerk, yaw-rate, and
-yaw-acceleration entries from the previous computed entry. The migrated HC is therefore
-a current-trajectory comfort gate, not NAVSIM's history-padded comfort gate.
-
-**Main input gap.** NAVSIM HC includes recent human history before the proposal, so it
-can catch discontinuities at the handoff from history to plan. Migrated Autoware HC
-does not use past ego history, so it checks only internal comfort of the selected
-future trajectory.
+If no padded states can be built, the implementation follows NAVSIM's default-pass
+behavior and reports `HC=1.0` with a debug reason.
 
 ### Assessment
 
-HC is a **major semantic deviation**. The thresholds were ported; the NAVSIM "history" input and feature-extraction path were not.
+HC is now a **close port**. The score equation, past-history padding, future horizon,
+sample interval, and thresholds match NAVSIM. Remaining differences are Autoware's
+available acceleration fields and the C++ local-polynomial implementation used in place
+of SciPy's exact Savitzky-Golay helper.
 
 ---
 

@@ -17,13 +17,11 @@
 
 #include "trajectory_metrics.hpp"
 
-#include <autoware_planning_msgs/msg/trajectory.hpp>
-
 namespace autoware::planning_data_analyzer::metrics
 {
 
 void calculate_history_comfort_metrics(
-  const autoware_planning_msgs::msg::Trajectory & trajectory,
+  const SynchronizedData & sync_data,
   const HistoryComfortParameters & history_comfort_params, TrajectoryPointMetrics & metrics);
 
 }  // namespace autoware::planning_data_analyzer::metrics
