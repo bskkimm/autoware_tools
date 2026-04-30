@@ -427,6 +427,12 @@ bool should_write_lk_debug(const metrics::TrajectoryPointMetrics & metrics)
          !metrics.lane_keeping_debug.samples.empty();
 }
 
+bool should_write_hc_debug(const metrics::TrajectoryPointMetrics & metrics)
+{
+  return !metrics.history_comfort_sample_poses.empty() &&
+         metrics.history_comfort_sample_poses.size() == metrics.history_comfort_sample_times.size();
+}
+
 std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   const metrics::NoAtFaultCollisionHorizonFootprint & footprint, const bool ego)
 {
@@ -437,6 +443,109 @@ std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
     return make_color(1.0F, 0.8F, 0.0F, 1.0F);
   }
   return ego ? make_color(0.0F, 0.8F, 1.0F, 0.65F) : make_color(1.0F, 0.55F, 0.0F, 0.65F);
+}
+
+struct HCComponentStatus
+{
+  std::string name{"pass"};
+  double severity{0.0};
+};
+
+double threshold_ratio(const double value, const double threshold)
+{
+  if (threshold <= 0.0 || !std::isfinite(value)) {
+    return 0.0;
+  }
+  return std::abs(value) / threshold;
+}
+
+double longitudinal_acceleration_ratio(
+  const double value, const metrics::HistoryComfortParameters & params)
+{
+  if (!std::isfinite(value)) {
+    return 0.0;
+  }
+  if (value > params.max_longitudinal_acceleration) {
+    return value / params.max_longitudinal_acceleration;
+  }
+  if (value < params.min_longitudinal_acceleration) {
+    return std::abs(value) / std::abs(params.min_longitudinal_acceleration);
+  }
+  return 0.0;
+}
+
+void consider_hc_component(
+  HCComponentStatus & status, const std::string & name, const double ratio)
+{
+  if (ratio > status.severity) {
+    status.name = name;
+    status.severity = ratio;
+  }
+}
+
+HCComponentStatus hc_component_status_at(
+  const metrics::TrajectoryPointMetrics & metrics, const metrics::HistoryComfortParameters & params,
+  const std::size_t index)
+{
+  HCComponentStatus status;
+  if (index < metrics.longitudinal_accelerations.size()) {
+    consider_hc_component(
+      status, "ax",
+      longitudinal_acceleration_ratio(metrics.longitudinal_accelerations.at(index), params));
+  }
+  if (index < metrics.lateral_accelerations.size()) {
+    consider_hc_component(
+      status, "ay",
+      threshold_ratio(metrics.lateral_accelerations.at(index), params.max_lateral_acceleration));
+  }
+  if (index < metrics.jerk_magnitudes.size()) {
+    consider_hc_component(
+      status, "jerk", threshold_ratio(metrics.jerk_magnitudes.at(index), params.max_jerk_magnitude));
+  }
+  if (index < metrics.longitudinal_jerks.size()) {
+    consider_hc_component(
+      status, "jx",
+      threshold_ratio(metrics.longitudinal_jerks.at(index), params.max_longitudinal_jerk));
+  }
+  if (index < metrics.yaw_rates.size()) {
+    consider_hc_component(
+      status, "yaw_rate", threshold_ratio(metrics.yaw_rates.at(index), params.max_yaw_rate));
+  }
+  if (index < metrics.yaw_accelerations.size()) {
+    consider_hc_component(
+      status, "yaw_accel",
+      threshold_ratio(metrics.yaw_accelerations.at(index), params.max_yaw_acceleration));
+  }
+  if (status.severity <= 1.0) {
+    status.name = "pass";
+  }
+  return status;
+}
+
+std_msgs::msg::ColorRGBA hc_component_color(const std::string & component, const bool peak)
+{
+  if (peak) {
+    return make_color(1.0F, 1.0F, 1.0F, 1.0F);
+  }
+  if (component == "ax") {
+    return make_color(1.0F, 0.25F, 0.05F, 0.95F);
+  }
+  if (component == "ay") {
+    return make_color(1.0F, 0.85F, 0.05F, 0.95F);
+  }
+  if (component == "jerk") {
+    return make_color(1.0F, 0.0F, 0.85F, 0.95F);
+  }
+  if (component == "jx") {
+    return make_color(1.0F, 0.35F, 0.75F, 0.95F);
+  }
+  if (component == "yaw_rate") {
+    return make_color(0.0F, 0.9F, 1.0F, 0.95F);
+  }
+  if (component == "yaw_accel") {
+    return make_color(0.05F, 0.18F, 1.0F, 0.95F);
+  }
+  return make_color(0.45F, 0.62F, 0.78F, 0.45F);
 }
 
 const metrics::NoAtFaultCollisionDebugEvent * find_worst_nc_event(
@@ -1107,6 +1216,71 @@ void write_lk_debug_topics_to_bag(
   bag_writer.write(
     reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
   bag_writer.write(labels, lk_debug_topic("labels"), timestamp);
+}
+
+void write_hc_debug_topics_to_bag(
+  const metrics::TrajectoryPointMetrics & metrics,
+  const metrics::HistoryComfortParameters & history_comfort_params,
+  const autoware::vehicle_info_utils::VehicleInfo & vehicle_info, rosbag2_cpp::Writer & bag_writer,
+  const rclcpp::Time & timestamp, const double marker_lifetime_s)
+{
+  if (!should_write_hc_debug(metrics)) {
+    return;
+  }
+
+  const auto local_footprint = vehicle_info.createFootprint(0.0);
+  std::vector<HCComponentStatus> statuses;
+  statuses.reserve(metrics.history_comfort_sample_poses.size());
+  std::size_t peak_index = 0U;
+  double peak_severity = 0.0;
+  for (std::size_t index = 0; index < metrics.history_comfort_sample_poses.size(); ++index) {
+    auto status = hc_component_status_at(metrics, history_comfort_params, index);
+    if (status.severity > peak_severity) {
+      peak_severity = status.severity;
+      peak_index = index;
+    }
+    statuses.push_back(std::move(status));
+  }
+
+  visualization_msgs::msg::MarkerArray horizon_footprints;
+  visualization_msgs::msg::MarkerArray labels;
+  horizon_footprints.markers.push_back(make_delete_all_marker(timestamp));
+  labels.markers.push_back(make_delete_all_marker(timestamp));
+
+  int32_t marker_id = 0;
+  for (std::size_t index = 0; index < metrics.history_comfort_sample_poses.size(); ++index) {
+    const auto & pose = metrics.history_comfort_sample_poses.at(index);
+    const auto footprint = metrics::create_pose_footprint(pose, local_footprint);
+    const bool peak = peak_severity > 1.0 && index == peak_index;
+    const auto & status = statuses.at(index);
+    const bool failed = status.severity > 1.0;
+    const double width = peak ? 0.34 : (failed ? 0.22 : 0.10);
+    const double z_offset = peak ? 0.24 : (failed ? 0.16 : 0.08);
+    horizon_footprints.markers.push_back(make_line_strip_marker(
+      timestamp, "hc_horizon_footprints", marker_id++,
+      polygon_to_msg_points(footprint, pose.position.z), hc_component_color(status.name, peak),
+      width, true, marker_lifetime_s, z_offset));
+  }
+
+  if (!metrics.history_comfort_sample_poses.empty()) {
+    const auto & peak_pose = metrics.history_comfort_sample_poses.at(peak_index);
+    const auto & peak_status = statuses.at(peak_index);
+    std::ostringstream label;
+    label << "HC=" << metrics.history_comfort << "\npeak=" << peak_status.name
+          << "\nseverity=" << std::fixed << std::setprecision(2) << peak_status.severity;
+    if (peak_index < metrics.history_comfort_sample_times.size()) {
+      label << "\ndt=" << std::setprecision(1) << metrics.history_comfort_sample_times.at(peak_index)
+            << "s";
+    }
+    labels.markers.push_back(make_text_marker(
+      timestamp, "hc_labels", 0, peak_pose.position, label.str(),
+      peak_status.severity > 1.0 ? make_color(1.0F, 0.2F, 0.2F, 1.0F)
+                                 : make_color(0.65F, 0.80F, 0.95F, 1.0F),
+      marker_lifetime_s));
+  }
+
+  bag_writer.write(horizon_footprints, hc_debug_topic("horizon_footprints"), timestamp);
+  bag_writer.write(labels, hc_debug_topic("labels"), timestamp);
 }
 
 void write_trajectory_horizon_debug_topics_to_bag(
@@ -2539,6 +2713,9 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     bag_writer.write(msg, trajectory_metric_topic("yaw_rates"), normalized_timestamp);
     msg.data = metrics.yaw_accelerations;
     bag_writer.write(msg, trajectory_metric_topic("yaw_accelerations"), normalized_timestamp);
+    write_hc_debug_topics_to_bag(
+      metrics, history_comfort_params_, vehicle_info_, bag_writer, normalized_timestamp,
+      nc_debug_marker_lifetime_s_);
   }
 
   if (enabled_metrics_.lane_keeping) {
@@ -3365,6 +3542,8 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(hc_debug_topic("component_status"), "std_msgs/msg/String");
     add_topic(hc_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
     add_topic(hc_debug_topic("segments"), "std_msgs/msg/Float64MultiArray");
+    add_topic(hc_debug_topic("horizon_footprints"), "visualization_msgs/msg/MarkerArray");
+    add_topic(hc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
     add_topic(trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray");

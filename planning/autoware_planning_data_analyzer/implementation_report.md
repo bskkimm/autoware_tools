@@ -2564,6 +2564,15 @@ $$
 If no padded states can be built, the implementation follows NAVSIM's default-pass
 behavior and reports `HC=1.0` with a debug reason.
 
+The migrated implementation also records each padded sample pose for debugging only.
+This pose list does not enter the score equation. It is used to publish
+`/debug/epdms/hc/horizon_footprints`, where normal samples are drawn as muted
+blue-gray ego footprints, failed samples are colored by the component with the
+largest threshold-severity ratio, and the worst peak sample is highlighted with a
+white footprint outline. Component colors are orange-red for `ax`, yellow for `ay`,
+magenta for jerk magnitude, pink for `jx`, cyan for yaw rate, and deep blue for yaw
+acceleration.
+
 ### Assessment
 
 HC is now a **close port**. The score equation, past-history padding, future horizon,

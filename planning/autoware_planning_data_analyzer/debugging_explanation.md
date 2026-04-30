@@ -937,6 +937,8 @@ HC-specific debug outputs:
 /debug/epdms/hc/component_status
 /debug/epdms/hc/sample_times
 /debug/epdms/hc/segments
+/debug/epdms/hc/horizon_footprints
+/debug/epdms/hc/labels
 ```
 
 Recommended interpretation:
@@ -946,6 +948,21 @@ Recommended interpretation:
 | `/debug/epdms/hc/component_status` | JSON summary for the evaluated trajectory: score, sample count, failed components, and peak values/times for `ax`, `ay`, jerk, `jx`, yaw rate, and yaw acceleration. |
 | `/debug/epdms/hc/sample_times` | Time coordinate for each padded sample relative to the trajectory stamp. Negative values are past human history; non-negative values are the planned future. |
 | `/debug/epdms/hc/segments` | Segment id per padded sample. `0` means past human/ego kinematic history; `2` means planned trajectory. |
+| `/debug/epdms/hc/horizon_footprints` | 3D footprint outlines for every padded HC sample. Passing samples are muted blue-gray; failed samples use the dominant failed component color by severity ratio; the worst peak sample is highlighted in white. |
+| `/debug/epdms/hc/labels` | 3D label at the peak sample with HC score, peak component, severity ratio, and relative sample time. |
+
+HC 3D color mapping:
+
+| Component state | Color intent |
+|---|---|
+| Pass / normal sample | Muted blue-gray, low alpha |
+| `ax` failure | Orange-red |
+| `ay` failure | Yellow |
+| `jerk` failure | Magenta |
+| `jx` failure | Pink |
+| `yaw_rate` failure | Cyan |
+| `yaw_accel` failure | Deep blue |
+| Worst peak sample | White, thicker outline |
 
 Lichtblick panel expectation:
 

@@ -78,6 +78,7 @@ struct TrajectoryPointMetrics
   std::vector<double> yaw_accelerations;
   std::vector<double> history_comfort_sample_times;
   std::vector<double> history_comfort_segment_ids;
+  std::vector<geometry_msgs::msg::Pose> history_comfort_sample_poses;
   std::vector<double> ttc_values;
   std::vector<double> lateral_deviations;
   std::vector<double> travel_distances;

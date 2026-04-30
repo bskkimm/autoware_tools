@@ -34,6 +34,7 @@ namespace
 struct ComfortState
 {
   double time_s{0.0};
+  geometry_msgs::msg::Pose pose;
   double yaw{0.0};
   double longitudinal_velocity_mps{0.0};
   double lateral_velocity_mps{0.0};
@@ -185,6 +186,7 @@ ComfortState make_state_from_odometry(
 {
   ComfortState state;
   state.time_s = relative_time_s;
+  state.pose = odometry.pose.pose;
   state.yaw = get_yaw(odometry.pose.pose.orientation);
   state.longitudinal_velocity_mps = odometry.twist.twist.linear.x;
   state.lateral_velocity_mps = odometry.twist.twist.linear.y;
@@ -201,6 +203,7 @@ ComfortState make_state_from_trajectory_point(
 {
   ComfortState state;
   state.time_s = relative_time_s;
+  state.pose = point.pose;
   state.yaw = get_yaw(point.pose.orientation);
   state.longitudinal_velocity_mps = point.longitudinal_velocity_mps;
   state.lateral_velocity_mps = point.lateral_velocity_mps;
@@ -307,6 +310,7 @@ void calculate_history_comfort_metrics(
   times.reserve(states.size());
   metrics.history_comfort_sample_times.reserve(states.size());
   metrics.history_comfort_segment_ids.reserve(states.size());
+  metrics.history_comfort_sample_poses.reserve(states.size());
   yaws.reserve(states.size());
   longitudinal_accelerations_raw.reserve(states.size());
   lateral_accelerations_raw.reserve(states.size());
@@ -316,6 +320,7 @@ void calculate_history_comfort_metrics(
     times.push_back(state.time_s + history_comfort_params.past_horizon_s);
     metrics.history_comfort_sample_times.push_back(state.time_s);
     metrics.history_comfort_segment_ids.push_back(state.segment_id);
+    metrics.history_comfort_sample_poses.push_back(state.pose);
     yaws.push_back(state.yaw);
     longitudinal_accelerations_raw.push_back(state.longitudinal_acceleration_mps2);
     lateral_accelerations_raw.push_back(state.lateral_acceleration_mps2);
