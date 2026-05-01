@@ -270,6 +270,7 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/admissible_road_areas` | `visualization_msgs/msg/MarkerArray` | Road lanelet polygons used by DAC at the first failing timestep. |
 | `/debug/epdms/dac/admissible_shoulder_areas` | `visualization_msgs/msg/MarkerArray` | `road_shoulder` lanelet polygons admitted as physically drivable DAC space. |
 | `/debug/epdms/dac/admissible_intersection_areas` | `visualization_msgs/msg/MarkerArray` | `intersection_area` polygons admitted as DAC drivable space. |
+| `/debug/epdms/dac/admissible_hatched_road_markings` | `visualization_msgs/msg/MarkerArray` | `hatched_road_markings` polygons admitted as paved road-marking DAC space. |
 | `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
 | `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
 | `/debug/epdms/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
@@ -302,6 +303,7 @@ Example:
   "road_candidate_count": 6,
   "shoulder_candidate_count": 1,
   "intersection_candidate_count": 1,
+  "hatched_road_marking_candidate_count": 1,
   "parking_candidate_count": 0
 }
 ```
@@ -329,8 +331,9 @@ Recommended interpretation:
 | `/debug/epdms/dac/admissible_road_areas` | The road lanelet polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_shoulder_areas` | The road-shoulder lanelet polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_intersection_areas` | The intersection-area polygons used to judge the first failing DAC sample. |
+| `/debug/epdms/dac/admissible_hatched_road_markings` | The hatched-road-marking polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
-| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road, shoulder, intersection, and parking polygons. |
+| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road, shoulder, intersection, hatched-road-marking, and parking polygons. |
 | `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 
 Suggested visual semantics:
@@ -380,6 +383,7 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 ```text
 /debug/epdms/dac/ego_footprints
 /debug/epdms/dac/admissible_road_areas
+/debug/epdms/dac/admissible_hatched_road_markings
 /debug/epdms/dac/admissible_parking_areas
 /debug/epdms/dac/failing_corners
 /debug/epdms/dac/labels

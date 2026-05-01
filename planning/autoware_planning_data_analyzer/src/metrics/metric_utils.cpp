@@ -231,13 +231,6 @@ bool point_in_lanelet(
   return bg::covered_by(point, to_polygon_2d(lanelet.polygon2d().basicPolygon()));
 }
 
-bool point_in_parking_lot(
-  const autoware_utils_geometry::Point2d & point, const lanelet::ConstPolygon3d & parking_lot)
-{
-  namespace bg = boost::geometry;
-  return bg::covered_by(point, to_polygon_2d(lanelet::utils::to2D(parking_lot).basicPolygon()));
-}
-
 bool point_in_polygon(
   const autoware_utils_geometry::Point2d & point, const lanelet::ConstPolygon3d & polygon)
 {
@@ -372,6 +365,7 @@ std::vector<bool> evaluate_corner_drivable(
   const std::vector<autoware_utils_geometry::Point2d> & footprint_points,
   const lanelet::ConstLanelets & road_lanelets, const lanelet::ConstLanelets & shoulder_lanelets,
   const std::vector<lanelet::ConstPolygon3d> & intersection_areas,
+  const std::vector<lanelet::ConstPolygon3d> & hatched_road_markings,
   const std::vector<lanelet::ConstPolygon3d> & parking_lots)
 {
   std::vector<bool> corner_drivable(footprint_points.size(), false);
@@ -401,8 +395,16 @@ std::vector<bool> evaluate_corner_drivable(
       }
     }
     if (!corner_drivable.at(index)) {
+      for (const auto & hatched_road_marking : hatched_road_markings) {
+        if (point_in_polygon(point, hatched_road_marking)) {
+          corner_drivable.at(index) = true;
+          break;
+        }
+      }
+    }
+    if (!corner_drivable.at(index)) {
       for (const auto & parking_lot : parking_lots) {
-        if (point_in_parking_lot(point, parking_lot)) {
+        if (point_in_polygon(point, parking_lot)) {
           corner_drivable.at(index) = true;
           break;
         }
@@ -583,11 +585,14 @@ std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
   }
   const auto intersection_areas =
     collect_candidate_map_polygons(ego_polygon, route_handler, {"intersection_area"});
+  const auto hatched_road_markings =
+    collect_candidate_map_polygons(ego_polygon, route_handler, {"hatched_road_markings"});
   const auto parking_lots =
     collect_candidate_map_polygons(ego_polygon, route_handler, {"parking_lot"});
   const auto points = footprint_vertices(ego_polygon);
-  const auto corner_drivable =
-    evaluate_corner_drivable(points, road_lanelets, shoulder_lanelets, intersection_areas, parking_lots);
+  const auto corner_drivable = evaluate_corner_drivable(
+    points, road_lanelets, shoulder_lanelets, intersection_areas, hatched_road_markings,
+    parking_lots);
 
   EgoAreaEvaluation evaluation;
   evaluation.flags.multiple_lanes = detect_multiple_lanes(points, road_lanelets);
@@ -598,6 +603,7 @@ std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
   evaluation.road_lanelets = std::move(road_lanelets);
   evaluation.shoulder_lanelets = std::move(shoulder_lanelets);
   evaluation.intersection_areas = std::move(intersection_areas);
+  evaluation.hatched_road_markings = std::move(hatched_road_markings);
   evaluation.parking_lots = std::move(parking_lots);
   evaluation.designated_lanelet_count = designated_lanelets.size();
   return evaluation;

@@ -25,6 +25,7 @@
 #include <lanelet2_core/primitives/Lanelet.h>
 #include <lanelet2_core/primitives/LineString.h>
 #include <lanelet2_core/primitives/Point.h>
+#include <lanelet2_core/primitives/Polygon.h>
 
 #include <cmath>
 #include <memory>
@@ -84,13 +85,31 @@ lanelet::Lanelet make_shoulder_lanelet(const lanelet::Id id, const double y_min,
   return lanelet;
 }
 
-std::shared_ptr<RouteHandler> make_route_handler(const lanelet::Lanelets & lanelets)
+lanelet::Polygon3d make_hatched_road_marking(
+  const lanelet::Id id, const double y_min, const double y_max)
+{
+  lanelet::Polygon3d polygon{
+    id,
+    {lanelet::Point3d{id * 100 + 1, -5.0, y_min, 0.0},
+     lanelet::Point3d{id * 100 + 2, 12.0, y_min, 0.0},
+     lanelet::Point3d{id * 100 + 3, 12.0, y_max, 0.0},
+     lanelet::Point3d{id * 100 + 4, -5.0, y_max, 0.0}}};
+  polygon.setAttribute(lanelet::AttributeName::Type, "hatched_road_markings");
+  polygon.setAttribute("area", "yes");
+  return polygon;
+}
+
+std::shared_ptr<RouteHandler> make_route_handler(
+  const lanelet::Lanelets & lanelets, const std::vector<lanelet::Polygon3d> & polygons = {})
 {
   auto map = std::make_shared<lanelet::LaneletMap>();
   lanelet::ConstLanelets const_lanelets;
   for (const auto & lanelet : lanelets) {
     map->add(lanelet);
     const_lanelets.push_back(lanelet);
+  }
+  for (const auto & polygon : polygons) {
+    map->add(polygon);
   }
 
   autoware_map_msgs::msg::LaneletMapBin map_msg;
@@ -131,6 +150,19 @@ TEST(DrivableAreaComplianceTest, CountsRoadShoulderAsDrivableArea)
   const auto result = calculate_drivable_area_compliance(
     make_trajectory(2.2),
     make_route_handler({make_road_lanelet(1, -2.0, 2.0), make_shoulder_lanelet(2, 2.0, 4.0)}),
+    make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "compliant");
+}
+
+TEST(DrivableAreaComplianceTest, CountsHatchedRoadMarkingAsDrivableArea)
+{
+  const auto result = calculate_drivable_area_compliance(
+    make_trajectory(2.2), make_route_handler(
+                            {make_road_lanelet(1, -2.0, 2.0)},
+                            {make_hatched_road_marking(2, 2.0, 4.0)}),
     make_vehicle_info());
 
   EXPECT_TRUE(result.available);

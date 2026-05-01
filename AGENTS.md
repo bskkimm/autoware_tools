@@ -84,9 +84,10 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
   drivable border area when justified, but do not broadly accept arbitrary space
   outside lane boundaries.
 - Current DAC admits map-supported drivable polygons from road lanelets,
-  `road_shoulder` lanelets, `intersection_area` polygons, and `parking_lot` polygons.
-  Road-border line strings are intentionally not used for DAC scoring yet; revisit them only
-  after validating a robust polygon/envelope interpretation in Lichtblick.
+  `road_shoulder` lanelets, `intersection_area` polygons, `hatched_road_markings`
+  polygons, and `parking_lot` polygons. Road-border line strings are intentionally not
+  used for DAC scoring yet; revisit them only after validating a robust polygon/envelope
+  interpretation in Lichtblick.
 - For DDC semantics, do not conflate generic non-drivable side space with actual
   oncoming traffic. Sidewalk / pedestrian-side / curbside non-drivable intrusion should
   be handled by DAC-style drivable-area logic, while DDC should only count meaningful

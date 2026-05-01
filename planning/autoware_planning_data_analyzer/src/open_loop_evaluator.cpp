@@ -597,6 +597,7 @@ nlohmann::json dac_debug_summary_to_json(
     {"road_candidate_count", debug_info.road_candidate_count},
     {"shoulder_candidate_count", debug_info.shoulder_candidate_count},
     {"intersection_candidate_count", debug_info.intersection_candidate_count},
+    {"hatched_road_marking_candidate_count", debug_info.hatched_road_marking_candidate_count},
     {"parking_candidate_count", debug_info.parking_candidate_count}};
 }
 
@@ -914,6 +915,7 @@ void write_dac_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray admissible_road_areas;
   visualization_msgs::msg::MarkerArray admissible_shoulder_areas;
   visualization_msgs::msg::MarkerArray admissible_intersection_areas;
+  visualization_msgs::msg::MarkerArray admissible_hatched_road_markings;
   visualization_msgs::msg::MarkerArray admissible_parking_areas;
   visualization_msgs::msg::MarkerArray failing_corners;
   visualization_msgs::msg::MarkerArray labels;
@@ -921,6 +923,7 @@ void write_dac_debug_topics_to_bag(
   admissible_road_areas.markers.push_back(make_delete_all_marker(timestamp));
   admissible_shoulder_areas.markers.push_back(make_delete_all_marker(timestamp));
   admissible_intersection_areas.markers.push_back(make_delete_all_marker(timestamp));
+  admissible_hatched_road_markings.markers.push_back(make_delete_all_marker(timestamp));
   admissible_parking_areas.markers.push_back(make_delete_all_marker(timestamp));
   failing_corners.markers.push_back(make_delete_all_marker(timestamp));
   labels.markers.push_back(make_delete_all_marker(timestamp));
@@ -956,10 +959,17 @@ void write_dac_debug_topics_to_bag(
   }
 
   marker_id = 0;
+  for (const auto & polygon : debug_info.admissible_hatched_road_markings) {
+    admissible_hatched_road_markings.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_admissible_hatched_road_markings", marker_id++, polygon.polygon,
+      make_color(1.0F, 0.55F, 0.05F, 0.85F), 0.12, true, marker_lifetime_s, 0.05));
+  }
+
+  marker_id = 0;
   for (const auto & polygon : debug_info.admissible_parking_areas) {
     admissible_parking_areas.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_admissible_parking_areas", marker_id++, polygon.polygon,
-      make_color(0.2F, 1.0F, 0.4F, 0.8F), 0.12, true, marker_lifetime_s, 0.04));
+      make_color(0.2F, 1.0F, 0.4F, 0.8F), 0.12, true, marker_lifetime_s, 0.06));
   }
 
   marker_id = 0;
@@ -984,6 +994,9 @@ void write_dac_debug_topics_to_bag(
     admissible_shoulder_areas, dac_debug_topic("admissible_shoulder_areas"), timestamp);
   bag_writer.write(
     admissible_intersection_areas, dac_debug_topic("admissible_intersection_areas"), timestamp);
+  bag_writer.write(
+    admissible_hatched_road_markings, dac_debug_topic("admissible_hatched_road_markings"),
+    timestamp);
   bag_writer.write(
     admissible_parking_areas, dac_debug_topic("admissible_parking_areas"), timestamp);
   bag_writer.write(failing_corners, dac_debug_topic("failing_corners"), timestamp);
@@ -3737,6 +3750,9 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
       dac_debug_topic("admissible_shoulder_areas"), "visualization_msgs/msg/MarkerArray");
     add_topic(
       dac_debug_topic("admissible_intersection_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(
+      dac_debug_topic("admissible_hatched_road_markings"),
+      "visualization_msgs/msg/MarkerArray");
     add_topic(
       dac_debug_topic("admissible_parking_areas"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("failing_corners"), "visualization_msgs/msg/MarkerArray");
