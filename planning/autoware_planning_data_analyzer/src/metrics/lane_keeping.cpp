@@ -81,8 +81,6 @@ LaneKeepingResult calculate_lane_keeping_result(
     }
     const bool queue_release_exempt =
       !queue_exempt && queue_release_until_s.has_value() && time_s <= *queue_release_until_s;
-    const bool road_border_exempt = over_threshold && evaluation_point.inside_road_border_envelope;
-
     result.debug.samples.push_back(LaneKeepingDebugSample{
       time_s,
       evaluation_point.ego_center,
@@ -95,7 +93,6 @@ LaneKeepingResult calculate_lane_keeping_result(
       lane_change_exempt,
       queue_exempt,
       queue_release_exempt,
-      road_border_exempt,
       evaluation_point.road_border_envelope,
       evaluation_point.road_border_lines,
       evaluation_point.reference_centerline,
@@ -111,7 +108,7 @@ LaneKeepingResult calculate_lane_keeping_result(
 
     if (
       evaluation_point.is_in_intersection || lane_change_exempt || queue_exempt ||
-      queue_release_exempt || road_border_exempt || !over_threshold) {
+      queue_release_exempt || !over_threshold) {
       reset_violation_run();
       continue;
     }

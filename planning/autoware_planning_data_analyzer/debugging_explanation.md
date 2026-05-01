@@ -802,7 +802,6 @@ LK debug output is intended to answer:
 
 - where the selected 4 s center path stayed normal
 - where intersection relaxation suppressed a would-be lane-keeping penalty
-- where road-border-envelope relaxation suppressed a would-be centerline penalty
 - which continuous over-threshold run actually caused `LK=0`
 - which reference centerlines were used for the deviation check
 
@@ -814,8 +813,6 @@ When LK is enabled and a trajectory scores below `1.0`, the analyzer writes:
 /debug/epdms/lk/violation_summary
 /debug/epdms/lk/ego_center_path
 /debug/epdms/lk/reference_centerlines
-/debug/epdms/lk/road_border_lines
-/debug/epdms/lk/road_border_exempt_segments
 /debug/epdms/lk/labels
 ```
 
@@ -835,7 +832,6 @@ Expected shape:
   "failure_run_end_s": 2.6,
   "max_continuous_violation_time_s": 2.1,
   "peak_abs_lateral_deviation_m": 0.9,
-  "road_border_exempt_sample_count": 0,
   "sample_count": 41
 }
 ```
@@ -859,10 +855,8 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. |
+| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. The LK deviation threshold is `0.6 m`. |
 | `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
-| `/debug/epdms/lk/road_border_lines` | Road-border line strings considered by the shared closest-segment side test for road-border-exempt samples. |
-| `/debug/epdms/lk/road_border_exempt_segments` | Ego-center path segments where over-threshold centerline deviation was not accumulated because the shared DAC-style semantic/border drivable-area check kept the full footprint on admitted road surface. |
 | `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
 
 ### Lichtblick Workflow

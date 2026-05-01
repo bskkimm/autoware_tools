@@ -29,7 +29,7 @@ namespace autoware::planning_data_analyzer::metrics
 
 struct LaneKeepingParameters
 {
-  double max_lateral_deviation{0.5};
+  double max_lateral_deviation{0.6};
   double max_continuous_violation_time{2.0};
   double lane_change_pre_grace_time{0.5};
   double lane_change_post_grace_time{1.0};
@@ -69,7 +69,6 @@ struct LaneKeepingDebugSample
   bool lane_change_exempt{false};
   bool queue_exempt{false};
   bool queue_release_exempt{false};
-  bool road_border_exempt{false};
   std::vector<geometry_msgs::msg::Point> road_border_envelope;
   std::vector<std::vector<geometry_msgs::msg::Point>> road_border_lines;
   std::vector<geometry_msgs::msg::Point> reference_centerline;

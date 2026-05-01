@@ -2427,7 +2427,9 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 
 ### Platform deviations and impact
 
-- Thresholds are preserved exactly: deviation limit $0.5\,m$, continuous violation duration $2.0\,s$.
+- Thresholds intentionally differ slightly from NAVSIM: the migrated deviation limit is relaxed
+  from NAVSIM's $0.5\,m$ to $0.6\,m$ to reduce over-penalization from Autoware lanelet
+  centerline placement, while the continuous violation duration remains $2.0\,s$.
 - NAVSIM measures distance from the ego center to `self._centerline.linestring`.
 - The migrated code measures distance to the route/reference lanelet centerline selected by `RouteHandler`.
 - Intersection relaxation now reuses the shared local intersection context already used by DDC:
@@ -2518,11 +2520,9 @@ $$
 \land
 \neg\mathrm{QueueReleaseExempt}_{t}^{aw}
 \land
-\neg\mathrm{RoadBorderExempt}_{t}^{aw}
-\land
 \neg\mathrm{Intersection}_t^{aw}
 \land
-\left[|d_t^{aw}|>0.5\right].
+\left[|d_t^{aw}|>0.6\right].
 $$
 
 With the same continuous violation duration threshold:
@@ -2557,16 +2557,13 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
 - Included for queue / constrained-traffic relaxation:
   - low-speed, low-progress samples
   - a short release-grace window immediately after that queue state ends
-- Included for road-border relaxation:
-  - the same per-sample semantic drivable-area and closest-road-border side test produced
-    by shared footprint evaluation
-  - over-threshold centerline-deviation samples are not accumulated into an LK failure
-    run when the full ego footprint remains inside the admitted road-surface union
 - Excluded:
   - a single globally cached route centerline shared across the whole rollout
   - geometry-only lane-change inference from `multiple_lanes` or reference-lanelet switching
   - GT-derived lane-change inference
   - a blanket queue exemption without low-speed / low-progress evidence
+  - road-border or generic drivable-surface relaxation; LK remains a centerline-discipline
+    metric rather than a DAC-style drivable-area metric
   - non-intersection resets other than missing / non-finite reference-lanelet samples
 
 **Main input gap.** The score shape is close, but NAVSIM measures against its cached

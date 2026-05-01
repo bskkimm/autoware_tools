@@ -162,7 +162,7 @@ TEST(LaneKeepingTest, QueueAndReleaseGraceSuppressViolationRun)
   EXPECT_TRUE(result.debug.samples.at(4).queue_release_exempt);
 }
 
-TEST(LaneKeepingTest, RoadBorderEnvelopeSuppressesCenterlineDeviationRun)
+TEST(LaneKeepingTest, RoadBorderEnvelopeDoesNotSuppressCenterlineDeviationRun)
 {
   std::vector<LaneKeepingEvaluationPoint> evaluation_points{
     make_evaluation_point(0.0, 0.8), make_evaluation_point(1.0, 0.8),
@@ -174,10 +174,23 @@ TEST(LaneKeepingTest, RoadBorderEnvelopeSuppressesCenterlineDeviationRun)
   const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
     evaluation_points, LaneKeepingParameters{0.5, 2.0});
 
-  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_DOUBLE_EQ(result.score, 0.0);
   EXPECT_TRUE(std::all_of(
     result.debug.samples.begin(), result.debug.samples.end(),
-    [](const auto & sample) { return sample.road_border_exempt; }));
+    [](const auto & sample) { return sample.over_threshold; }));
+}
+
+TEST(LaneKeepingTest, DefaultThresholdAllowsSixtyCentimeterDeviation)
+{
+  const std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_evaluation_point(0.0, 0.6), make_evaluation_point(1.0, 0.6),
+    make_evaluation_point(2.1, 0.6)};
+
+  const auto result =
+    autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(evaluation_points);
+
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_FALSE(result.debug.samples.at(0).over_threshold);
 }
 
 TEST(LaneKeepingTest, IgnoresViolationsInsideIntersections)
