@@ -45,6 +45,8 @@ namespace
 constexpr double kLocalLaneSearchRadiusM = 5.0;
 constexpr double kDirectionSimilarityThresholdRad = M_PI_4;
 constexpr double kAdmissibleLaneMarginM = 0.35;
+constexpr double kRoadBorderEnvelopeSearchMarginM = 8.0;
+constexpr double kMinRoadBorderEnvelopeAreaM2 = 8.0;
 
 void append_unique_lanelet(
   const lanelet::ConstLanelet & lanelet, lanelet::ConstLanelets & lanelets,
@@ -117,7 +119,8 @@ std::vector<autoware_utils_geometry::Point2d> footprint_vertices(
   return vertices;
 }
 
-lanelet::BoundingBox2d footprint_bounding_box(const autoware_utils_geometry::Polygon2d & footprint)
+lanelet::BoundingBox2d footprint_bounding_box(
+  const autoware_utils_geometry::Polygon2d & footprint, const double search_margin_m = 1.0e-3)
 {
   double min_x = std::numeric_limits<double>::max();
   double min_y = std::numeric_limits<double>::max();
@@ -131,10 +134,9 @@ lanelet::BoundingBox2d footprint_bounding_box(const autoware_utils_geometry::Pol
     max_y = std::max(max_y, point.y());
   }
 
-  constexpr double kSearchMargin = 1.0e-3;
   return lanelet::BoundingBox2d{
-    lanelet::BasicPoint2d{min_x - kSearchMargin, min_y - kSearchMargin},
-    lanelet::BasicPoint2d{max_x + kSearchMargin, max_y + kSearchMargin}};
+    lanelet::BasicPoint2d{min_x - search_margin_m, min_y - search_margin_m},
+    lanelet::BasicPoint2d{max_x + search_margin_m, max_y + search_margin_m}};
 }
 
 lanelet::BoundingBox2d point_bounding_box(
@@ -222,6 +224,60 @@ std::vector<lanelet::ConstPolygon3d> collect_candidate_map_polygons(
   }
 
   return polygons;
+}
+
+std::vector<lanelet::ConstLineString3d> collect_candidate_road_border_lines(
+  const autoware_utils_geometry::Polygon2d & ego_polygon,
+  const std::shared_ptr<RouteHandler> & route_handler)
+{
+  std::vector<lanelet::ConstLineString3d> road_border_lines;
+  if (!route_handler || !route_handler->isMapMsgReady()) {
+    return road_border_lines;
+  }
+
+  const auto map = route_handler->getLaneletMapPtr();
+  std::unordered_set<lanelet::Id> seen_ids;
+  const auto search_bbox = footprint_bounding_box(ego_polygon, kRoadBorderEnvelopeSearchMarginM);
+  for (const auto & line_string : map->lineStringLayer.search(search_bbox)) {
+    const std::string type = line_string.attributeOr(lanelet::AttributeName::Type, "none");
+    if (type != "road_border") {
+      continue;
+    }
+    if (seen_ids.insert(line_string.id()).second) {
+      road_border_lines.push_back(line_string);
+    }
+  }
+
+  return road_border_lines;
+}
+
+std::optional<autoware_utils_geometry::Polygon2d> build_road_border_envelope(
+  const std::vector<lanelet::ConstLineString3d> & road_border_lines)
+{
+  namespace bg = boost::geometry;
+
+  if (road_border_lines.size() < 2U) {
+    return std::nullopt;
+  }
+
+  autoware_utils_geometry::MultiPoint2d border_points;
+  for (const auto & line_string : road_border_lines) {
+    for (const auto & point : lanelet::utils::to2D(line_string)) {
+      border_points.emplace_back(point.x(), point.y());
+    }
+  }
+  if (border_points.size() < 4U) {
+    return std::nullopt;
+  }
+
+  autoware_utils_geometry::Polygon2d envelope;
+  bg::convex_hull(border_points, envelope);
+  bg::correct(envelope);
+  if (envelope.outer().size() < 4U || std::abs(bg::area(envelope)) < kMinRoadBorderEnvelopeAreaM2) {
+    return std::nullopt;
+  }
+
+  return envelope;
 }
 
 bool point_in_lanelet(
@@ -415,6 +471,20 @@ std::vector<bool> evaluate_corner_drivable(
   return corner_drivable;
 }
 
+std::vector<bool> evaluate_points_in_polygon(
+  const std::vector<autoware_utils_geometry::Point2d> & footprint_points,
+  const autoware_utils_geometry::Polygon2d & polygon)
+{
+  namespace bg = boost::geometry;
+
+  std::vector<bool> points_inside;
+  points_inside.reserve(footprint_points.size());
+  for (const auto & point : footprint_points) {
+    points_inside.push_back(bg::covered_by(point, polygon));
+  }
+  return points_inside;
+}
+
 double planar_speed_mps(const geometry_msgs::msg::Twist & twist)
 {
   return std::hypot(twist.linear.x, twist.linear.y);
@@ -589,22 +659,49 @@ std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
     collect_candidate_map_polygons(ego_polygon, route_handler, {"hatched_road_markings"});
   const auto parking_lots =
     collect_candidate_map_polygons(ego_polygon, route_handler, {"parking_lot"});
+  auto road_border_lines = collect_candidate_road_border_lines(ego_polygon, route_handler);
+  auto road_border_envelope = build_road_border_envelope(road_border_lines);
   const auto points = footprint_vertices(ego_polygon);
-  const auto corner_drivable = evaluate_corner_drivable(
+  const auto semantic_corner_drivable = evaluate_corner_drivable(
     points, road_lanelets, shoulder_lanelets, intersection_areas, hatched_road_markings,
     parking_lots);
+  auto corner_drivable = semantic_corner_drivable;
+  std::vector<bool> corner_drivable_by_road_border(points.size(), false);
+  if (road_border_envelope.has_value()) {
+    corner_drivable_by_road_border = evaluate_points_in_polygon(points, road_border_envelope.value());
+    for (std::size_t index = 0; index < corner_drivable.size(); ++index) {
+      if (!corner_drivable.at(index) && corner_drivable_by_road_border.at(index)) {
+        corner_drivable.at(index) = true;
+      }
+    }
+  }
 
   EgoAreaEvaluation evaluation;
   evaluation.flags.multiple_lanes = detect_multiple_lanes(points, road_lanelets);
   evaluation.flags.non_drivable_area = std::any_of(
     corner_drivable.begin(), corner_drivable.end(), [](const bool value) { return !value; });
+  evaluation.flags.inside_road_border_envelope =
+    !corner_drivable_by_road_border.empty() &&
+    std::all_of(
+      corner_drivable_by_road_border.begin(), corner_drivable_by_road_border.end(),
+      [](const bool value) { return value; });
+  evaluation.flags.road_border_fallback_used = false;
+  for (std::size_t index = 0; index < corner_drivable.size(); ++index) {
+    if (!semantic_corner_drivable.at(index) && corner_drivable_by_road_border.at(index)) {
+      evaluation.flags.road_border_fallback_used = true;
+      break;
+    }
+  }
   evaluation.footprint_points = points;
   evaluation.corner_drivable = corner_drivable;
+  evaluation.corner_drivable_by_road_border = std::move(corner_drivable_by_road_border);
   evaluation.road_lanelets = std::move(road_lanelets);
   evaluation.shoulder_lanelets = std::move(shoulder_lanelets);
   evaluation.intersection_areas = std::move(intersection_areas);
   evaluation.hatched_road_markings = std::move(hatched_road_markings);
   evaluation.parking_lots = std::move(parking_lots);
+  evaluation.road_border_lines = std::move(road_border_lines);
+  evaluation.road_border_envelope = std::move(road_border_envelope);
   evaluation.designated_lanelet_count = designated_lanelets.size();
   return evaluation;
 }

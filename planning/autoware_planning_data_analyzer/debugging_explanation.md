@@ -272,6 +272,9 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/admissible_intersection_areas` | `visualization_msgs/msg/MarkerArray` | `intersection_area` polygons admitted as DAC drivable space. |
 | `/debug/epdms/dac/admissible_hatched_road_markings` | `visualization_msgs/msg/MarkerArray` | `hatched_road_markings` polygons admitted as paved road-marking DAC space. |
 | `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
+| `/debug/epdms/dac/road_border_lines` | `visualization_msgs/msg/MarkerArray` | Nearby `road_border` line strings used to build the local fallback envelope at the first failing timestep. |
+| `/debug/epdms/dac/road_border_envelopes` | `visualization_msgs/msg/MarkerArray` | Conservative local convex-hull road-surface envelope derived from nearby road borders. |
+| `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices covered by the road-border fallback envelope. |
 | `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
 | `/debug/epdms/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
 
@@ -304,6 +307,9 @@ Example:
   "shoulder_candidate_count": 1,
   "intersection_candidate_count": 1,
   "hatched_road_marking_candidate_count": 1,
+  "road_border_line_count": 2,
+  "road_border_envelope_valid": true,
+  "road_border_fallback_used": false,
   "parking_candidate_count": 0
 }
 ```
@@ -333,7 +339,10 @@ Recommended interpretation:
 | `/debug/epdms/dac/admissible_intersection_areas` | The intersection-area polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_hatched_road_markings` | The hatched-road-marking polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
-| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road, shoulder, intersection, hatched-road-marking, and parking polygons. |
+| `/debug/epdms/dac/road_border_lines` | The local `road_border` line strings used to derive the fallback envelope. |
+| `/debug/epdms/dac/road_border_envelopes` | The local polygonal fallback envelope. This is the thing corners are tested against, not the border lines directly. |
+| `/debug/epdms/dac/road_border_fallback_corners` | Corners that were accepted by the border-derived envelope. |
+| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road, shoulder, intersection, hatched-road-marking, parking, and valid road-border-envelope polygons. |
 | `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 
 Suggested visual semantics:
@@ -385,6 +394,8 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/dac/admissible_road_areas
 /debug/epdms/dac/admissible_hatched_road_markings
 /debug/epdms/dac/admissible_parking_areas
+/debug/epdms/dac/road_border_lines
+/debug/epdms/dac/road_border_envelopes
 /debug/epdms/dac/failing_corners
 /debug/epdms/dac/labels
 ```
@@ -784,6 +795,7 @@ LK debug output is intended to answer:
 
 - where the selected 4 s center path stayed normal
 - where intersection relaxation suppressed a would-be lane-keeping penalty
+- where road-border-envelope relaxation suppressed a would-be centerline penalty
 - which continuous over-threshold run actually caused `LK=0`
 - which reference centerlines were used for the deviation check
 
@@ -795,6 +807,9 @@ When LK is enabled and a trajectory scores below `1.0`, the analyzer writes:
 /debug/epdms/lk/violation_summary
 /debug/epdms/lk/ego_center_path
 /debug/epdms/lk/reference_centerlines
+/debug/epdms/lk/road_border_lines
+/debug/epdms/lk/road_border_envelopes
+/debug/epdms/lk/road_border_exempt_segments
 /debug/epdms/lk/labels
 ```
 
@@ -814,6 +829,7 @@ Expected shape:
   "failure_run_end_s": 2.6,
   "max_continuous_violation_time_s": 2.1,
   "peak_abs_lateral_deviation_m": 0.9,
+  "road_border_exempt_sample_count": 0,
   "sample_count": 41
 }
 ```
@@ -839,6 +855,9 @@ Recommended interpretation:
 |---|---|
 | `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. |
 | `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
+| `/debug/epdms/lk/road_border_lines` | Road-border line strings used to build border envelopes for road-border-exempt samples. |
+| `/debug/epdms/lk/road_border_envelopes` | Local road-border-derived envelopes for samples where centerline deviation was suppressed because the ego footprint stayed inside the physical road surface. |
+| `/debug/epdms/lk/road_border_exempt_segments` | Ego-center path segments where over-threshold centerline deviation was not accumulated because the road-border envelope contained the footprint. |
 | `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
 
 ### Lichtblick Workflow

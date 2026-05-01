@@ -74,6 +74,8 @@ struct EgoAreaFlags
 {
   bool multiple_lanes{false};
   bool non_drivable_area{false};
+  bool inside_road_border_envelope{false};
+  bool road_border_fallback_used{false};
 };
 
 struct EgoAreaEvaluation
@@ -81,11 +83,14 @@ struct EgoAreaEvaluation
   EgoAreaFlags flags;
   std::vector<autoware_utils_geometry::Point2d> footprint_points;
   std::vector<bool> corner_drivable;
+  std::vector<bool> corner_drivable_by_road_border;
   lanelet::ConstLanelets road_lanelets;
   lanelet::ConstLanelets shoulder_lanelets;
   std::vector<lanelet::ConstPolygon3d> intersection_areas;
   std::vector<lanelet::ConstPolygon3d> hatched_road_markings;
   std::vector<lanelet::ConstPolygon3d> parking_lots;
+  std::vector<lanelet::ConstLineString3d> road_border_lines;
+  std::optional<autoware_utils_geometry::Polygon2d> road_border_envelope;
   std::size_t designated_lanelet_count{0};
 };
 

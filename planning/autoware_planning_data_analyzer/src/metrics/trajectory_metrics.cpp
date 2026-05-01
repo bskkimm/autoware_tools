@@ -175,6 +175,37 @@ std::vector<geometry_msgs::msg::Point> polygon_to_points(
   return points;
 }
 
+std::vector<geometry_msgs::msg::Point> polygon_to_points(
+  const autoware_utils_geometry::Polygon2d & polygon, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  for (const auto & point : polygon.outer()) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  if (!points.empty()) {
+    points.push_back(points.front());
+  }
+  return points;
+}
+
+std::vector<geometry_msgs::msg::Point> line_string_to_points(
+  const lanelet::ConstLineString3d & line_string, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  for (const auto & point : lanelet::utils::to2D(line_string)) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  return points;
+}
+
 std::vector<geometry_msgs::msg::Point> centerline_to_points(
   const lanelet::ConstLanelet & lanelet, const double z)
 {
@@ -518,23 +549,39 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       const auto & point = trajectory.points[i];
       geometry_msgs::msg::Point ego_center = point.pose.position;
       const auto reference_lanelet = find_reference_lanelet(point.pose, route_handler);
+      const auto ego_area =
+        i < shared_footprint_evaluations.size()
+          ? shared_footprint_evaluations.at(i).ego_area_evaluation
+          : std::optional<EgoAreaEvaluation>{};
+      const bool multiple_lanes = ego_area.has_value() && ego_area->flags.multiple_lanes;
+      const bool non_drivable_area = ego_area.has_value() && ego_area->flags.non_drivable_area;
+      const bool inside_road_border_envelope =
+        ego_area.has_value() && ego_area->flags.inside_road_border_envelope;
+      std::vector<geometry_msgs::msg::Point> road_border_envelope;
+      std::vector<std::vector<geometry_msgs::msg::Point>> road_border_lines;
+      if (ego_area.has_value()) {
+        if (ego_area->road_border_envelope.has_value()) {
+          road_border_envelope =
+            polygon_to_points(ego_area->road_border_envelope.value(), point.pose.position.z + 0.10);
+        }
+        road_border_lines.reserve(ego_area->road_border_lines.size());
+        for (const auto & road_border_line : ego_area->road_border_lines) {
+          road_border_lines.push_back(
+            line_string_to_points(road_border_line, point.pose.position.z + 0.11));
+        }
+      }
       if (!reference_lanelet.has_value()) {
         metrics.lateral_deviations[i] = std::numeric_limits<double>::quiet_NaN();
-        const bool multiple_lanes =
-          i < shared_footprint_evaluations.size() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
-        const bool non_drivable_area =
-          i < shared_footprint_evaluations.size() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.non_drivable_area;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           false,
           multiple_lanes,
           non_drivable_area,
+          inside_road_border_envelope,
           ego_center,
+          road_border_envelope,
+          road_border_lines,
           {},
           -1,
           std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps),
@@ -542,21 +589,16 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       } else {
         metrics.lateral_deviations[i] =
           lanelet::utils::getLateralDistanceToCenterline(reference_lanelet.value(), point.pose);
-        const bool multiple_lanes =
-          i < shared_footprint_evaluations.size() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.multiple_lanes;
-        const bool non_drivable_area =
-          i < shared_footprint_evaluations.size() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation.has_value() &&
-          shared_footprint_evaluations.at(i).ego_area_evaluation->flags.non_drivable_area;
         lane_keeping_evaluation_points.push_back(LaneKeepingEvaluationPoint{
           point.time_from_start,
           metrics.lateral_deviations[i],
           is_pose_in_intersection(point.pose, route_handler),
           multiple_lanes,
           non_drivable_area,
+          inside_road_border_envelope,
           ego_center,
+          road_border_envelope,
+          road_border_lines,
           centerline_to_points(reference_lanelet.value(), point.pose.position.z),
           reference_lanelet->id(),
           std::hypot(point.longitudinal_velocity_mps, point.lateral_velocity_mps),

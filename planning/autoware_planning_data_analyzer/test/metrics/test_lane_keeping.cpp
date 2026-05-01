@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <limits>
 #include <utility>
 #include <vector>
@@ -159,6 +160,24 @@ TEST(LaneKeepingTest, QueueAndReleaseGraceSuppressViolationRun)
   EXPECT_DOUBLE_EQ(result.score, 1.0);
   EXPECT_TRUE(result.debug.samples.at(0).queue_exempt);
   EXPECT_TRUE(result.debug.samples.at(4).queue_release_exempt);
+}
+
+TEST(LaneKeepingTest, RoadBorderEnvelopeSuppressesCenterlineDeviationRun)
+{
+  std::vector<LaneKeepingEvaluationPoint> evaluation_points{
+    make_evaluation_point(0.0, 0.8), make_evaluation_point(1.0, 0.8),
+    make_evaluation_point(2.0, 0.8), make_evaluation_point(3.0, 0.8)};
+  for (auto & point : evaluation_points) {
+    point.inside_road_border_envelope = true;
+  }
+
+  const auto result = autoware::planning_data_analyzer::metrics::calculate_lane_keeping_result(
+    evaluation_points, LaneKeepingParameters{0.5, 2.0});
+
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_TRUE(std::all_of(
+    result.debug.samples.begin(), result.debug.samples.end(),
+    [](const auto & sample) { return sample.road_border_exempt; }));
 }
 
 TEST(LaneKeepingTest, IgnoresViolationsInsideIntersections)

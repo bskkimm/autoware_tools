@@ -598,6 +598,9 @@ nlohmann::json dac_debug_summary_to_json(
     {"shoulder_candidate_count", debug_info.shoulder_candidate_count},
     {"intersection_candidate_count", debug_info.intersection_candidate_count},
     {"hatched_road_marking_candidate_count", debug_info.hatched_road_marking_candidate_count},
+    {"road_border_line_count", debug_info.road_border_line_count},
+    {"road_border_envelope_valid", debug_info.road_border_envelope_valid},
+    {"road_border_fallback_used", debug_info.road_border_fallback_used},
     {"parking_candidate_count", debug_info.parking_candidate_count}};
 }
 
@@ -783,6 +786,9 @@ nlohmann::json lk_debug_summary_to_json(
   const metrics::TrajectoryPointMetrics & metrics,
   const metrics::LaneKeepingDebugInfo & debug_info, const rclcpp::Time & timestamp)
 {
+  const auto road_border_exempt_count = std::count_if(
+    debug_info.samples.begin(), debug_info.samples.end(),
+    [](const auto & sample) { return sample.road_border_exempt; });
   return nlohmann::json{
     {"trajectory_stamp_sec", timestamp.seconds()},
     {"score", metrics.lane_keeping},
@@ -792,6 +798,7 @@ nlohmann::json lk_debug_summary_to_json(
     {"failure_run_end_s", debug_info.failure_run_end_time_s},
     {"max_continuous_violation_time_s", debug_info.max_continuous_violation_time_s},
     {"peak_abs_lateral_deviation_m", debug_info.peak_abs_lateral_deviation_m},
+    {"road_border_exempt_sample_count", road_border_exempt_count},
     {"sample_count", debug_info.samples.size()}};
 }
 
@@ -917,6 +924,9 @@ void write_dac_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray admissible_intersection_areas;
   visualization_msgs::msg::MarkerArray admissible_hatched_road_markings;
   visualization_msgs::msg::MarkerArray admissible_parking_areas;
+  visualization_msgs::msg::MarkerArray road_border_lines;
+  visualization_msgs::msg::MarkerArray road_border_envelopes;
+  visualization_msgs::msg::MarkerArray road_border_fallback_corners;
   visualization_msgs::msg::MarkerArray failing_corners;
   visualization_msgs::msg::MarkerArray labels;
   ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
@@ -925,6 +935,9 @@ void write_dac_debug_topics_to_bag(
   admissible_intersection_areas.markers.push_back(make_delete_all_marker(timestamp));
   admissible_hatched_road_markings.markers.push_back(make_delete_all_marker(timestamp));
   admissible_parking_areas.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_lines.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_envelopes.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_fallback_corners.markers.push_back(make_delete_all_marker(timestamp));
   failing_corners.markers.push_back(make_delete_all_marker(timestamp));
   labels.markers.push_back(make_delete_all_marker(timestamp));
 
@@ -973,6 +986,28 @@ void write_dac_debug_topics_to_bag(
   }
 
   marker_id = 0;
+  for (const auto & polygon : debug_info.road_border_envelopes) {
+    road_border_envelopes.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_road_border_envelopes", marker_id++, polygon.polygon,
+      make_color(0.85F, 0.35F, 1.0F, 0.85F), 0.16, true, marker_lifetime_s, 0.07));
+  }
+
+  marker_id = 0;
+  for (const auto & line : debug_info.road_border_lines) {
+    road_border_lines.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_road_border_lines", marker_id++, line.polygon,
+      make_color(0.75F, 0.15F, 1.0F, 0.95F), 0.10, false, marker_lifetime_s, 0.08));
+  }
+
+  marker_id = 0;
+  for (const auto & corner : debug_info.road_border_fallback_corners) {
+    road_border_fallback_corners.markers.push_back(make_line_strip_marker(
+      timestamp, "dac_horizon_road_border_fallback_corners", marker_id++,
+      square_marker_points(corner.point, 0.14), make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.12,
+      false, marker_lifetime_s, 0.17));
+  }
+
+  marker_id = 0;
   for (const auto & corner : debug_info.failing_corners) {
     failing_corners.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_failing_corners", marker_id++,
@@ -999,6 +1034,10 @@ void write_dac_debug_topics_to_bag(
     timestamp);
   bag_writer.write(
     admissible_parking_areas, dac_debug_topic("admissible_parking_areas"), timestamp);
+  bag_writer.write(road_border_lines, dac_debug_topic("road_border_lines"), timestamp);
+  bag_writer.write(road_border_envelopes, dac_debug_topic("road_border_envelopes"), timestamp);
+  bag_writer.write(
+    road_border_fallback_corners, dac_debug_topic("road_border_fallback_corners"), timestamp);
   bag_writer.write(failing_corners, dac_debug_topic("failing_corners"), timestamp);
   bag_writer.write(labels, dac_debug_topic("labels"), timestamp);
 }
@@ -1237,26 +1276,40 @@ void write_lk_debug_topics_to_bag(
 
   visualization_msgs::msg::MarkerArray ego_center_path;
   visualization_msgs::msg::MarkerArray reference_centerlines;
+  visualization_msgs::msg::MarkerArray road_border_lines;
+  visualization_msgs::msg::MarkerArray road_border_envelopes;
+  visualization_msgs::msg::MarkerArray road_border_exempt_segments;
   visualization_msgs::msg::MarkerArray labels;
   ego_center_path.markers.push_back(make_delete_all_marker(timestamp));
   reference_centerlines.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_lines.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_envelopes.markers.push_back(make_delete_all_marker(timestamp));
+  road_border_exempt_segments.markers.push_back(make_delete_all_marker(timestamp));
   labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (std::size_t index = 1; index < debug_info.samples.size(); ++index) {
     const auto & previous = debug_info.samples.at(index - 1U);
     const auto & sample = debug_info.samples.at(index);
-    const bool violating = sample.over_threshold && !sample.is_in_intersection;
+    const bool violating =
+      sample.over_threshold && !sample.is_in_intersection && !sample.road_border_exempt;
     const bool in_failure_run = sample.in_failure_run;
-    const auto color = in_failure_run   ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
-                       : sample.is_in_intersection
-                         ? make_color(0.2F, 1.0F, 0.4F, 0.95F)
-                       : violating ? make_color(1.0F, 0.65F, 0.0F, 0.95F)
-                                   : make_color(0.0F, 0.8F, 1.0F, 0.85F);
+    const auto color = in_failure_run ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
+                       : sample.road_border_exempt
+                         ? make_color(0.75F, 0.15F, 1.0F, 0.95F)
+                       : sample.is_in_intersection ? make_color(0.2F, 1.0F, 0.4F, 0.95F)
+                       : violating                 ? make_color(1.0F, 0.65F, 0.0F, 0.95F)
+                                                   : make_color(0.0F, 0.8F, 1.0F, 0.85F);
     const double width = in_failure_run ? 0.18 : 0.12;
     ego_center_path.markers.push_back(make_line_strip_marker(
       timestamp, "lk_ego_center_path", marker_id++, {previous.ego_center, sample.ego_center},
       color, width, false, marker_lifetime_s, 0.08));
+    if (sample.road_border_exempt) {
+      road_border_exempt_segments.markers.push_back(make_line_strip_marker(
+        timestamp, "lk_road_border_exempt_segments", marker_id++,
+        {previous.ego_center, sample.ego_center}, make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.22,
+        false, marker_lifetime_s, 0.18));
+    }
   }
 
   std::set<std::int64_t> seen_lanelet_ids;
@@ -1273,6 +1326,32 @@ void write_lk_debug_topics_to_bag(
       make_color(0.95F, 0.90F, 0.20F, 0.80F), 0.08, false, marker_lifetime_s, 0.12));
   }
 
+  marker_id = 0;
+  std::set<std::string> seen_road_border_lines;
+  for (const auto & sample : debug_info.samples) {
+    if (!sample.road_border_exempt) {
+      continue;
+    }
+    if (sample.road_border_envelope.size() >= 4U) {
+      road_border_envelopes.markers.push_back(make_line_strip_marker(
+        timestamp, "lk_road_border_envelopes", marker_id++, sample.road_border_envelope,
+        make_color(0.85F, 0.35F, 1.0F, 0.85F), 0.14, true, marker_lifetime_s, 0.16));
+    }
+    for (const auto & line : sample.road_border_lines) {
+      if (line.size() < 2U) {
+        continue;
+      }
+      const auto key = std::to_string(line.front().x) + "," + std::to_string(line.front().y) +
+                       ":" + std::to_string(line.back().x) + "," + std::to_string(line.back().y);
+      if (!seen_road_border_lines.insert(key).second) {
+        continue;
+      }
+      road_border_lines.markers.push_back(make_line_strip_marker(
+        timestamp, "lk_road_border_lines", marker_id++, line,
+        make_color(0.75F, 0.15F, 1.0F, 0.95F), 0.08, false, marker_lifetime_s, 0.17));
+    }
+  }
+
   std::ostringstream label;
   label << "LK=" << metrics.lane_keeping << "\nmax run=" << std::fixed << std::setprecision(2)
         << debug_info.max_continuous_violation_time_s << "s\npeak |d|="
@@ -1284,6 +1363,10 @@ void write_lk_debug_topics_to_bag(
   bag_writer.write(ego_center_path, lk_debug_topic("ego_center_path"), timestamp);
   bag_writer.write(
     reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
+  bag_writer.write(road_border_lines, lk_debug_topic("road_border_lines"), timestamp);
+  bag_writer.write(road_border_envelopes, lk_debug_topic("road_border_envelopes"), timestamp);
+  bag_writer.write(
+    road_border_exempt_segments, lk_debug_topic("road_border_exempt_segments"), timestamp);
   bag_writer.write(labels, lk_debug_topic("labels"), timestamp);
 }
 
@@ -3728,6 +3811,9 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(lk_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(lk_debug_topic("ego_center_path"), "visualization_msgs/msg/MarkerArray");
     add_topic(lk_debug_topic("reference_centerlines"), "visualization_msgs/msg/MarkerArray");
+    add_topic(lk_debug_topic("road_border_lines"), "visualization_msgs/msg/MarkerArray");
+    add_topic(lk_debug_topic("road_border_envelopes"), "visualization_msgs/msg/MarkerArray");
+    add_topic(lk_debug_topic("road_border_exempt_segments"), "visualization_msgs/msg/MarkerArray");
     add_topic(lk_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.ego_progress) {
@@ -3755,6 +3841,10 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
       "visualization_msgs/msg/MarkerArray");
     add_topic(
       dac_debug_topic("admissible_parking_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("road_border_lines"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("road_border_envelopes"), "visualization_msgs/msg/MarkerArray");
+    add_topic(
+      dac_debug_topic("road_border_fallback_corners"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("failing_corners"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }

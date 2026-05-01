@@ -46,7 +46,10 @@ struct LaneKeepingEvaluationPoint
   bool is_in_intersection{false};
   bool multiple_lanes{false};
   bool non_drivable_area{false};
+  bool inside_road_border_envelope{false};
   geometry_msgs::msg::Point ego_center{};
+  std::vector<geometry_msgs::msg::Point> road_border_envelope;
+  std::vector<std::vector<geometry_msgs::msg::Point>> road_border_lines;
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
   double speed_mps{std::numeric_limits<double>::quiet_NaN()};
@@ -66,6 +69,9 @@ struct LaneKeepingDebugSample
   bool lane_change_exempt{false};
   bool queue_exempt{false};
   bool queue_release_exempt{false};
+  bool road_border_exempt{false};
+  std::vector<geometry_msgs::msg::Point> road_border_envelope;
+  std::vector<std::vector<geometry_msgs::msg::Point>> road_border_lines;
   std::vector<geometry_msgs::msg::Point> reference_centerline;
   std::int64_t reference_lanelet_id{-1};
 };

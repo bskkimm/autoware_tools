@@ -1142,7 +1142,7 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Road lanelets, road-shoulder lanelets, `intersection_area` polygons, `hatched_road_markings` polygons, and `parking_lot` polygons queried from the lanelet map. | **Moderate.** AW now approximates NAVSIM's semantic drivable union more closely, but still lacks road-border-derived drivable envelopes. |
+| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Road lanelets, road-shoulder lanelets, `intersection_area` polygons, `hatched_road_markings` polygons, `parking_lot` polygons, and conservative local envelopes derived from nearby `road_border` line strings. | **Moderate.** AW now approximates NAVSIM's semantic drivable union more closely, but still lacks a globally cached drivable-area layer. |
 | **Simulated Ego Polygons** | The ego vehicle footprints over the trajectory. | `autoware_planning_msgs::msg::Trajectory` + `VehicleInfo` | The planned rollout footprints. | **Equivalent.** |
 | **Ego-Area Classification** | Mask determining "ROAD" vs "NON-ROAD" status. | `compute_ego_area_flags()` | Per-corner classification against selected lanelet/polygon candidates around the footprint. | **Close.** Corner logic now matches NAVSIM style better than the previous footprint-within-union proxy. |
 
@@ -1157,8 +1157,9 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
   - nearby `intersection_area` polygons,
   - nearby `hatched_road_markings` polygons,
   - nearby `parking_lot` polygons from the lanelet map polygon layer.
+  - a conservative local road-surface envelope from nearby `road_border` line strings when at least two border lines form a valid convex-hull envelope around the sampled footprint.
 - This is more permissive than the previous route-union proxy because non-route road surface, shoulders, and intersection-area polygons near the actual ego footprint can still count as drivable.
-- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because road-border-derived road envelopes and generic `DRIVABLE_AREA` polygons are not scored yet.
+- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because the road-border fallback is local and geometric rather than a cached global `DRIVABLE_AREA` layer.
 - **Impact:** **Moderate.** The corner-based failure condition now matches NAVSIM much more closely, but the admissible map region is still an Autoware-specific approximation.
 
 ### Equation comparison
@@ -1214,11 +1215,11 @@ $$
 
 The migrated Autoware DAC is a **NAVSIM-style semantic drivable-area corner check**
 over the Autoware lanelet map. It admits road lanelets, road-shoulder lanelets,
-`intersection_area` polygons, `hatched_road_markings` polygons, and `parking_lot`
-polygons. This is closer to NAVSIM's
+`intersection_area` polygons, `hatched_road_markings` polygons, `parking_lot`
+polygons, and a conservative `road_border`-derived local envelope. This is closer to NAVSIM's
 `ROADBLOCK`, `INTERSECTION`, `DRIVABLE_AREA`, and `CARPARK_AREA` union than the earlier
-route-guided road-lanelet-only approximation. Road-border line strings are not used
-for scoring in this version.
+route-guided road-lanelet-only approximation. Road-border line strings are not checked
+by line/corner overlap; they are converted into a local polygonal envelope first.
 
 The migrated Autoware DAC remains a **route-guided, locally augmented corner-based
 drivable-area check**. It is much closer to NAVSIM than the previous route-lanelet
@@ -1311,9 +1312,24 @@ $$
 \mathrm{HatchedRoadMarkingPolygons}(\mathrm{bbox}(P_t^{aw})).
 $$
 
+Finally, nearby `road_border` line strings are queried from an expanded footprint bbox.
+If at least two local borders provide enough points to form a valid convex-hull
+polygon, the hull is used as a conservative road-surface fallback:
+
+$$
+\mathcal{B}_t^{aw}
+=
+\mathrm{RoadBorderLines}(\mathrm{expandedBBox}(P_t^{aw})),
+\qquad
+\mathcal{E}_t^{aw}
+=
+\mathrm{ConvexHullEnvelope}(\mathcal{B}_t^{aw}).
+$$
+
 For each ego corner $X_{t,k}^{aw}$, the code checks whether that corner lies inside at
 least one candidate road, shoulder, intersection-area, hatched-road-marking, or
-parking-lot polygon:
+parking-lot polygon. If those semantic polygons all fail, a valid road-border
+envelope is used as a fallback:
 
 $$
 \mathrm{CornerDrivable}_{t,k}^{aw}
@@ -1343,6 +1359,8 @@ $$
 \sum_{p\in\mathcal{P}_t^{aw}}
 \mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(p)\right)
 \right)
++
+\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathcal{E}_t^{aw}\right)
 > 0
 \right].
 $$
@@ -1383,10 +1401,10 @@ unavailable rather than returning a NAVSIM-equivalent score.
 drivable-area map. The migrated Autoware code asks whether ego corners remain inside
 the union of mission-route lanelets, nearby road lanelets, nearby `road_shoulder`
 lanelets, nearby `intersection_area` polygons, nearby `hatched_road_markings`
-polygons, and nearby `parking_lot` polygons discovered from the lanelet map around
-each timestep. This is closer than the previous proxy, but it is still not the same
-admissible map layer set as NAVSIM because
-generic road-border-derived envelopes are intentionally not scored yet.
+polygons, nearby `parking_lot` polygons, and a valid local road-border envelope
+discovered from the lanelet map around each timestep. This is closer than the previous
+proxy, but it is still not the same admissible map layer set as NAVSIM because the
+border fallback is a local geometric approximation.
 
 ### Assessment
 
@@ -2394,6 +2412,8 @@ $$
 \land
 \neg\mathrm{QueueReleaseExempt}_{t}^{aw}
 \land
+\neg\mathrm{RoadBorderExempt}_{t}^{aw}
+\land
 \neg\mathrm{Intersection}_t^{aw}
 \land
 \left[|d_t^{aw}|>0.5\right].
@@ -2431,6 +2451,10 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
 - Included for queue / constrained-traffic relaxation:
   - low-speed, low-progress samples
   - a short release-grace window immediately after that queue state ends
+- Included for road-border relaxation:
+  - the same per-sample road-border envelope produced by shared footprint evaluation
+  - over-threshold centerline-deviation samples are not accumulated into an LK failure
+    run when the full ego footprint remains inside that envelope
 - Excluded:
   - a single globally cached route centerline shared across the whole rollout
   - geometry-only lane-change inference from `multiple_lanes` or reference-lanelet switching

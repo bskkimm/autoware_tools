@@ -99,8 +99,19 @@ lanelet::Polygon3d make_hatched_road_marking(
   return polygon;
 }
 
+lanelet::LineString3d make_road_border_line(const lanelet::Id id, const double y)
+{
+  lanelet::LineString3d line_string{
+    id,
+    {lanelet::Point3d{id * 100 + 1, -5.0, y, 0.0},
+     lanelet::Point3d{id * 100 + 2, 12.0, y, 0.0}}};
+  line_string.setAttribute(lanelet::AttributeName::Type, "road_border");
+  return line_string;
+}
+
 std::shared_ptr<RouteHandler> make_route_handler(
-  const lanelet::Lanelets & lanelets, const std::vector<lanelet::Polygon3d> & polygons = {})
+  const lanelet::Lanelets & lanelets, const std::vector<lanelet::Polygon3d> & polygons = {},
+  const std::vector<lanelet::LineString3d> & line_strings = {})
 {
   auto map = std::make_shared<lanelet::LaneletMap>();
   lanelet::ConstLanelets const_lanelets;
@@ -110,6 +121,9 @@ std::shared_ptr<RouteHandler> make_route_handler(
   }
   for (const auto & polygon : polygons) {
     map->add(polygon);
+  }
+  for (const auto & line_string : line_strings) {
+    map->add(line_string);
   }
 
   autoware_map_msgs::msg::LaneletMapBin map_msg;
@@ -163,6 +177,19 @@ TEST(DrivableAreaComplianceTest, CountsHatchedRoadMarkingAsDrivableArea)
     make_trajectory(2.2), make_route_handler(
                             {make_road_lanelet(1, -2.0, 2.0)},
                             {make_hatched_road_marking(2, 2.0, 4.0)}),
+    make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "compliant");
+}
+
+TEST(DrivableAreaComplianceTest, CountsRoadBorderEnvelopeAsFallbackDrivableArea)
+{
+  const auto result = calculate_drivable_area_compliance(
+    make_trajectory(2.7), make_route_handler(
+                            {make_road_lanelet(1, -2.0, 2.0)}, {},
+                            {make_road_border_line(2, -3.0), make_road_border_line(3, 4.0)}),
     make_vehicle_info());
 
   EXPECT_TRUE(result.available);

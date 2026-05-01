@@ -75,6 +75,20 @@ std::vector<geometry_msgs::msg::Point> parking_polygon_to_points(
     to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()), z);
 }
 
+std::vector<geometry_msgs::msg::Point> line_string_to_points(
+  const lanelet::ConstLineString3d & line_string, const double z)
+{
+  std::vector<geometry_msgs::msg::Point> points;
+  for (const auto & point : lanelet::utils::to2D(line_string)) {
+    geometry_msgs::msg::Point msg;
+    msg.x = point.x();
+    msg.y = point.y();
+    msg.z = z;
+    points.push_back(msg);
+  }
+  return points;
+}
+
 void fill_debug_info(
   DrivableAreaComplianceDebugInfo & debug_info,
   const autoware_planning_msgs::msg::Trajectory & trajectory,
@@ -106,6 +120,9 @@ void fill_debug_info(
     debug_info.intersection_candidate_count = area.intersection_areas.size();
     debug_info.hatched_road_marking_candidate_count = area.hatched_road_markings.size();
     debug_info.parking_candidate_count = area.parking_lots.size();
+    debug_info.road_border_line_count = area.road_border_lines.size();
+    debug_info.road_border_envelope_valid = area.road_border_envelope.has_value();
+    debug_info.road_border_fallback_used = area.flags.road_border_fallback_used;
     debug_info.corner_count_inside = std::count(
       area.corner_drivable.begin(), area.corner_drivable.end(), true);
     if (!area.footprint_points.empty()) {
@@ -119,6 +136,16 @@ void fill_debug_info(
       debug_info.failing_corner_indices.push_back(corner_index);
       debug_info.failing_corners.push_back(DrivableAreaComplianceDebugCorner{
         time_s, corner_index, to_msg_point(area.footprint_points.at(corner_index), point.pose.position.z)});
+    }
+    for (std::size_t corner_index = 0; corner_index < area.footprint_points.size(); ++corner_index) {
+      if (
+        corner_index >= area.corner_drivable_by_road_border.size() ||
+        !area.corner_drivable_by_road_border.at(corner_index)) {
+        continue;
+      }
+      debug_info.road_border_fallback_corners.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, corner_index,
+        to_msg_point(area.footprint_points.at(corner_index), point.pose.position.z + 0.01)});
     }
 
     for (const auto & road_lanelet : area.road_lanelets) {
@@ -140,6 +167,14 @@ void fill_debug_info(
     for (const auto & parking_lot : area.parking_lots) {
       debug_info.admissible_parking_areas.push_back(DrivableAreaComplianceDebugPolygon{
         time_s, parking_polygon_to_points(parking_lot, point.pose.position.z + 0.06)});
+    }
+    if (area.road_border_envelope.has_value()) {
+      debug_info.road_border_envelopes.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, polygon_to_points(area.road_border_envelope.value(), point.pose.position.z + 0.07)});
+    }
+    for (const auto & road_border_line : area.road_border_lines) {
+      debug_info.road_border_lines.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, line_string_to_points(road_border_line, point.pose.position.z + 0.08)});
     }
   }
 }
