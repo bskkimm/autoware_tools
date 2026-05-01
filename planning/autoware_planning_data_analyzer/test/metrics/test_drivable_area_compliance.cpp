@@ -184,12 +184,12 @@ TEST(DrivableAreaComplianceTest, CountsHatchedRoadMarkingAsDrivableArea)
   EXPECT_EQ(result.reason, "compliant");
 }
 
-TEST(DrivableAreaComplianceTest, CountsRoadBorderEnvelopeAsFallbackDrivableArea)
+TEST(DrivableAreaComplianceTest, CountsRoadBorderSideTestAsFallbackDrivableArea)
 {
   const auto result = calculate_drivable_area_compliance(
-    make_trajectory(2.7), make_route_handler(
-                            {make_road_lanelet(1, -2.0, 2.0)}, {},
-                            {make_road_border_line(2, -3.0), make_road_border_line(3, 4.0)}),
+    make_trajectory(3.15), make_route_handler(
+                             {make_road_lanelet(1, -2.0, 4.35)}, {},
+                             {make_road_border_line(2, 4.55)}),
     make_vehicle_info());
 
   EXPECT_TRUE(result.available);

@@ -123,6 +123,10 @@ void fill_debug_info(
     debug_info.road_border_line_count = area.road_border_lines.size();
     debug_info.road_border_envelope_valid = area.road_border_envelope.has_value();
     debug_info.road_border_fallback_used = area.flags.road_border_fallback_used;
+    debug_info.road_border_side_test_count = area.road_border_side_tests.size();
+    debug_info.road_border_side_accept_count = std::count_if(
+      area.road_border_side_tests.begin(), area.road_border_side_tests.end(),
+      [](const auto & test) { return test.accepted; });
     debug_info.corner_count_inside = std::count(
       area.corner_drivable.begin(), area.corner_drivable.end(), true);
     if (!area.footprint_points.empty()) {
@@ -175,6 +179,18 @@ void fill_debug_info(
     for (const auto & road_border_line : area.road_border_lines) {
       debug_info.road_border_lines.push_back(DrivableAreaComplianceDebugPolygon{
         time_s, line_string_to_points(road_border_line, point.pose.position.z + 0.08)});
+    }
+    for (const auto & side_test : area.road_border_side_tests) {
+      debug_info.road_border_side_test_segments.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s,
+        {to_msg_point(side_test.segment_start, point.pose.position.z + 0.09),
+         to_msg_point(side_test.segment_end, point.pose.position.z + 0.09)}});
+      debug_info.road_border_plus_samples.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, side_test.corner_index,
+        to_msg_point(side_test.plus_sample, point.pose.position.z + 0.10)});
+      debug_info.road_border_minus_samples.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, side_test.corner_index,
+        to_msg_point(side_test.minus_sample, point.pose.position.z + 0.10)});
     }
   }
 }

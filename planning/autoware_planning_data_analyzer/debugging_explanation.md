@@ -272,9 +272,11 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/admissible_intersection_areas` | `visualization_msgs/msg/MarkerArray` | `intersection_area` polygons admitted as DAC drivable space. |
 | `/debug/epdms/dac/admissible_hatched_road_markings` | `visualization_msgs/msg/MarkerArray` | `hatched_road_markings` polygons admitted as paved road-marking DAC space. |
 | `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
-| `/debug/epdms/dac/road_border_lines` | `visualization_msgs/msg/MarkerArray` | Nearby `road_border` line strings used to build the local fallback envelope at the first failing timestep. |
-| `/debug/epdms/dac/road_border_envelopes` | `visualization_msgs/msg/MarkerArray` | Conservative local convex-hull road-surface envelope derived from nearby road borders. |
-| `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices covered by the road-border fallback envelope. |
+| `/debug/epdms/dac/road_border_lines` | `visualization_msgs/msg/MarkerArray` | Nearby `road_border` line strings considered by the local closest-segment fallback at the first failing timestep. |
+| `/debug/epdms/dac/road_border_side_test_segments` | `visualization_msgs/msg/MarkerArray` | Closest finite `road_border` segments selected for semantically failed ego corners. |
+| `/debug/epdms/dac/road_border_plus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `+normal * rho` semantic probe points used to infer the road side of the closest border segment. The probe distance `rho` is the first unambiguous value from `0.3, 0.6, 1.0, 1.5, 2.0 m`. |
+| `/debug/epdms/dac/road_border_minus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `-normal * rho` semantic probe points used to infer the road side of the closest border segment. |
+| `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices accepted by the closest-border road-side fallback. |
 | `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
 | `/debug/epdms/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
 
@@ -339,10 +341,12 @@ Recommended interpretation:
 | `/debug/epdms/dac/admissible_intersection_areas` | The intersection-area polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_hatched_road_markings` | The hatched-road-marking polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
-| `/debug/epdms/dac/road_border_lines` | The local `road_border` line strings used to derive the fallback envelope. |
-| `/debug/epdms/dac/road_border_envelopes` | The local polygonal fallback envelope. This is the thing corners are tested against, not the border lines directly. |
-| `/debug/epdms/dac/road_border_fallback_corners` | Corners that were accepted by the border-derived envelope. |
-| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible road, shoulder, intersection, hatched-road-marking, parking, and valid road-border-envelope polygons. |
+| `/debug/epdms/dac/road_border_lines` | The local `road_border` line strings considered by the fallback. |
+| `/debug/epdms/dac/road_border_side_test_segments` | The closest finite border segment chosen for each semantically failed corner. |
+| `/debug/epdms/dac/road_border_plus_samples` | The plus-normal probe points. If exactly one plus/minus probe is in semantic drivable area, that side determines the road side. |
+| `/debug/epdms/dac/road_border_minus_samples` | The minus-normal probe points. |
+| `/debug/epdms/dac/road_border_fallback_corners` | Corners that were accepted because they were within `0.5 m` of the closest segment and on the inferred road side. |
+| `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible semantic polygons and were not accepted by the closest-border side fallback. |
 | `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 
 Suggested visual semantics:
@@ -395,7 +399,10 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/dac/admissible_hatched_road_markings
 /debug/epdms/dac/admissible_parking_areas
 /debug/epdms/dac/road_border_lines
-/debug/epdms/dac/road_border_envelopes
+/debug/epdms/dac/road_border_side_test_segments
+/debug/epdms/dac/road_border_plus_samples
+/debug/epdms/dac/road_border_minus_samples
+/debug/epdms/dac/road_border_fallback_corners
 /debug/epdms/dac/failing_corners
 /debug/epdms/dac/labels
 ```
@@ -808,7 +815,6 @@ When LK is enabled and a trajectory scores below `1.0`, the analyzer writes:
 /debug/epdms/lk/ego_center_path
 /debug/epdms/lk/reference_centerlines
 /debug/epdms/lk/road_border_lines
-/debug/epdms/lk/road_border_envelopes
 /debug/epdms/lk/road_border_exempt_segments
 /debug/epdms/lk/labels
 ```
@@ -855,9 +861,8 @@ Recommended interpretation:
 |---|---|
 | `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. |
 | `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
-| `/debug/epdms/lk/road_border_lines` | Road-border line strings used to build border envelopes for road-border-exempt samples. |
-| `/debug/epdms/lk/road_border_envelopes` | Local road-border-derived envelopes for samples where centerline deviation was suppressed because the ego footprint stayed inside the physical road surface. |
-| `/debug/epdms/lk/road_border_exempt_segments` | Ego-center path segments where over-threshold centerline deviation was not accumulated because the road-border envelope contained the footprint. |
+| `/debug/epdms/lk/road_border_lines` | Road-border line strings considered by the shared closest-segment side test for road-border-exempt samples. |
+| `/debug/epdms/lk/road_border_exempt_segments` | Ego-center path segments where over-threshold centerline deviation was not accumulated because the shared DAC-style semantic/border drivable-area check kept the full footprint on admitted road surface. |
 | `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
 
 ### Lichtblick Workflow

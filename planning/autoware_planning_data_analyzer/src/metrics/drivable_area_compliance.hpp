@@ -66,6 +66,8 @@ struct DrivableAreaComplianceDebugInfo
   std::size_t road_border_line_count{0};
   bool road_border_envelope_valid{false};
   bool road_border_fallback_used{false};
+  std::size_t road_border_side_test_count{0};
+  std::size_t road_border_side_accept_count{0};
   geometry_msgs::msg::Point label_anchor;
   std::vector<DrivableAreaComplianceHorizonFootprint> ego_horizon_footprints;
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_road_areas;
@@ -75,6 +77,9 @@ struct DrivableAreaComplianceDebugInfo
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_parking_areas;
   std::vector<DrivableAreaComplianceDebugPolygon> road_border_envelopes;
   std::vector<DrivableAreaComplianceDebugPolygon> road_border_lines;
+  std::vector<DrivableAreaComplianceDebugPolygon> road_border_side_test_segments;
+  std::vector<DrivableAreaComplianceDebugCorner> road_border_plus_samples;
+  std::vector<DrivableAreaComplianceDebugCorner> road_border_minus_samples;
   std::vector<DrivableAreaComplianceDebugCorner> road_border_fallback_corners;
   std::vector<DrivableAreaComplianceDebugCorner> failing_corners;
 };

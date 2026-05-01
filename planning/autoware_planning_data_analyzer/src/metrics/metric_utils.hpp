@@ -34,6 +34,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -78,12 +79,28 @@ struct EgoAreaFlags
   bool road_border_fallback_used{false};
 };
 
+struct RoadBorderSideTest
+{
+  std::size_t corner_index{0};
+  autoware_utils_geometry::Point2d corner;
+  autoware_utils_geometry::Point2d segment_start;
+  autoware_utils_geometry::Point2d segment_end;
+  autoware_utils_geometry::Point2d closest_point;
+  autoware_utils_geometry::Point2d plus_sample;
+  autoware_utils_geometry::Point2d minus_sample;
+  bool plus_sample_drivable{false};
+  bool minus_sample_drivable{false};
+  bool accepted{false};
+  double distance_m{std::numeric_limits<double>::infinity()};
+};
+
 struct EgoAreaEvaluation
 {
   EgoAreaFlags flags;
   std::vector<autoware_utils_geometry::Point2d> footprint_points;
   std::vector<bool> corner_drivable;
   std::vector<bool> corner_drivable_by_road_border;
+  std::vector<RoadBorderSideTest> road_border_side_tests;
   lanelet::ConstLanelets road_lanelets;
   lanelet::ConstLanelets shoulder_lanelets;
   std::vector<lanelet::ConstPolygon3d> intersection_areas;

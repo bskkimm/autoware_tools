@@ -1142,7 +1142,7 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Road lanelets, road-shoulder lanelets, `intersection_area` polygons, `hatched_road_markings` polygons, `parking_lot` polygons, and conservative local envelopes derived from nearby `road_border` line strings. | **Moderate.** AW now approximates NAVSIM's semantic drivable union more closely, but still lacks a globally cached drivable-area layer. |
+| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Local-global semantic union of nearby road lanelets, road-shoulder lanelets, `intersection_area` polygons, `hatched_road_markings` polygons, `parking_lot` polygons, plus a per-corner closest-`road_border` side test for small boundary leakage. | **Moderate.** AW now approximates NAVSIM's semantic drivable union more closely, but still lacks a globally cached drivable-area layer. |
 | **Simulated Ego Polygons** | The ego vehicle footprints over the trajectory. | `autoware_planning_msgs::msg::Trajectory` + `VehicleInfo` | The planned rollout footprints. | **Equivalent.** |
 | **Ego-Area Classification** | Mask determining "ROAD" vs "NON-ROAD" status. | `compute_ego_area_flags()` | Per-corner classification against selected lanelet/polygon candidates around the footprint. | **Close.** Corner logic now matches NAVSIM style better than the previous footprint-within-union proxy. |
 
@@ -1152,14 +1152,14 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
 
 - NAVSIM's drivable-area mask includes multiple polygon layers (`ROADBLOCK`, `INTERSECTION`, `DRIVABLE_AREA`, `CARPARK_AREA`) through the cached drivable map.
 - The migrated code does **not** have a single equivalent semantic cache. Instead it combines:
-  - nearby road lanelets queried directly from the raw lanelet map around each ego footprint,
+  - all nearby road lanelets queried directly from the raw lanelet map around each ego footprint with a local-global search margin,
   - nearby `road_shoulder` lanelets,
   - nearby `intersection_area` polygons,
   - nearby `hatched_road_markings` polygons,
   - nearby `parking_lot` polygons from the lanelet map polygon layer.
-  - a conservative local road-surface envelope from nearby `road_border` line strings when at least two border lines form a valid convex-hull envelope around the sampled footprint.
-- This is more permissive than the previous route-union proxy because non-route road surface, shoulders, and intersection-area polygons near the actual ego footprint can still count as drivable.
-- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because the road-border fallback is local and geometric rather than a cached global `DRIVABLE_AREA` layer.
+  - a per-corner closest-`road_border` side test only when the semantic union rejects a corner.
+- This is more permissive than the previous route-union proxy because non-route road surface, neighboring lanes, oncoming lanes, shoulders, and intersection-area polygons near the actual ego footprint can still count as physically drivable.
+- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because the map layer is built locally per sample rather than from one cached global `DRIVABLE_AREA` layer.
 - **Impact:** **Moderate.** The corner-based failure condition now matches NAVSIM much more closely, but the admissible map region is still an Autoware-specific approximation.
 
 ### Equation comparison
@@ -1216,16 +1216,15 @@ $$
 The migrated Autoware DAC is a **NAVSIM-style semantic drivable-area corner check**
 over the Autoware lanelet map. It admits road lanelets, road-shoulder lanelets,
 `intersection_area` polygons, `hatched_road_markings` polygons, `parking_lot`
-polygons, and a conservative `road_border`-derived local envelope. This is closer to NAVSIM's
+polygons, and a conservative `road_border` closest-side fallback. This is closer to NAVSIM's
 `ROADBLOCK`, `INTERSECTION`, `DRIVABLE_AREA`, and `CARPARK_AREA` union than the earlier
-route-guided road-lanelet-only approximation. Road-border line strings are not checked
-by line/corner overlap; they are converted into a local polygonal envelope first.
+route-guided road-lanelet-only approximation. Road-border line strings are not converted
+into a broad polygonal convex hull; they are used only as local one-corner boundary evidence.
 
-The migrated Autoware DAC remains a **route-guided, locally augmented corner-based
-drivable-area check**. It is much closer to NAVSIM than the previous route-lanelet
-union proxy because the failure rule is now corner-based. The remaining mismatch is
-mainly **which map areas are treated as drivable**, not **how the compliance decision
-is made**.
+The migrated Autoware DAC is now a **local-global semantic drivable-area check**.
+The lanelet query is intentionally not route-direction-narrowed: opposite-direction
+road lanelets are still physically drivable road surface for DAC, while DDC remains
+responsible for wrong-way/oncoming progress.
 
 First, for each selected trajectory point $A_t$, the ego footprint $P_t^{aw}$ is
 constructed from `VehicleInfo` at that pose:
@@ -1241,7 +1240,7 @@ P_t^{aw}
 $$
 
 Next, the implementation collects route-designated road lanelets seen along the
-selected trajectory:
+selected trajectory only as additional candidates, not as a narrowing filter:
 
 $$
 \mathcal{L}^{route,aw}
@@ -1253,13 +1252,13 @@ $$
 \mathrm{RouteLaneletsAtPose}(\mathrm{pose}(A_t)).
 $$
 
-At each timestep, it also adds nearby road lanelets from raw map search around the
-current ego footprint:
+At each timestep, it adds all nearby road lanelets from raw map search around the
+current ego footprint using a `15 m` local-global semantic search margin:
 
 $$
 \mathcal{L}_t^{bbox,aw}
 =
-\mathrm{RoadLaneletsFromBBoxSearch}(\mathrm{bbox}(P_t^{aw})).
+\mathrm{RoadLaneletsFromBBoxSearch}(\mathrm{expandedBBox}_{15m}(P_t^{aw})).
 $$
 
 It further adds road lanelets reported at the current pose whose polygons actually
@@ -1283,24 +1282,26 @@ $$
 \mathcal{L}_t^{pose,aw}.
 $$
 
-Nearby `parking_lot` polygons are also added from the map polygon layer:
+Nearby `parking_lot` polygons are also added from the map polygon layer using the
+same `15 m` local-global semantic search margin:
 
 $$
 \mathcal{P}_t^{aw}
 =
-\mathrm{NearbyParkingLotPolygons}(\mathrm{bbox}(P_t^{aw})).
+\mathrm{NearbyParkingLotPolygons}(\mathrm{expandedBBox}_{15m}(P_t^{aw})).
 $$
 
-Nearby `road_shoulder` lanelets and `intersection_area` polygons are also added:
+Nearby `road_shoulder` lanelets and `intersection_area` polygons are also added
+with the same semantic search margin:
 
 $$
 \mathcal{S}_t^{aw}
 =
-\mathrm{RoadShoulderLaneletsFromBBoxSearch}(\mathrm{bbox}(P_t^{aw})),
+\mathrm{RoadShoulderLaneletsFromBBoxSearch}(\mathrm{expandedBBox}_{15m}(P_t^{aw})),
 \qquad
 \mathcal{I}_t^{aw}
 =
-\mathrm{IntersectionAreaPolygons}(\mathrm{bbox}(P_t^{aw})).
+\mathrm{IntersectionAreaPolygons}(\mathrm{expandedBBox}_{15m}(P_t^{aw})).
 $$
 
 Nearby `hatched_road_markings` polygons are added as low-priority paved road-marking
@@ -1309,59 +1310,158 @@ space:
 $$
 \mathcal{H}_t^{aw}
 =
-\mathrm{HatchedRoadMarkingPolygons}(\mathrm{bbox}(P_t^{aw})).
+\mathrm{HatchedRoadMarkingPolygons}(\mathrm{expandedBBox}_{15m}(P_t^{aw})).
 $$
 
-Finally, nearby `road_border` line strings are queried from an expanded footprint bbox.
-If at least two local borders provide enough points to form a valid convex-hull
-polygon, the hull is used as a conservative road-surface fallback:
+These polygon and lanelet candidates define the trusted semantic drivable union:
+
+$$
+\mathcal{U}_t^{sem,aw}
+=
+\mathcal{R}_t^{aw}
+\cup
+\mathcal{S}_t^{aw}
+\cup
+\mathcal{I}_t^{aw}
+\cup
+\mathcal{H}_t^{aw}
+\cup
+\mathcal{P}_t^{aw}.
+$$
+
+For each ego corner $X_{t,k}^{aw}$, the code first checks whether that corner lies
+inside at least one trusted semantic drivable polygon:
+
+$$
+\mathrm{SemanticDrivable}_{t,k}^{aw}
+=
+\left[
+\left(
+\sum_{u\in\mathcal{U}_t^{sem,aw}}
+\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(u)\right)
+\right)>0
+\right].
+$$
+
+Only when this semantic check fails does the code use a `road_border` fallback.
+Nearby `road_border` line strings are queried from a `2 m` footprint bbox:
 
 $$
 \mathcal{B}_t^{aw}
 =
-\mathrm{RoadBorderLines}(\mathrm{expandedBBox}(P_t^{aw})),
-\qquad
-\mathcal{E}_t^{aw}
-=
-\mathrm{ConvexHullEnvelope}(\mathcal{B}_t^{aw}).
+\mathrm{RoadBorderLines}(\mathrm{expandedBBox}_{2m}(P_t^{aw})).
 $$
 
-For each ego corner $X_{t,k}^{aw}$, the code checks whether that corner lies inside at
-least one candidate road, shoulder, intersection-area, hatched-road-marking, or
-parking-lot polygon. If those semantic polygons all fail, a valid road-border
-envelope is used as a fallback:
+Each `road_border` line string is split into finite line segments. For a semantically
+failed corner $X_{t,k}^{aw}$, the closest segment endpoint pair is:
+
+$$
+(A_{t,k}^{aw}, B_{t,k}^{aw})
+=
+\mathrm{ClosestRoadBorderSegment}(X_{t,k}^{aw}, \mathcal{B}_t^{aw}).
+$$
+
+Let $Q_{t,k}^{aw}$ be the closest point on that finite segment to the failed corner:
+
+$$
+Q_{t,k}^{aw}
+=
+\mathrm{ClosestPointOnSegment}
+\left(
+X_{t,k}^{aw}, A_{t,k}^{aw}, B_{t,k}^{aw}
+\right).
+$$
+
+The segment direction and unit normal are:
+
+$$
+d_{t,k}^{aw}=B_{t,k}^{aw}-A_{t,k}^{aw},
+\qquad
+n_{t,k}^{aw}
+=
+\frac{(-d_y,\;d_x)}{\|d_{t,k}^{aw}\|}.
+$$
+
+The code probes both sides of the border using an ordered distance sequence
+`0.3 m`, `0.6 m`, `1.0 m`, `1.5 m`, and `2.0 m` from the closest point. The first
+distance that produces exactly one semantic-drivable side is used:
+
+$$
+Y_{t,k}^{+}(\rho)=Q_{t,k}^{aw}+\rho n_{t,k}^{aw},
+\qquad
+Y_{t,k}^{-}(\rho)=Q_{t,k}^{aw}-\rho n_{t,k}^{aw},
+\qquad
+\rho\in\{0.3,0.6,1.0,1.5,2.0\}.
+$$
+
+The road side is inferred only from the trusted semantic union:
+
+$$
+\mathrm{PlusRoadSide}_{t,k}^{aw}
+=
+\left[
+Y_{t,k}^{+}(\rho)\in\mathcal{U}_t^{sem,aw}
+\right],
+\qquad
+\mathrm{MinusRoadSide}_{t,k}^{aw}
+=
+\left[
+Y_{t,k}^{-}(\rho)\in\mathcal{U}_t^{sem,aw}
+\right].
+$$
+
+The side test is valid only when exactly one side is semantic-drivable. If both sides
+are semantic-drivable, or neither side is semantic-drivable, the border fallback is
+rejected as ambiguous. The failed corner is accepted by the border fallback only when
+all of the following are true:
+
+- the closest segment exists,
+- the distance $\|X_{t,k}^{aw}-Q_{t,k}^{aw}\|$ is at most `0.5 m`,
+- exactly one of $Y_{t,k}^{+}$ and $Y_{t,k}^{-}$ is inside the semantic drivable union,
+- the failed corner lies on the same signed half-plane as the semantic-drivable side.
+
+The signed half-plane check is:
+
+$$
+\mathrm{SameRoadSide}_{t,k}^{aw}
+=
+\left[
+\left((X_{t,k}^{aw}-Q_{t,k}^{aw})\cdot n_{t,k}^{aw}\right)
+\left((Y_{t,k}^{road}-Q_{t,k}^{aw})\cdot n_{t,k}^{aw}\right)
+> 0
+\right],
+$$
+
+where $Y_{t,k}^{road}$ is whichever of $Y_{t,k}^{+}$ or $Y_{t,k}^{-}$ lies inside the
+semantic drivable union at the first unambiguous probe distance.
+
+Thus:
+
+$$
+\mathrm{RoadBorderFallback}_{t,k}^{aw}
+=
+\left[
+\|X_{t,k}^{aw}-Q_{t,k}^{aw}\|\le0.5
+\right]
+\land
+\left[
+\mathrm{ExactlyOneSemanticSide}_{t,k}^{aw}
+\right]
+\land
+\left[
+\mathrm{SameRoadSide}_{t,k}^{aw}
+\right].
+$$
+
+The final corner-drivable predicate is:
 
 $$
 \mathrm{CornerDrivable}_{t,k}^{aw}
 =
 \left[
-\left(
-\sum_{\ell\in\mathcal{R}_t^{aw}}
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(\ell)\right)
-\right)
-+
-\left(
-\sum_{s\in\mathcal{S}_t^{aw}}
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(s)\right)
-\right)
-+
-\left(
-\sum_{q\in\mathcal{I}_t^{aw}}
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(q)\right)
-\right)
-+
-\left(
-\sum_{h\in\mathcal{H}_t^{aw}}
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(h)\right)
-\right)
-+
-\left(
-\sum_{p\in\mathcal{P}_t^{aw}}
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(p)\right)
-\right)
-+
-\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathcal{E}_t^{aw}\right)
-> 0
+\mathrm{SemanticDrivable}_{t,k}^{aw}
+\lor
+\mathrm{RoadBorderFallback}_{t,k}^{aw}
 \right].
 $$
 
@@ -1399,12 +1499,12 @@ unavailable rather than returning a NAVSIM-equivalent score.
 
 **Main input gap.** NAVSIM asks whether ego corners remain inside a cached semantic
 drivable-area map. The migrated Autoware code asks whether ego corners remain inside
-the union of mission-route lanelets, nearby road lanelets, nearby `road_shoulder`
-lanelets, nearby `intersection_area` polygons, nearby `hatched_road_markings`
-polygons, nearby `parking_lot` polygons, and a valid local road-border envelope
-discovered from the lanelet map around each timestep. This is closer than the previous
-proxy, but it is still not the same admissible map layer set as NAVSIM because the
-border fallback is a local geometric approximation.
+the local-global union of nearby road lanelets, nearby `road_shoulder` lanelets,
+nearby `intersection_area` polygons, nearby `hatched_road_markings` polygons, nearby
+`parking_lot` polygons, and a strict per-corner closest-`road_border` side fallback.
+This is closer than the previous proxy, but it is still not the same admissible map
+layer set as NAVSIM because the semantic map is constructed from Autoware lanelet
+entities at each sample rather than from NAVSIM's cached drivable-area layer.
 
 ### Assessment
 
@@ -2452,9 +2552,10 @@ per-sample centerline logic rather than NAVSIM's single cached route centerline:
   - low-speed, low-progress samples
   - a short release-grace window immediately after that queue state ends
 - Included for road-border relaxation:
-  - the same per-sample road-border envelope produced by shared footprint evaluation
+  - the same per-sample semantic drivable-area and closest-road-border side test produced
+    by shared footprint evaluation
   - over-threshold centerline-deviation samples are not accumulated into an LK failure
-    run when the full ego footprint remains inside that envelope
+    run when the full ego footprint remains inside the admitted road-surface union
 - Excluded:
   - a single globally cached route centerline shared across the whole rollout
   - geometry-only lane-change inference from `multiple_lanes` or reference-lanelet switching
