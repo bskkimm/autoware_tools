@@ -77,6 +77,13 @@ lanelet::Lanelet make_road_lanelet(const lanelet::Id id, const double y_min, con
   return lanelet;
 }
 
+lanelet::Lanelet make_shoulder_lanelet(const lanelet::Id id, const double y_min, const double y_max)
+{
+  auto lanelet = make_road_lanelet(id, y_min, y_max);
+  lanelet.setAttribute(lanelet::AttributeName::Subtype, "road_shoulder");
+  return lanelet;
+}
+
 std::shared_ptr<RouteHandler> make_route_handler(const lanelet::Lanelets & lanelets)
 {
   auto map = std::make_shared<lanelet::LaneletMap>();
@@ -112,6 +119,18 @@ TEST(DrivableAreaComplianceTest, ReturnsOneWhenAllCornersStayInsideDrivableArea)
 {
   const auto result = calculate_drivable_area_compliance(
     make_trajectory(0.0), make_route_handler({make_road_lanelet(1, -2.0, 2.0)}),
+    make_vehicle_info());
+
+  EXPECT_TRUE(result.available);
+  EXPECT_DOUBLE_EQ(result.score, 1.0);
+  EXPECT_EQ(result.reason, "compliant");
+}
+
+TEST(DrivableAreaComplianceTest, CountsRoadShoulderAsDrivableArea)
+{
+  const auto result = calculate_drivable_area_compliance(
+    make_trajectory(2.2),
+    make_route_handler({make_road_lanelet(1, -2.0, 2.0), make_shoulder_lanelet(2, 2.0, 4.0)}),
     make_vehicle_info());
 
   EXPECT_TRUE(result.available);

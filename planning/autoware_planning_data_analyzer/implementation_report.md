@@ -1142,21 +1142,22 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
 
 | Required Input (NAVSIM) | Semantic Meaning (NAVSIM) | Autoware Replacement | Semantic Meaning (AW) | Judgement / Impact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Route-designated lanelets, nearby road lanelets, and parking-lot polygons queried from the lanelet map. | **Moderate.** AW still lacks NAVSIM's full semantic drivable-area cache. |
+| **Drivable Area Map** | Definition of all legally/geometrically drivable space. | `RouteHandler` map + route state | Road lanelets, road-shoulder lanelets, `intersection_area` polygons, and `parking_lot` polygons queried from the lanelet map. | **Moderate.** AW now approximates NAVSIM's semantic drivable union more closely, but still lacks road-border-derived drivable envelopes. |
 | **Simulated Ego Polygons** | The ego vehicle footprints over the trajectory. | `autoware_planning_msgs::msg::Trajectory` + `VehicleInfo` | The planned rollout footprints. | **Equivalent.** |
 | **Ego-Area Classification** | Mask determining "ROAD" vs "NON-ROAD" status. | `compute_ego_area_flags()` | Per-corner classification against selected lanelet/polygon candidates around the footprint. | **Close.** Corner logic now matches NAVSIM style better than the previous footprint-within-union proxy. |
 
-- **Semantic replacement meaning:** the migration now builds a per-timestep admissible set from mission-route lanelets plus road surface around the actual ego footprint, then classifies each ego corner against that set.
+- **Semantic replacement meaning:** the migration now builds a per-timestep admissible set from map-supported vehicle-drivable polygons around the actual ego footprint, then classifies each ego corner against that set.
 
 ### Platform deviations and impact
 
 - NAVSIM's drivable-area mask includes multiple polygon layers (`ROADBLOCK`, `INTERSECTION`, `DRIVABLE_AREA`, `CARPARK_AREA`) through the cached drivable map.
 - The migrated code does **not** have a single equivalent semantic cache. Instead it combines:
-  - route-designated road lanelets collected from the selected trajectory poses,
   - nearby road lanelets queried directly from the raw lanelet map around each ego footprint,
-  - `parking_lot` polygons from the lanelet map polygon layer.
-- This is more permissive than the previous route-union proxy because non-route road surface near the actual ego footprint can still count as drivable.
-- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because there is no direct `ROADBLOCK` / `INTERSECTION` / generic `DRIVABLE_AREA` layer union.
+  - nearby `road_shoulder` lanelets,
+  - nearby `intersection_area` polygons,
+  - nearby `parking_lot` polygons from the lanelet map polygon layer.
+- This is more permissive than the previous route-union proxy because non-route road surface, shoulders, and intersection-area polygons near the actual ego footprint can still count as drivable.
+- It is still **not** equivalent to NAVSIM's full semantic drivable-area map because road-border-derived road envelopes and generic `DRIVABLE_AREA` polygons are not scored yet.
 - **Impact:** **Moderate.** The corner-based failure condition now matches NAVSIM much more closely, but the admissible map region is still an Autoware-specific approximation.
 
 ### Equation comparison
@@ -1210,7 +1211,14 @@ $$
 
 #### Migrated Autoware DAC
 
-The migrated Autoware DAC is a **route-guided, locally augmented corner-based
+The migrated Autoware DAC is a **NAVSIM-style semantic drivable-area corner check**
+over the Autoware lanelet map. It admits road lanelets, road-shoulder lanelets,
+`intersection_area` polygons, and `parking_lot` polygons. This is closer to NAVSIM's
+`ROADBLOCK`, `INTERSECTION`, `DRIVABLE_AREA`, and `CARPARK_AREA` union than the earlier
+route-guided road-lanelet-only approximation. Road-border line strings are not used
+for scoring in this version.
+
+The migrated Autoware DAC remains a **route-guided, locally augmented corner-based
 drivable-area check**. It is much closer to NAVSIM than the previous route-lanelet
 union proxy because the failure rule is now corner-based. The remaining mismatch is
 mainly **which map areas are treated as drivable**, not **how the compliance decision
@@ -1280,8 +1288,20 @@ $$
 \mathrm{NearbyParkingLotPolygons}(\mathrm{bbox}(P_t^{aw})).
 $$
 
+Nearby `road_shoulder` lanelets and `intersection_area` polygons are also added:
+
+$$
+\mathcal{S}_t^{aw}
+=
+\mathrm{RoadShoulderLaneletsFromBBoxSearch}(\mathrm{bbox}(P_t^{aw})),
+\qquad
+\mathcal{I}_t^{aw}
+=
+\mathrm{IntersectionAreaPolygons}(\mathrm{bbox}(P_t^{aw})).
+$$
+
 For each ego corner $X_{t,k}^{aw}$, the code checks whether that corner lies inside at
-least one candidate road polygon or parking-lot polygon:
+least one candidate road, shoulder, intersection-area, or parking-lot polygon:
 
 $$
 \mathrm{CornerDrivable}_{t,k}^{aw}
@@ -1290,6 +1310,16 @@ $$
 \left(
 \sum_{\ell\in\mathcal{R}_t^{aw}}
 \mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(\ell)\right)
+\right)
++
+\left(
+\sum_{s\in\mathcal{S}_t^{aw}}
+\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(s)\right)
+\right)
++
+\left(
+\sum_{q\in\mathcal{I}_t^{aw}}
+\mathbf{1}\!\left(X_{t,k}^{aw}\in\mathrm{polygon}(q)\right)
 \right)
 +
 \left(
@@ -1334,9 +1364,11 @@ unavailable rather than returning a NAVSIM-equivalent score.
 
 **Main input gap.** NAVSIM asks whether ego corners remain inside a cached semantic
 drivable-area map. The migrated Autoware code asks whether ego corners remain inside
-the union of mission-route lanelets, nearby road lanelets, and `parking_lot`
-polygons discovered from the lanelet map around each timestep. This is closer than the
-previous proxy, but it is still not the same admissible map layer set as NAVSIM.
+the union of mission-route lanelets, nearby road lanelets, nearby `road_shoulder`
+lanelets, nearby `intersection_area` polygons, and nearby `parking_lot` polygons
+discovered from the lanelet map around each timestep. This is closer than the previous
+proxy, but it is still not the same admissible map layer set as NAVSIM because
+generic road-border-derived envelopes are intentionally not scored yet.
 
 ### Assessment
 

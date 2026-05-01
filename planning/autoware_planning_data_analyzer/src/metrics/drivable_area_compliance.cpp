@@ -102,6 +102,8 @@ void fill_debug_info(
     debug_info.first_failure_time_s = time_s;
     debug_info.route_candidate_count = area.designated_lanelet_count;
     debug_info.road_candidate_count = area.road_lanelets.size();
+    debug_info.shoulder_candidate_count = area.shoulder_lanelets.size();
+    debug_info.intersection_candidate_count = area.intersection_areas.size();
     debug_info.parking_candidate_count = area.parking_lots.size();
     debug_info.corner_count_inside = std::count(
       area.corner_drivable.begin(), area.corner_drivable.end(), true);
@@ -122,9 +124,17 @@ void fill_debug_info(
       debug_info.admissible_road_areas.push_back(DrivableAreaComplianceDebugPolygon{
         time_s, lanelet_polygon_to_points(road_lanelet, point.pose.position.z + 0.02)});
     }
+    for (const auto & shoulder_lanelet : area.shoulder_lanelets) {
+      debug_info.admissible_shoulder_areas.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, lanelet_polygon_to_points(shoulder_lanelet, point.pose.position.z + 0.03)});
+    }
+    for (const auto & intersection_area : area.intersection_areas) {
+      debug_info.admissible_intersection_areas.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s, parking_polygon_to_points(intersection_area, point.pose.position.z + 0.04)});
+    }
     for (const auto & parking_lot : area.parking_lots) {
       debug_info.admissible_parking_areas.push_back(DrivableAreaComplianceDebugPolygon{
-        time_s, parking_polygon_to_points(parking_lot, point.pose.position.z + 0.04)});
+        time_s, parking_polygon_to_points(parking_lot, point.pose.position.z + 0.05)});
     }
   }
 }

@@ -59,10 +59,14 @@ struct DrivableAreaComplianceDebugInfo
   std::vector<std::size_t> failing_corner_indices;
   std::size_t route_candidate_count{0};
   std::size_t road_candidate_count{0};
+  std::size_t shoulder_candidate_count{0};
+  std::size_t intersection_candidate_count{0};
   std::size_t parking_candidate_count{0};
   geometry_msgs::msg::Point label_anchor;
   std::vector<DrivableAreaComplianceHorizonFootprint> ego_horizon_footprints;
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_road_areas;
+  std::vector<DrivableAreaComplianceDebugPolygon> admissible_shoulder_areas;
+  std::vector<DrivableAreaComplianceDebugPolygon> admissible_intersection_areas;
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_parking_areas;
   std::vector<DrivableAreaComplianceDebugCorner> failing_corners;
 };

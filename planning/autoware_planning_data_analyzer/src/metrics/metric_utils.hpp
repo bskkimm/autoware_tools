@@ -82,6 +82,8 @@ struct EgoAreaEvaluation
   std::vector<autoware_utils_geometry::Point2d> footprint_points;
   std::vector<bool> corner_drivable;
   lanelet::ConstLanelets road_lanelets;
+  lanelet::ConstLanelets shoulder_lanelets;
+  std::vector<lanelet::ConstPolygon3d> intersection_areas;
   std::vector<lanelet::ConstPolygon3d> parking_lots;
   std::size_t designated_lanelet_count{0};
 };
