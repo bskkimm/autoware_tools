@@ -46,8 +46,11 @@ constexpr double kLocalLaneSearchRadiusM = 5.0;
 constexpr double kDirectionSimilarityThresholdRad = M_PI_4;
 constexpr double kAdmissibleLaneMarginM = 0.35;
 constexpr double kSemanticDrivableAreaSearchMarginM = 15.0;
-constexpr double kRoadBorderSearchMarginM = 2.0;
-constexpr double kRoadBorderSemanticSideToleranceM = 0.75;
+constexpr double kRoadBorderSearchMarginM = 5.0;
+constexpr double kRoadBorderMaxGapM = 3.0;
+constexpr double kRoadBorderMaxSemanticToBorderM = 4.0;
+constexpr double kRoadBorderBetweenToleranceM = 0.75;
+constexpr double kRoadBorderMaxTangentAlignment = 0.6;
 constexpr double kMinRoadBorderSegmentLengthM = 1.0e-3;
 constexpr double kRoadBorderSideEpsilon = 1.0e-3;
 constexpr std::array<double, 8> kRoadBorderSideProbeDistancesM{0.3, 0.6, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0};
@@ -342,11 +345,9 @@ double distance_to_semantic_drivable_area(
   return min_distance_m;
 }
 
-struct ClosestRoadBorderSegment
+struct ClosestSemanticBoundaryPoint
 {
-  autoware_utils_geometry::Point2d segment_start;
-  autoware_utils_geometry::Point2d segment_end;
-  autoware_utils_geometry::Point2d closest_point;
+  autoware_utils_geometry::Point2d point;
   double distance_m{std::numeric_limits<double>::infinity()};
 };
 
@@ -358,35 +359,67 @@ double squared_distance(
   return dx * dx + dy * dy;
 }
 
-std::optional<ClosestRoadBorderSegment> find_closest_road_border_segment(
-  const autoware_utils_geometry::Point2d & point,
-  const std::vector<lanelet::ConstLineString3d> & road_border_lines)
+autoware_utils_geometry::Point2d closest_point_on_segment(
+  const autoware_utils_geometry::Point2d & point, const autoware_utils_geometry::Point2d & start,
+  const autoware_utils_geometry::Point2d & end)
 {
-  std::optional<ClosestRoadBorderSegment> best;
-  for (const auto & line_string : road_border_lines) {
-    const auto line_2d = lanelet::utils::to2D(line_string);
-    if (line_2d.size() < 2U) {
-      continue;
+  const double dx = end.x() - start.x();
+  const double dy = end.y() - start.y();
+  const double length_sq = dx * dx + dy * dy;
+  if (length_sq < kMinRoadBorderSegmentLengthM * kMinRoadBorderSegmentLengthM) {
+    return start;
+  }
+  const double projection =
+    ((point.x() - start.x()) * dx + (point.y() - start.y()) * dy) / length_sq;
+  const double clamped_projection = std::clamp(projection, 0.0, 1.0);
+  return autoware_utils_geometry::Point2d{
+    start.x() + clamped_projection * dx, start.y() + clamped_projection * dy};
+}
+
+void update_closest_boundary_from_polygon(
+  const autoware_utils_geometry::Point2d & point, const autoware_utils_geometry::Polygon2d & polygon,
+  std::optional<ClosestSemanticBoundaryPoint> & best)
+{
+  const auto & ring = polygon.outer();
+  if (ring.size() < 2U) {
+    return;
+  }
+  for (std::size_t index = 1; index < ring.size(); ++index) {
+    const auto closest = closest_point_on_segment(point, ring.at(index - 1U), ring.at(index));
+    const double distance = std::sqrt(squared_distance(point, closest));
+    if (!best.has_value() || distance < best->distance_m) {
+      best = ClosestSemanticBoundaryPoint{closest, distance};
     }
-    for (std::size_t index = 1; index < line_2d.size(); ++index) {
-      const autoware_utils_geometry::Point2d start{line_2d[index - 1U].x(), line_2d[index - 1U].y()};
-      const autoware_utils_geometry::Point2d end{line_2d[index].x(), line_2d[index].y()};
-      const double dx = end.x() - start.x();
-      const double dy = end.y() - start.y();
-      const double length_sq = dx * dx + dy * dy;
-      if (length_sq < kMinRoadBorderSegmentLengthM * kMinRoadBorderSegmentLengthM) {
-        continue;
-      }
-      const double projection =
-        ((point.x() - start.x()) * dx + (point.y() - start.y()) * dy) / length_sq;
-      const double clamped_projection = std::clamp(projection, 0.0, 1.0);
-      const autoware_utils_geometry::Point2d closest{
-        start.x() + clamped_projection * dx, start.y() + clamped_projection * dy};
-      const double distance = std::sqrt(squared_distance(point, closest));
-      if (!best.has_value() || distance < best->distance_m) {
-        best = ClosestRoadBorderSegment{start, end, closest, distance};
-      }
-    }
+  }
+}
+
+std::optional<ClosestSemanticBoundaryPoint> find_closest_semantic_boundary_point(
+  const autoware_utils_geometry::Point2d & point, const lanelet::ConstLanelets & road_lanelets,
+  const lanelet::ConstLanelets & shoulder_lanelets,
+  const std::vector<lanelet::ConstPolygon3d> & intersection_areas,
+  const std::vector<lanelet::ConstPolygon3d> & hatched_road_markings,
+  const std::vector<lanelet::ConstPolygon3d> & parking_lots)
+{
+  std::optional<ClosestSemanticBoundaryPoint> best;
+  for (const auto & lanelet : road_lanelets) {
+    update_closest_boundary_from_polygon(
+      point, to_polygon_2d(lanelet.polygon2d().basicPolygon()), best);
+  }
+  for (const auto & lanelet : shoulder_lanelets) {
+    update_closest_boundary_from_polygon(
+      point, to_polygon_2d(lanelet.polygon2d().basicPolygon()), best);
+  }
+  for (const auto & polygon : intersection_areas) {
+    update_closest_boundary_from_polygon(
+      point, to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()), best);
+  }
+  for (const auto & polygon : hatched_road_markings) {
+    update_closest_boundary_from_polygon(
+      point, to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()), best);
+  }
+  for (const auto & polygon : parking_lots) {
+    update_closest_boundary_from_polygon(
+      point, to_polygon_2d(lanelet::utils::to2D(polygon).basicPolygon()), best);
   }
   return best;
 }
@@ -406,88 +439,136 @@ std::vector<bool> evaluate_road_border_side_fallback(
     if (semantic_corner_drivable.at(index)) {
       continue;
     }
-    const auto closest_segment = find_closest_road_border_segment(footprint_points.at(index), road_border_lines);
-    if (!closest_segment.has_value()) {
+    const auto semantic_boundary = find_closest_semantic_boundary_point(
+      footprint_points.at(index), road_lanelets, shoulder_lanelets, intersection_areas,
+      hatched_road_markings, parking_lots);
+    if (!semantic_boundary.has_value()) {
       continue;
     }
 
-    RoadBorderSideTest test;
-    test.corner_index = index;
-    test.corner = footprint_points.at(index);
-    test.segment_start = closest_segment->segment_start;
-    test.segment_end = closest_segment->segment_end;
-    test.closest_point = closest_segment->closest_point;
-    test.distance_m = closest_segment->distance_m;
-    test.corner_semantic_distance_m = distance_to_semantic_drivable_area(
-      test.corner, road_lanelets, shoulder_lanelets, intersection_areas, hatched_road_markings,
-      parking_lots);
+    std::optional<RoadBorderSideTest> best_rejected_test;
+    std::optional<RoadBorderSideTest> best_accepted_test;
+    for (const auto & line_string : road_border_lines) {
+      const auto line_2d = lanelet::utils::to2D(line_string);
+      if (line_2d.size() < 2U) {
+        continue;
+      }
+      for (std::size_t segment_index = 1; segment_index < line_2d.size(); ++segment_index) {
+        RoadBorderSideTest test;
+        test.corner_index = index;
+        test.corner = footprint_points.at(index);
+        test.semantic_closest_point = semantic_boundary->point;
+        test.segment_start = autoware_utils_geometry::Point2d{
+          line_2d[segment_index - 1U].x(), line_2d[segment_index - 1U].y()};
+        test.segment_end =
+          autoware_utils_geometry::Point2d{line_2d[segment_index].x(), line_2d[segment_index].y()};
+        const double segment_dx = test.segment_end.x() - test.segment_start.x();
+        const double segment_dy = test.segment_end.y() - test.segment_start.y();
+        const double segment_length = std::hypot(segment_dx, segment_dy);
+        if (segment_length < kMinRoadBorderSegmentLengthM) {
+          continue;
+        }
 
-    const double segment_dx = test.segment_end.x() - test.segment_start.x();
-    const double segment_dy = test.segment_end.y() - test.segment_start.y();
-    const double segment_length = std::hypot(segment_dx, segment_dy);
-    if (segment_length < kMinRoadBorderSegmentLengthM) {
-      side_tests.push_back(test);
-      continue;
-    }
-    const double normal_x = -segment_dy / segment_length;
-    const double normal_y = segment_dx / segment_length;
-    bool found_unambiguous_side = false;
-    for (const double probe_distance_m : kRoadBorderSideProbeDistancesM) {
-      test.plus_sample = autoware_utils_geometry::Point2d{
-        test.closest_point.x() + normal_x * probe_distance_m,
-        test.closest_point.y() + normal_y * probe_distance_m};
-      test.minus_sample = autoware_utils_geometry::Point2d{
-        test.closest_point.x() - normal_x * probe_distance_m,
-        test.closest_point.y() - normal_y * probe_distance_m};
-      test.plus_sample_drivable = point_in_semantic_drivable_area(
-        test.plus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
-        hatched_road_markings, parking_lots);
-      test.minus_sample_drivable = point_in_semantic_drivable_area(
-        test.minus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
-        hatched_road_markings, parking_lots);
-      test.plus_sample_semantic_distance_m = test.plus_sample_drivable
-                                               ? 0.0
-                                               : distance_to_semantic_drivable_area(
-                                                   test.plus_sample, road_lanelets,
-                                                   shoulder_lanelets, intersection_areas,
-                                                   hatched_road_markings, parking_lots);
-      test.minus_sample_semantic_distance_m = test.minus_sample_drivable
-                                                ? 0.0
-                                                : distance_to_semantic_drivable_area(
-                                                    test.minus_sample, road_lanelets,
-                                                    shoulder_lanelets, intersection_areas,
-                                                    hatched_road_markings, parking_lots);
-      const bool plus_road_side_candidate =
-        test.plus_sample_drivable ||
-        test.plus_sample_semantic_distance_m <= kRoadBorderSemanticSideToleranceM;
-      const bool minus_road_side_candidate =
-        test.minus_sample_drivable ||
-        test.minus_sample_semantic_distance_m <= kRoadBorderSemanticSideToleranceM;
-      if (plus_road_side_candidate != minus_road_side_candidate) {
-        found_unambiguous_side = true;
-        break;
+        test.closest_point = closest_point_on_segment(test.corner, test.segment_start, test.segment_end);
+        test.distance_m = std::sqrt(squared_distance(test.corner, test.closest_point));
+        test.corner_semantic_distance_m = semantic_boundary->distance_m;
+
+        const double semantic_to_border_x = test.closest_point.x() - semantic_boundary->point.x();
+        const double semantic_to_border_y = test.closest_point.y() - semantic_boundary->point.y();
+        const double semantic_to_border_sq =
+          semantic_to_border_x * semantic_to_border_x + semantic_to_border_y * semantic_to_border_y;
+        test.semantic_to_border_distance_m = std::sqrt(semantic_to_border_sq);
+        if (semantic_to_border_sq > kMinRoadBorderSegmentLengthM * kMinRoadBorderSegmentLengthM) {
+          const double corner_vector_x = test.corner.x() - semantic_boundary->point.x();
+          const double corner_vector_y = test.corner.y() - semantic_boundary->point.y();
+          test.corner_between_ratio =
+            (corner_vector_x * semantic_to_border_x + corner_vector_y * semantic_to_border_y) /
+            semantic_to_border_sq;
+          const auto projected_on_semantic_to_border = autoware_utils_geometry::Point2d{
+            semantic_boundary->point.x() + test.corner_between_ratio * semantic_to_border_x,
+            semantic_boundary->point.y() + test.corner_between_ratio * semantic_to_border_y};
+          test.corner_to_semantic_border_line_m =
+            std::sqrt(squared_distance(test.corner, projected_on_semantic_to_border));
+          const double tangent_x = segment_dx / segment_length;
+          const double tangent_y = segment_dy / segment_length;
+          test.border_tangent_alignment = std::abs(
+            (semantic_to_border_x / test.semantic_to_border_distance_m) * tangent_x +
+            (semantic_to_border_y / test.semantic_to_border_distance_m) * tangent_y);
+        }
+
+        const double normal_x = -segment_dy / segment_length;
+        const double normal_y = segment_dx / segment_length;
+        bool found_unambiguous_side = false;
+        for (const double probe_distance_m : kRoadBorderSideProbeDistancesM) {
+          test.plus_sample = autoware_utils_geometry::Point2d{
+            test.closest_point.x() + normal_x * probe_distance_m,
+            test.closest_point.y() + normal_y * probe_distance_m};
+          test.minus_sample = autoware_utils_geometry::Point2d{
+            test.closest_point.x() - normal_x * probe_distance_m,
+            test.closest_point.y() - normal_y * probe_distance_m};
+          test.plus_sample_drivable = point_in_semantic_drivable_area(
+            test.plus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
+            hatched_road_markings, parking_lots);
+          test.minus_sample_drivable = point_in_semantic_drivable_area(
+            test.minus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
+            hatched_road_markings, parking_lots);
+          test.plus_sample_semantic_distance_m =
+            test.plus_sample_drivable
+              ? 0.0
+              : distance_to_semantic_drivable_area(
+                  test.plus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
+                  hatched_road_markings, parking_lots);
+          test.minus_sample_semantic_distance_m =
+            test.minus_sample_drivable
+              ? 0.0
+              : distance_to_semantic_drivable_area(
+                  test.minus_sample, road_lanelets, shoulder_lanelets, intersection_areas,
+                  hatched_road_markings, parking_lots);
+          if (test.plus_sample_drivable != test.minus_sample_drivable) {
+            found_unambiguous_side = true;
+            break;
+          }
+        }
+
+        if (found_unambiguous_side) {
+          const auto road_side_sample = test.plus_sample_drivable ? test.plus_sample : test.minus_sample;
+          const double corner_side =
+            (test.corner.x() - test.closest_point.x()) * normal_x +
+            (test.corner.y() - test.closest_point.y()) * normal_y;
+          const double road_side =
+            (road_side_sample.x() - test.closest_point.x()) * normal_x +
+            (road_side_sample.y() - test.closest_point.y()) * normal_y;
+          const bool same_road_side = corner_side * road_side > kRoadBorderSideEpsilon;
+          const bool bounded_gap =
+            test.corner_between_ratio >= -0.05 && test.corner_between_ratio <= 1.05 &&
+            test.corner_to_semantic_border_line_m <= kRoadBorderBetweenToleranceM;
+          const bool across_border =
+            test.border_tangent_alignment <= kRoadBorderMaxTangentAlignment;
+          test.accepted =
+            same_road_side && bounded_gap && across_border &&
+            test.distance_m <= kRoadBorderMaxGapM &&
+            test.semantic_to_border_distance_m <= kRoadBorderMaxSemanticToBorderM;
+        }
+
+        if (
+          !best_rejected_test.has_value() ||
+          test.distance_m < best_rejected_test->distance_m) {
+          best_rejected_test = test;
+        }
+        if (
+          test.accepted &&
+          (!best_accepted_test.has_value() || test.distance_m < best_accepted_test->distance_m)) {
+          best_accepted_test = test;
+        }
       }
     }
 
-    if (
-      test.corner_semantic_distance_m <= kRoadBorderSemanticSideToleranceM &&
-      found_unambiguous_side) {
-      const bool plus_road_side_candidate =
-        test.plus_sample_drivable ||
-        test.plus_sample_semantic_distance_m <= kRoadBorderSemanticSideToleranceM;
-      const auto road_side_sample = plus_road_side_candidate ? test.plus_sample : test.minus_sample;
-      const double corner_side =
-        (test.corner.x() - test.closest_point.x()) * normal_x +
-        (test.corner.y() - test.closest_point.y()) * normal_y;
-      const double road_side =
-        (road_side_sample.x() - test.closest_point.x()) * normal_x +
-        (road_side_sample.y() - test.closest_point.y()) * normal_y;
-      test.accepted = corner_side * road_side > kRoadBorderSideEpsilon;
-    }
-    if (test.accepted) {
+    if (best_accepted_test.has_value()) {
       corner_drivable_by_road_border.at(index) = true;
+      side_tests.push_back(*best_accepted_test);
+    } else if (best_rejected_test.has_value()) {
+      side_tests.push_back(*best_rejected_test);
     }
-    side_tests.push_back(test);
   }
   return corner_drivable_by_road_border;
 }

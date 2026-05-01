@@ -83,6 +83,7 @@ struct RoadBorderSideTest
 {
   std::size_t corner_index{0};
   autoware_utils_geometry::Point2d corner;
+  autoware_utils_geometry::Point2d semantic_closest_point;
   autoware_utils_geometry::Point2d segment_start;
   autoware_utils_geometry::Point2d segment_end;
   autoware_utils_geometry::Point2d closest_point;
@@ -93,6 +94,10 @@ struct RoadBorderSideTest
   bool accepted{false};
   double distance_m{std::numeric_limits<double>::infinity()};
   double corner_semantic_distance_m{std::numeric_limits<double>::infinity()};
+  double semantic_to_border_distance_m{std::numeric_limits<double>::infinity()};
+  double corner_between_ratio{std::numeric_limits<double>::quiet_NaN()};
+  double corner_to_semantic_border_line_m{std::numeric_limits<double>::infinity()};
+  double border_tangent_alignment{std::numeric_limits<double>::infinity()};
   double plus_sample_semantic_distance_m{std::numeric_limits<double>::infinity()};
   double minus_sample_semantic_distance_m{std::numeric_limits<double>::infinity()};
 };

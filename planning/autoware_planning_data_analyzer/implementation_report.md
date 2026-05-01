@@ -1344,24 +1344,30 @@ $$
 $$
 
 Only when this semantic check fails does the code use a `road_border` fallback.
-Nearby `road_border` line strings are queried from a `2 m` footprint bbox:
+Nearby `road_border` line strings are queried from a `5 m` footprint bbox:
 
 $$
 \mathcal{B}_t^{aw}
 =
-\mathrm{RoadBorderLines}(\mathrm{expandedBBox}_{2m}(P_t^{aw})).
+\mathrm{RoadBorderLines}(\mathrm{expandedBBox}_{5m}(P_t^{aw})).
 $$
 
-Each `road_border` line string is split into finite line segments. For a semantically
-failed corner $X_{t,k}^{aw}$, the closest segment endpoint pair is:
+The fallback treats `road_border` as a final outside boundary, not as drivable area by
+itself. For a semantically failed corner $X_{t,k}^{aw}$, the closest point on the
+semantic drivable union boundary is:
 
 $$
-(A_{t,k}^{aw}, B_{t,k}^{aw})
+\Sigma_{t,k}^{aw}
 =
-\mathrm{ClosestRoadBorderSegment}(X_{t,k}^{aw}, \mathcal{B}_t^{aw}).
+\mathrm{ClosestSemanticBoundaryPoint}
+\left(
+X_{t,k}^{aw}, \mathcal{U}_t^{sem,aw}
+\right).
 $$
 
-Let $Q_{t,k}^{aw}$ be the closest point on that finite segment to the failed corner:
+Each `road_border` line string is split into finite line segments. For each candidate
+segment endpoint pair $(A_{t,k}^{aw}, B_{t,k}^{aw})$, let $Q_{t,k}^{aw}$ be the
+closest point on that finite segment to the failed corner:
 
 $$
 Q_{t,k}^{aw}
@@ -1382,10 +1388,10 @@ n_{t,k}^{aw}
 \frac{(-d_y,\;d_x)}{\|d_{t,k}^{aw}\|}.
 $$
 
-The code probes both sides of the border using an ordered distance sequence
+The code probes both sides of the border from $Q_{t,k}^{aw}$ using an ordered distance sequence
 `0.3 m`, `0.6 m`, `1.0 m`, `1.5 m`, `2.0 m`, `2.5 m`, `3.0 m`, and `4.0 m`
-from the closest point. The first distance that produces exactly one road-side
-candidate is used:
+from the closest point. The first distance that puts exactly one side inside the
+semantic union is used:
 
 $$
 Y_{t,k}^{+}(\rho)=Q_{t,k}^{aw}+\rho n_{t,k}^{aw},
@@ -1395,36 +1401,36 @@ Y_{t,k}^{-}(\rho)=Q_{t,k}^{aw}-\rho n_{t,k}^{aw},
 \rho\in\{0.3,0.6,1.0,1.5,2.0,2.5,3.0,4.0\}.
 $$
 
-For a probe point, the trusted road-side candidate is inferred from the semantic
-union itself or from a small distance to that semantic union:
+The road side is inferred only from actual semantic containment:
 
 $$
-\mathrm{NearSem}_{t,k}^{+}
+\mathrm{PlusRoadSide}_{t,k}^{aw}
 =
 \left[
-\mathrm{dist}\left(Y_{t,k}^{+}(\rho),\mathcal{U}_t^{sem,aw}\right)
-\le 0.75
+Y_{t,k}^{+}(\rho)\in\mathcal{U}_t^{sem,aw}
 \right],
 \qquad
-\mathrm{NearSem}_{t,k}^{-}
+\mathrm{MinusRoadSide}_{t,k}^{aw}
 =
 \left[
-\mathrm{dist}\left(Y_{t,k}^{-}(\rho),\mathcal{U}_t^{sem,aw}\right)
-\le 0.75
+Y_{t,k}^{-}(\rho)\in\mathcal{U}_t^{sem,aw}
 \right].
 $$
 
-This tolerance is **not** a standalone expansion of drivable space. It is used only
-to infer which side of the closest `road_border` is the road side when the finite
-probe stops just short of the lane polygon. The side test is valid only when exactly
-one side is semantic-near. If both sides are semantic-near, or neither side is
-semantic-near, the border fallback is rejected as ambiguous. The failed corner is
-accepted by the border fallback only when all of the following are true:
+The side test is valid only when exactly one side is semantic-drivable. If both sides
+are semantic-drivable, or neither side is semantic-drivable, the border fallback is
+rejected as ambiguous. The failed corner is accepted by the border fallback only when
+all of the following are true:
 
 - the closest segment exists,
-- exactly one of $Y_{t,k}^{+}$ and $Y_{t,k}^{-}$ is semantic-near,
-- the failed corner is also within `0.75 m` of the semantic drivable union,
-- the failed corner lies on the same signed half-plane as the semantic-near side.
+- exactly one of $Y_{t,k}^{+}$ and $Y_{t,k}^{-}$ is inside the semantic drivable union,
+- the failed corner lies on the same signed half-plane as the semantic-drivable side,
+- the failed corner lies in the bounded gap between semantic boundary point
+  $\Sigma_{t,k}^{aw}$ and border point $Q_{t,k}^{aw}$,
+- the direction from $\Sigma_{t,k}^{aw}$ to $Q_{t,k}^{aw}$ is across the border rather
+  than along it,
+- the failed corner is within `3.0 m` of the border point,
+- the semantic-boundary-to-border distance is at most `4.0 m`.
 
 The signed half-plane check is:
 
@@ -1438,8 +1444,49 @@ $$
 \right],
 $$
 
-where $Y_{t,k}^{road}$ is whichever of $Y_{t,k}^{+}$ or $Y_{t,k}^{-}$ is semantic-near
+where $Y_{t,k}^{road}$ is whichever of $Y_{t,k}^{+}$ or $Y_{t,k}^{-}$ is semantic-drivable
 at the first unambiguous probe distance.
+
+The bounded-gap test projects the failed corner onto the segment from the semantic
+boundary point to the border point:
+
+$$
+\lambda_{t,k}^{aw}
+=
+\frac{
+\left(X_{t,k}^{aw}-\Sigma_{t,k}^{aw}\right)\cdot
+\left(Q_{t,k}^{aw}-\Sigma_{t,k}^{aw}\right)
+}{
+\left\|Q_{t,k}^{aw}-\Sigma_{t,k}^{aw}\right\|^2
+}.
+$$
+
+The candidate is between the semantic boundary and the border only when:
+
+$$
+\mathrm{Between}_{t,k}^{aw}
+=
+\left[-0.05\le\lambda_{t,k}^{aw}\le1.05\right]
+\land
+\left[
+\mathrm{dist}\left(
+X_{t,k}^{aw},
+\mathrm{line}\left(\Sigma_{t,k}^{aw}, Q_{t,k}^{aw}\right)
+\right)\le0.75
+\right].
+$$
+
+The across-road check rejects border segments that are merely close along the road
+direction. With $\hat{e}_{SQ}$ as the unit vector from semantic boundary to border and
+$\hat{t}_{AB}$ as the border segment tangent:
+
+$$
+\mathrm{AcrossBorder}_{t,k}^{aw}
+=
+\left[
+\left|\hat{e}_{SQ}\cdot\hat{t}_{AB}\right|\le0.6
+\right].
+$$
 
 Thus:
 
@@ -1447,15 +1494,27 @@ $$
 \mathrm{RoadBorderFallback}_{t,k}^{aw}
 =
 \left[
-\mathrm{dist}\left(X_{t,k}^{aw},\mathcal{U}_t^{sem,aw}\right)\le0.75
-\right]
-\land
-\left[
-\mathrm{ExactlyOneSemanticNearSide}_{t,k}^{aw}
+\mathrm{ExactlyOneSemanticSide}_{t,k}^{aw}
 \right]
 \land
 \left[
 \mathrm{SameRoadSide}_{t,k}^{aw}
+\right]
+\land
+\left[
+\mathrm{Between}_{t,k}^{aw}
+\right]
+\land
+\left[
+\mathrm{AcrossBorder}_{t,k}^{aw}
+\right]
+\land
+\left[
+\mathrm{dist}\left(X_{t,k}^{aw},Q_{t,k}^{aw}\right)\le3.0
+\right]
+\land
+\left[
+\mathrm{dist}\left(\Sigma_{t,k}^{aw},Q_{t,k}^{aw}\right)\le4.0
 \right].
 $$
 
