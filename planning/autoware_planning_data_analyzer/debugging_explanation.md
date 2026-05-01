@@ -274,7 +274,7 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
 | `/debug/epdms/dac/road_border_lines` | `visualization_msgs/msg/MarkerArray` | Nearby `road_border` line strings considered by the local closest-segment fallback at the first failing timestep. |
 | `/debug/epdms/dac/road_border_side_test_segments` | `visualization_msgs/msg/MarkerArray` | Closest finite `road_border` segments selected for semantically failed ego corners. |
-| `/debug/epdms/dac/road_border_plus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `+normal * rho` semantic probe points used to infer the road side of the closest border segment. The probe distance `rho` is the first unambiguous value from `0.3, 0.6, 1.0, 1.5, 2.0 m`. |
+| `/debug/epdms/dac/road_border_plus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `+normal * rho` semantic probe points used to infer the road side of the closest border segment. The probe distance `rho` is the first unambiguous value from `0.3, 0.6, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0 m`. A side can be selected if its probe is inside the semantic drivable union or within `0.75 m` of it, but this does not by itself make the corner drivable. |
 | `/debug/epdms/dac/road_border_minus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `-normal * rho` semantic probe points used to infer the road side of the closest border segment. |
 | `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices accepted by the closest-border road-side fallback. |
 | `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
@@ -343,9 +343,9 @@ Recommended interpretation:
 | `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/road_border_lines` | The local `road_border` line strings considered by the fallback. |
 | `/debug/epdms/dac/road_border_side_test_segments` | The closest finite border segment chosen for each semantically failed corner. |
-| `/debug/epdms/dac/road_border_plus_samples` | The plus-normal probe points. If exactly one plus/minus probe is in semantic drivable area, that side determines the road side. |
+| `/debug/epdms/dac/road_border_plus_samples` | The plus-normal probe points. If exactly one plus/minus probe is inside or near the semantic drivable union within `0.75 m`, that side determines the road side. |
 | `/debug/epdms/dac/road_border_minus_samples` | The minus-normal probe points. |
-| `/debug/epdms/dac/road_border_fallback_corners` | Corners that were accepted because they were within `0.5 m` of the closest segment and on the inferred road side. |
+| `/debug/epdms/dac/road_border_fallback_corners` | Corners accepted because they were on the inferred road side and were themselves within `0.75 m` of the semantic drivable union. This is not a standalone lane-boundary expansion; it is gated by the road-border side test. |
 | `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible semantic polygons and were not accepted by the closest-border side fallback. |
 | `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 

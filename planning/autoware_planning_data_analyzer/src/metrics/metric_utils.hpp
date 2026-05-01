@@ -92,6 +92,9 @@ struct RoadBorderSideTest
   bool minus_sample_drivable{false};
   bool accepted{false};
   double distance_m{std::numeric_limits<double>::infinity()};
+  double corner_semantic_distance_m{std::numeric_limits<double>::infinity()};
+  double plus_sample_semantic_distance_m{std::numeric_limits<double>::infinity()};
+  double minus_sample_semantic_distance_m{std::numeric_limits<double>::infinity()};
 };
 
 struct EgoAreaEvaluation

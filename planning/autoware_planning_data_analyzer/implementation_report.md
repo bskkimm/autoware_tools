@@ -1383,42 +1383,48 @@ n_{t,k}^{aw}
 $$
 
 The code probes both sides of the border using an ordered distance sequence
-`0.3 m`, `0.6 m`, `1.0 m`, `1.5 m`, and `2.0 m` from the closest point. The first
-distance that produces exactly one semantic-drivable side is used:
+`0.3 m`, `0.6 m`, `1.0 m`, `1.5 m`, `2.0 m`, `2.5 m`, `3.0 m`, and `4.0 m`
+from the closest point. The first distance that produces exactly one road-side
+candidate is used:
 
 $$
 Y_{t,k}^{+}(\rho)=Q_{t,k}^{aw}+\rho n_{t,k}^{aw},
 \qquad
 Y_{t,k}^{-}(\rho)=Q_{t,k}^{aw}-\rho n_{t,k}^{aw},
 \qquad
-\rho\in\{0.3,0.6,1.0,1.5,2.0\}.
+\rho\in\{0.3,0.6,1.0,1.5,2.0,2.5,3.0,4.0\}.
 $$
 
-The road side is inferred only from the trusted semantic union:
+For a probe point, the trusted road-side candidate is inferred from the semantic
+union itself or from a small distance to that semantic union:
 
 $$
-\mathrm{PlusRoadSide}_{t,k}^{aw}
+\mathrm{NearSem}_{t,k}^{+}
 =
 \left[
-Y_{t,k}^{+}(\rho)\in\mathcal{U}_t^{sem,aw}
+\mathrm{dist}\left(Y_{t,k}^{+}(\rho),\mathcal{U}_t^{sem,aw}\right)
+\le 0.75
 \right],
 \qquad
-\mathrm{MinusRoadSide}_{t,k}^{aw}
+\mathrm{NearSem}_{t,k}^{-}
 =
 \left[
-Y_{t,k}^{-}(\rho)\in\mathcal{U}_t^{sem,aw}
+\mathrm{dist}\left(Y_{t,k}^{-}(\rho),\mathcal{U}_t^{sem,aw}\right)
+\le 0.75
 \right].
 $$
 
-The side test is valid only when exactly one side is semantic-drivable. If both sides
-are semantic-drivable, or neither side is semantic-drivable, the border fallback is
-rejected as ambiguous. The failed corner is accepted by the border fallback only when
-all of the following are true:
+This tolerance is **not** a standalone expansion of drivable space. It is used only
+to infer which side of the closest `road_border` is the road side when the finite
+probe stops just short of the lane polygon. The side test is valid only when exactly
+one side is semantic-near. If both sides are semantic-near, or neither side is
+semantic-near, the border fallback is rejected as ambiguous. The failed corner is
+accepted by the border fallback only when all of the following are true:
 
 - the closest segment exists,
-- the distance $\|X_{t,k}^{aw}-Q_{t,k}^{aw}\|$ is at most `0.5 m`,
-- exactly one of $Y_{t,k}^{+}$ and $Y_{t,k}^{-}$ is inside the semantic drivable union,
-- the failed corner lies on the same signed half-plane as the semantic-drivable side.
+- exactly one of $Y_{t,k}^{+}$ and $Y_{t,k}^{-}$ is semantic-near,
+- the failed corner is also within `0.75 m` of the semantic drivable union,
+- the failed corner lies on the same signed half-plane as the semantic-near side.
 
 The signed half-plane check is:
 
@@ -1432,8 +1438,8 @@ $$
 \right],
 $$
 
-where $Y_{t,k}^{road}$ is whichever of $Y_{t,k}^{+}$ or $Y_{t,k}^{-}$ lies inside the
-semantic drivable union at the first unambiguous probe distance.
+where $Y_{t,k}^{road}$ is whichever of $Y_{t,k}^{+}$ or $Y_{t,k}^{-}$ is semantic-near
+at the first unambiguous probe distance.
 
 Thus:
 
@@ -1441,11 +1447,11 @@ $$
 \mathrm{RoadBorderFallback}_{t,k}^{aw}
 =
 \left[
-\|X_{t,k}^{aw}-Q_{t,k}^{aw}\|\le0.5
+\mathrm{dist}\left(X_{t,k}^{aw},\mathcal{U}_t^{sem,aw}\right)\le0.75
 \right]
 \land
 \left[
-\mathrm{ExactlyOneSemanticSide}_{t,k}^{aw}
+\mathrm{ExactlyOneSemanticNearSide}_{t,k}^{aw}
 \right]
 \land
 \left[
