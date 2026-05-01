@@ -172,10 +172,6 @@ void fill_debug_info(
       debug_info.admissible_parking_areas.push_back(DrivableAreaComplianceDebugPolygon{
         time_s, parking_polygon_to_points(parking_lot, point.pose.position.z + 0.06)});
     }
-    if (area.road_border_envelope.has_value()) {
-      debug_info.road_border_envelopes.push_back(DrivableAreaComplianceDebugPolygon{
-        time_s, polygon_to_points(area.road_border_envelope.value(), point.pose.position.z + 0.07)});
-    }
     for (const auto & road_border_line : area.road_border_lines) {
       debug_info.road_border_lines.push_back(DrivableAreaComplianceDebugPolygon{
         time_s, line_string_to_points(road_border_line, point.pose.position.z + 0.08)});
@@ -185,12 +181,34 @@ void fill_debug_info(
         time_s,
         {to_msg_point(side_test.segment_start, point.pose.position.z + 0.09),
          to_msg_point(side_test.segment_end, point.pose.position.z + 0.09)}});
+      debug_info.road_border_gap_segments.push_back(DrivableAreaComplianceDebugPolygon{
+        time_s,
+        {to_msg_point(side_test.semantic_closest_point, point.pose.position.z + 0.10),
+         to_msg_point(side_test.closest_point, point.pose.position.z + 0.10)}});
+      debug_info.semantic_boundary_points.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, side_test.corner_index,
+        to_msg_point(side_test.semantic_closest_point, point.pose.position.z + 0.11)});
+      debug_info.road_border_closest_points.push_back(DrivableAreaComplianceDebugCorner{
+        time_s, side_test.corner_index,
+        to_msg_point(side_test.closest_point, point.pose.position.z + 0.12)});
+      if (std::isfinite(side_test.corner_between_ratio)) {
+        const auto projection_point = autoware_utils_geometry::Point2d{
+          side_test.semantic_closest_point.x() +
+            side_test.corner_between_ratio *
+              (side_test.closest_point.x() - side_test.semantic_closest_point.x()),
+          side_test.semantic_closest_point.y() +
+            side_test.corner_between_ratio *
+              (side_test.closest_point.y() - side_test.semantic_closest_point.y())};
+        debug_info.corner_projection_points.push_back(DrivableAreaComplianceDebugCorner{
+          time_s, side_test.corner_index,
+          to_msg_point(projection_point, point.pose.position.z + 0.13)});
+      }
       debug_info.road_border_plus_samples.push_back(DrivableAreaComplianceDebugCorner{
         time_s, side_test.corner_index,
-        to_msg_point(side_test.plus_sample, point.pose.position.z + 0.10)});
+        to_msg_point(side_test.plus_sample, point.pose.position.z + 0.14)});
       debug_info.road_border_minus_samples.push_back(DrivableAreaComplianceDebugCorner{
         time_s, side_test.corner_index,
-        to_msg_point(side_test.minus_sample, point.pose.position.z + 0.10)});
+        to_msg_point(side_test.minus_sample, point.pose.position.z + 0.15)});
     }
   }
 }

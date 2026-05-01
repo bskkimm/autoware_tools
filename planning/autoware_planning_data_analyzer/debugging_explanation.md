@@ -274,6 +274,10 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/admissible_parking_areas` | `visualization_msgs/msg/MarkerArray` | `parking_lot` polygons used by DAC at the first failing timestep. |
 | `/debug/epdms/dac/road_border_lines` | `visualization_msgs/msg/MarkerArray` | Nearby `road_border` line strings considered by the bounded-gap fallback at the first failing timestep. |
 | `/debug/epdms/dac/road_border_side_test_segments` | `visualization_msgs/msg/MarkerArray` | Candidate finite `road_border` segments selected for semantically failed ego corners. Accepted segments are the nearest segment that forms a valid semantic-boundary-to-border gap; rejected segments are the nearest tested segment. |
+| `/debug/epdms/dac/road_border_gap_segments` | `visualization_msgs/msg/MarkerArray` | The `S -> B` bounded-gap segment from closest semantic boundary point `S` to closest road-border point `B`. |
+| `/debug/epdms/dac/semantic_boundary_points` | `visualization_msgs/msg/MarkerArray` | Closest semantic drivable boundary point `S` for each tested failed corner. |
+| `/debug/epdms/dac/road_border_closest_points` | `visualization_msgs/msg/MarkerArray` | Closest point `B` on the tested road-border segment. |
+| `/debug/epdms/dac/corner_projection_points` | `visualization_msgs/msg/MarkerArray` | Projection of failed corner `C` onto the `S -> B` gap segment, used to judge whether `C` lies between semantic boundary and road border. |
 | `/debug/epdms/dac/road_border_plus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `+normal * rho` probe points used to infer the road side of the candidate border segment. The probe distance `rho` is the first unambiguous value from `0.3, 0.6, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0 m`; exactly one side must be inside the semantic drivable union. |
 | `/debug/epdms/dac/road_border_minus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `-normal * rho` semantic probe points used to infer the road side of the closest border segment. |
 | `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices accepted by the closest-border road-side fallback. |
@@ -343,6 +347,10 @@ Recommended interpretation:
 | `/debug/epdms/dac/admissible_parking_areas` | The parking-lot polygons used to judge the first failing DAC sample. |
 | `/debug/epdms/dac/road_border_lines` | The local `road_border` line strings considered by the fallback. |
 | `/debug/epdms/dac/road_border_side_test_segments` | The candidate finite border segment retained for each semantically failed corner: nearest accepted bounded-gap segment, or nearest rejected segment if no candidate passed. |
+| `/debug/epdms/dac/road_border_gap_segments` | The yellow `S -> B` line: from semantic boundary to road border. The failed corner should lie near and between the endpoints to pass. |
+| `/debug/epdms/dac/semantic_boundary_points` | Yellow square marker for `S`, the closest semantic drivable boundary point. |
+| `/debug/epdms/dac/road_border_closest_points` | Purple square marker for `B`, the closest point on the candidate road border. |
+| `/debug/epdms/dac/corner_projection_points` | White square marker for the projection of `C` onto `S -> B`; large visual separation from `C` explains bounded-gap rejection. |
 | `/debug/epdms/dac/road_border_plus_samples` | The plus-normal probe points. If exactly one plus/minus probe is inside the semantic drivable union, that side determines the road side. |
 | `/debug/epdms/dac/road_border_minus_samples` | The minus-normal probe points. |
 | `/debug/epdms/dac/road_border_fallback_corners` | Corners accepted because they lie on the inferred road side and in the bounded gap between the semantic drivable boundary and the final `road_border`. |

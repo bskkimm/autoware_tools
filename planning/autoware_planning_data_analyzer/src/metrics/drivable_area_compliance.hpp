@@ -75,9 +75,12 @@ struct DrivableAreaComplianceDebugInfo
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_intersection_areas;
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_hatched_road_markings;
   std::vector<DrivableAreaComplianceDebugPolygon> admissible_parking_areas;
-  std::vector<DrivableAreaComplianceDebugPolygon> road_border_envelopes;
   std::vector<DrivableAreaComplianceDebugPolygon> road_border_lines;
   std::vector<DrivableAreaComplianceDebugPolygon> road_border_side_test_segments;
+  std::vector<DrivableAreaComplianceDebugPolygon> road_border_gap_segments;
+  std::vector<DrivableAreaComplianceDebugCorner> semantic_boundary_points;
+  std::vector<DrivableAreaComplianceDebugCorner> road_border_closest_points;
+  std::vector<DrivableAreaComplianceDebugCorner> corner_projection_points;
   std::vector<DrivableAreaComplianceDebugCorner> road_border_plus_samples;
   std::vector<DrivableAreaComplianceDebugCorner> road_border_minus_samples;
   std::vector<DrivableAreaComplianceDebugCorner> road_border_fallback_corners;
