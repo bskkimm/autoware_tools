@@ -14,7 +14,7 @@
 
 #include "ego_progress.hpp"
 
-#include "metric_utils.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
 
@@ -35,13 +35,18 @@ namespace
 
 std::optional<double> calculate_raw_progress_m(
   const Trajectory & trajectory, const std::shared_ptr<RouteHandler> & route_handler,
-  std::vector<geometry_msgs::msg::Point> * route_reference_points)
+  std::vector<geometry_msgs::msg::Point> * route_reference_points,
+  const lanelet::ConstLanelets * route_relevant_lanelets)
 {
   if (trajectory.points.size() < 2U) {
     return std::nullopt;
   }
 
-  const auto route_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
+  const auto local_route_lanelets =
+    route_relevant_lanelets ? lanelet::ConstLanelets{}
+                            : collect_route_relevant_lanelets(trajectory, route_handler);
+  const auto & route_lanelets =
+    route_relevant_lanelets ? *route_relevant_lanelets : local_route_lanelets;
   if (route_lanelets.empty()) {
     return std::nullopt;
   }
@@ -79,7 +84,8 @@ EgoProgressResult calculate_ego_progress(
   const bool no_at_fault_collision_available, const double drivable_area_compliance,
   const bool drivable_area_compliance_available, const double driving_direction_compliance,
   const bool driving_direction_compliance_available, const double traffic_light_compliance,
-  const bool traffic_light_compliance_available)
+  const bool traffic_light_compliance_available,
+  const lanelet::ConstLanelets * route_relevant_lanelets)
 {
   EgoProgressResult result;
 
@@ -108,8 +114,8 @@ EgoProgressResult calculate_ego_progress(
 
   result.start_point = selected_trajectory->points.front().pose.position;
   result.end_point = selected_trajectory->points.back().pose.position;
-  const auto selected_raw_progress =
-    calculate_raw_progress_m(*selected_trajectory, route_handler, &result.route_reference_points);
+  const auto selected_raw_progress = calculate_raw_progress_m(
+    *selected_trajectory, route_handler, &result.route_reference_points, route_relevant_lanelets);
   if (!selected_raw_progress.has_value()) {
     result.reason = "unavailable_no_route_lanelets";
     return result;

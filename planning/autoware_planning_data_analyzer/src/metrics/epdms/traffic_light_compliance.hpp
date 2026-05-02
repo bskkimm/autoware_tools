@@ -15,8 +15,8 @@
 #ifndef METRICS__TRAFFIC_LIGHT_COMPLIANCE_HPP_
 #define METRICS__TRAFFIC_LIGHT_COMPLIANCE_HPP_
 
-#include "../data_types.hpp"
-#include "metric_utils.hpp"
+#include "../../data_types.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
@@ -70,7 +70,8 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
   const std::shared_ptr<RouteHandler> & route_handler,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status = nullptr,
-  const std::vector<TrajectoryFootprintEvaluation> * evaluations = nullptr);
+  const std::vector<TrajectoryFootprintEvaluation> * evaluations = nullptr,
+  const lanelet::ConstLanelets * route_relevant_lanelets = nullptr);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

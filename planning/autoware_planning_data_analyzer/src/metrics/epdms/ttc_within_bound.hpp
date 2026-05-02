@@ -15,7 +15,8 @@
 #ifndef METRICS__TTC_WITHIN_BOUND_HPP_
 #define METRICS__TTC_WITHIN_BOUND_HPP_
 
-#include "../data_types.hpp"
+#include "../../data_types.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
@@ -31,8 +32,6 @@ namespace autoware::planning_data_analyzer::metrics
 {
 
 using autoware::route_handler::RouteHandler;
-
-struct TrajectoryFootprintEvaluation;
 
 struct TTCWithinBoundDebugEvent
 {
@@ -98,7 +97,8 @@ TTCWithinBoundResult calculate_ttc_within_bound(
   const std::vector<TimedTrackedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler = nullptr,
-  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations = nullptr);
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations = nullptr,
+  const std::vector<LoggedObjectTrack> * object_tracks = nullptr);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

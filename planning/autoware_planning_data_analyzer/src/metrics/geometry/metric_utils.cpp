@@ -896,7 +896,8 @@ lanelet::ConstLanelets collect_route_relevant_lanelets(
 
 std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
   const geometry_msgs::msg::Pose & pose, const autoware_utils_geometry::Polygon2d & ego_polygon,
-  const std::shared_ptr<RouteHandler> & route_handler, const lanelet::ConstLanelets & designated_lanelets)
+  const std::shared_ptr<RouteHandler> & route_handler, const lanelet::ConstLanelets & designated_lanelets,
+  const bool evaluate_intersection_context)
 {
   if (!route_handler) {
     return std::nullopt;
@@ -944,6 +945,12 @@ std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
   evaluation.flags.multiple_lanes = detect_multiple_lanes(points, road_lanelets);
   evaluation.flags.non_drivable_area = std::any_of(
     corner_drivable.begin(), corner_drivable.end(), [](const bool value) { return !value; });
+  if (evaluate_intersection_context) {
+    const auto intersection_context = compute_driving_direction_local_context(pose, route_handler);
+    evaluation.flags.intersection_context_available = intersection_context.has_value();
+    evaluation.flags.in_intersection =
+      intersection_context.has_value() && intersection_context->in_intersection;
+  }
   evaluation.flags.road_border_fallback_used = false;
   for (std::size_t index = 0; index < corner_drivable.size(); ++index) {
     if (!semantic_corner_drivable.at(index) && corner_drivable_by_road_border.at(index)) {
@@ -970,7 +977,9 @@ std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
 std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
-  const std::shared_ptr<RouteHandler> & route_handler)
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const lanelet::ConstLanelets * route_relevant_lanelets,
+  const bool evaluate_intersection_context)
 {
   std::vector<TrajectoryFootprintEvaluation> evaluations;
   if (!is_vehicle_info_valid(vehicle_info)) {
@@ -982,10 +991,12 @@ std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
     return evaluations;
   }
 
-  const auto designated_lanelets =
-    route_handler && route_handler->isHandlerReady()
+  const auto local_designated_lanelets =
+    route_relevant_lanelets == nullptr && route_handler && route_handler->isHandlerReady()
       ? collect_route_relevant_lanelets(trajectory, route_handler)
       : lanelet::ConstLanelets{};
+  const auto & designated_lanelets =
+    route_relevant_lanelets != nullptr ? *route_relevant_lanelets : local_designated_lanelets;
 
   evaluations.reserve(trajectory.points.size());
   for (const auto & point : trajectory.points) {
@@ -993,7 +1004,8 @@ std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
     evaluation.ego_polygon = create_pose_footprint(point.pose, local_footprint);
     if (route_handler) {
       evaluation.ego_area_evaluation = compute_ego_area_evaluation(
-        point.pose, evaluation.ego_polygon, route_handler, designated_lanelets);
+        point.pose, evaluation.ego_polygon, route_handler, designated_lanelets,
+        evaluate_intersection_context);
     }
     evaluations.push_back(std::move(evaluation));
   }

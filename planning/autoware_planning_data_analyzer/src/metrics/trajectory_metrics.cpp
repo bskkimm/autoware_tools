@@ -14,13 +14,15 @@
 
 #include "trajectory_metrics.hpp"
 
-#include "drivable_area_compliance.hpp"
-#include "driving_direction_compliance.hpp"
-#include "history_comfort.hpp"
-#include "metric_utils.hpp"
-#include "no_at_fault_collision.hpp"
-#include "traffic_light_compliance.hpp"
-#include "ttc_within_bound.hpp"
+#include "epdms/epdms_context.hpp"
+#include "epdms/drivable_area_compliance.hpp"
+#include "epdms/driving_direction_compliance.hpp"
+#include "epdms/ego_progress.hpp"
+#include "epdms/history_comfort.hpp"
+#include "geometry/metric_utils.hpp"
+#include "epdms/no_at_fault_collision.hpp"
+#include "epdms/traffic_light_compliance.hpp"
+#include "epdms/ttc_within_bound.hpp"
 
 #include <autoware/lanelet2_utils/geometry.hpp>
 #include <autoware/lanelet2_utils/intersection.hpp>
@@ -307,13 +309,22 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   const auto & logged_future_objects =
     future_objects.empty() ? sync_data->future_objects : future_objects;
   const size_t num_points = trajectory.points.size();
-  const auto shared_footprint_evaluations =
-    (enabled_metrics.time_to_collision_within_bound || enabled_metrics.drivable_area_compliance ||
-     enabled_metrics.no_at_fault_collision || enabled_metrics.traffic_light_compliance ||
-     enabled_metrics.lane_keeping) &&
-        is_vehicle_info_valid(vehicle_info)
-      ? evaluate_trajectory_footprints(trajectory, vehicle_info, route_handler)
-      : std::vector<TrajectoryFootprintEvaluation>{};
+  const bool needs_footprint_evaluations =
+    enabled_metrics.time_to_collision_within_bound || enabled_metrics.drivable_area_compliance ||
+    enabled_metrics.no_at_fault_collision || enabled_metrics.traffic_light_compliance ||
+    enabled_metrics.lane_keeping;
+  const bool needs_object_tracks =
+    enabled_metrics.time_to_collision_within_bound || enabled_metrics.no_at_fault_collision;
+  const bool needs_route_relevant_lanelets =
+    needs_footprint_evaluations || enabled_metrics.traffic_light_compliance ||
+    enabled_metrics.ego_progress;
+  const auto epdms_context = build_epdms_context(
+    trajectory, logged_future_objects, vehicle_info, route_handler,
+    EpdmsContextBuildOptions{
+      needs_route_relevant_lanelets, needs_footprint_evaluations, needs_object_tracks,
+      enabled_metrics.time_to_collision_within_bound});
+  const auto & shared_footprint_evaluations =
+    epdms_context.trajectory_footprint_evaluations;
 
   // Initialize vectors
   metrics.ttc_values.resize(num_points, std::numeric_limits<double>::max());
@@ -331,7 +342,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   if (enabled_metrics.time_to_collision_within_bound) {
     const auto ttc_within_bound = calculate_ttc_within_bound(
       trajectory, logged_future_objects, vehicle_info, route_handler,
-      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
+      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations,
+      &epdms_context.object_tracks);
     metrics.time_to_collision_within_bound = ttc_within_bound.score;
     metrics.time_to_collision_within_bound_available = ttc_within_bound.available;
     metrics.time_to_collision_within_bound_reason = ttc_within_bound.reason;
@@ -344,7 +356,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
   if (enabled_metrics.no_at_fault_collision) {
     const auto no_at_fault_collision = calculate_no_at_fault_collision(
       trajectory, logged_future_objects, vehicle_info, route_handler,
-      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
+      shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations,
+      &epdms_context.object_tracks);
     metrics.no_at_fault_collision = no_at_fault_collision.score;
     metrics.no_at_fault_collision_available = no_at_fault_collision.available;
     metrics.no_at_fault_collision_reason = no_at_fault_collision.reason;
@@ -482,7 +495,8 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
       const auto traffic_light_compliance = calculate_traffic_light_compliance(
         trajectory, sync_data->traffic_signals, route_handler, vehicle_info,
         sync_data->turn_indicators_status,
-        shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations);
+        shared_footprint_evaluations.empty() ? nullptr : &shared_footprint_evaluations,
+        &epdms_context.route_relevant_lanelets);
       metrics.traffic_light_compliance = traffic_light_compliance.score;
       metrics.traffic_light_compliance_available = traffic_light_compliance.available;
       metrics.traffic_light_compliance_reason = traffic_light_compliance.reason;
@@ -490,11 +504,30 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
     }
   }
 
+  if (enabled_metrics.ego_progress) {
+    const auto ego_progress = calculate_ego_progress(
+      sync_data->trajectory, route_handler, metrics.no_at_fault_collision,
+      metrics.no_at_fault_collision_available, metrics.drivable_area_compliance,
+      metrics.drivable_area_compliance_available, metrics.driving_direction_compliance,
+      metrics.driving_direction_compliance_available, metrics.traffic_light_compliance,
+      metrics.traffic_light_compliance_available, &epdms_context.route_relevant_lanelets);
+    metrics.ego_progress = ego_progress.score;
+    metrics.ego_progress_available = ego_progress.available;
+    metrics.ego_progress_reason = ego_progress.reason;
+    metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
+    metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
+    metrics.ego_progress_mask = ego_progress.multiplicative_mask;
+    metrics.ego_progress_denominator_m = ego_progress.denominator_m;
+    metrics.ego_progress_start_point = ego_progress.start_point;
+    metrics.ego_progress_end_point = ego_progress.end_point;
+    metrics.ego_progress_route_reference_points = ego_progress.route_reference_points;
+  } else {
+    metrics.ego_progress_reason = "disabled";
+  }
+
   // Calculate TTC for each point (based on autoware_trajectory_ranker implementation)
   constexpr double max_ttc_value = 10.0;  // Maximum TTC value in seconds
-  const auto object_tracks =
-    enabled_metrics.time_to_collision_within_bound ? build_logged_object_tracks(logged_future_objects)
-                                                   : std::vector<LoggedObjectTrack>{};
+  const auto & object_tracks = epdms_context.object_tracks;
   if (enabled_metrics.time_to_collision_within_bound && !object_tracks.empty()) {
     const auto trajectory_start_time = rclcpp::Time(trajectory.header.stamp);
     for (size_t i = 0; i < num_points; ++i) {

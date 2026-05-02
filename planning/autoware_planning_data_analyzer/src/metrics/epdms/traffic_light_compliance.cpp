@@ -14,7 +14,7 @@
 
 #include "traffic_light_compliance.hpp"
 
-#include "metric_utils.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/lanelet2_utils/intersection.hpp>
 #include <autoware/traffic_light_utils/traffic_light_utils.hpp>
@@ -303,7 +303,8 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
   const std::shared_ptr<RouteHandler> & route_handler,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<TurnIndicatorsReport> & turn_indicators_status,
-  const std::vector<TrajectoryFootprintEvaluation> * evaluations)
+  const std::vector<TrajectoryFootprintEvaluation> * evaluations,
+  const lanelet::ConstLanelets * route_relevant_lanelets)
 {
   TrafficLightComplianceResult result;
 
@@ -324,7 +325,11 @@ TrafficLightComplianceResult calculate_traffic_light_compliance(
     return result;
   }
 
-  const auto route_lanelets = collect_route_relevant_lanelets(trajectory, route_handler);
+  const auto local_route_lanelets =
+    route_relevant_lanelets ? lanelet::ConstLanelets{}
+                            : collect_route_relevant_lanelets(trajectory, route_handler);
+  const auto & route_lanelets =
+    route_relevant_lanelets ? *route_relevant_lanelets : local_route_lanelets;
   const auto groups =
     build_relevant_traffic_light_groups(route_lanelets, route_handler, turn_indicators_status);
   result.available = true;

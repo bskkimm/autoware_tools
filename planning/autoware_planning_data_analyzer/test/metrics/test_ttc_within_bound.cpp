@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "../../src/metrics/ttc_within_bound.hpp"
-#include "../../src/metrics/metric_utils.hpp"
+#include "../../src/metrics/epdms/ttc_within_bound.hpp"
+#include "../../src/metrics/geometry/metric_utils.hpp"
 
 #include <autoware_utils_geometry/geometry.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>

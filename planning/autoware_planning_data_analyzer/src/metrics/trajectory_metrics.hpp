@@ -16,12 +16,12 @@
 #define METRICS__TRAJECTORY_METRICS_HPP_
 
 #include "../data_types.hpp"
-#include "drivable_area_compliance.hpp"
-#include "driving_direction_compliance.hpp"
-#include "lane_keeping.hpp"
-#include "no_at_fault_collision.hpp"
-#include "traffic_light_compliance.hpp"
-#include "ttc_within_bound.hpp"
+#include "epdms/drivable_area_compliance.hpp"
+#include "epdms/driving_direction_compliance.hpp"
+#include "epdms/lane_keeping.hpp"
+#include "epdms/no_at_fault_collision.hpp"
+#include "epdms/traffic_light_compliance.hpp"
+#include "epdms/ttc_within_bound.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>
@@ -111,6 +111,16 @@ struct TrajectoryPointMetrics
   bool traffic_light_compliance_available{false};
   std::string traffic_light_compliance_reason{"unavailable"};
   TrafficLightComplianceDebugInfo traffic_light_compliance_debug;
+  double ego_progress{0.0};
+  bool ego_progress_available{false};
+  std::string ego_progress_reason{"unavailable"};
+  double ego_progress_raw_m{0.0};
+  double ego_progress_best_raw_m{0.0};
+  double ego_progress_mask{0.0};
+  double ego_progress_denominator_m{0.0};
+  geometry_msgs::msg::Point ego_progress_start_point;
+  geometry_msgs::msg::Point ego_progress_end_point;
+  std::vector<geometry_msgs::msg::Point> ego_progress_route_reference_points;
 };
 
 /**

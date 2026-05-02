@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "../../src/metrics/drivable_area_compliance.hpp"
+#include "../../src/metrics/epdms/drivable_area_compliance.hpp"
 
 #include <autoware_lanelet2_extension/utility/message_conversion.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>

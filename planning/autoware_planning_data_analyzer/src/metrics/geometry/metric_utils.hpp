@@ -15,7 +15,7 @@
 #ifndef METRICS__METRIC_UTILS_HPP_
 #define METRICS__METRIC_UTILS_HPP_
 
-#include "../data_types.hpp"
+#include "../../data_types.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware/vehicle_info_utils/vehicle_info.hpp>
@@ -75,6 +75,8 @@ struct EgoAreaFlags
 {
   bool multiple_lanes{false};
   bool non_drivable_area{false};
+  bool in_intersection{false};
+  bool intersection_context_available{false};
   bool inside_road_border_envelope{false};
   bool road_border_fallback_used{false};
 };
@@ -156,12 +158,15 @@ lanelet::ConstLanelets collect_route_relevant_lanelets(
 std::optional<EgoAreaEvaluation> compute_ego_area_evaluation(
   const geometry_msgs::msg::Pose & pose, const autoware_utils_geometry::Polygon2d & ego_polygon,
   const std::shared_ptr<RouteHandler> & route_handler,
-  const lanelet::ConstLanelets & designated_lanelets = {});
+  const lanelet::ConstLanelets & designated_lanelets = {},
+  bool evaluate_intersection_context = false);
 
 std::vector<TrajectoryFootprintEvaluation> evaluate_trajectory_footprints(
   const autoware_planning_msgs::msg::Trajectory & trajectory,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
-  const std::shared_ptr<RouteHandler> & route_handler = nullptr);
+  const std::shared_ptr<RouteHandler> & route_handler = nullptr,
+  const lanelet::ConstLanelets * route_relevant_lanelets = nullptr,
+  bool evaluate_intersection_context = false);
 
 autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineString3d & line);
 

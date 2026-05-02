@@ -15,7 +15,7 @@
 #ifndef METRICS__DRIVABLE_AREA_COMPLIANCE_HPP_
 #define METRICS__DRIVABLE_AREA_COMPLIANCE_HPP_
 
-#include "metric_utils.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>

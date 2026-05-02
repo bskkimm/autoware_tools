@@ -14,7 +14,7 @@
 
 #include "no_at_fault_collision.hpp"
 
-#include "metric_utils.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/object_recognition_utils/object_classification.hpp>
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
@@ -363,7 +363,8 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
   const std::vector<TimedTrackedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler,
-  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations)
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations,
+  const std::vector<LoggedObjectTrack> * object_tracks)
 {
   NoAtFaultCollisionResult result;
 
@@ -384,8 +385,10 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
   result.score = 1.0;
   result.reason = "available";
 
-  const auto object_tracks = build_logged_object_tracks(future_objects);
-  if (object_tracks.empty()) {
+  const auto local_object_tracks =
+    object_tracks ? std::vector<LoggedObjectTrack>{} : build_logged_object_tracks(future_objects);
+  const auto & tracks = object_tracks ? *object_tracks : local_object_tracks;
+  if (tracks.empty()) {
     return result;
   }
 
@@ -409,7 +412,7 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
     const auto query_time_s = rclcpp::Duration(point.time_from_start).seconds();
     const auto & ego_polygon = evaluations.at(index).ego_polygon;
 
-    for (const auto & object_track : object_tracks) {
+    for (const auto & object_track : tracks) {
       if (
         object_track.has_valid_object_id &&
         collided_object_ids.count(object_track.object_id) > 0U) {
@@ -490,7 +493,7 @@ NoAtFaultCollisionResult calculate_no_at_fault_collision(
   }
 
   fill_horizon_debug_footprints(
-    result.debug_info, trajectory, object_tracks, local_footprint, &evaluations);
+    result.debug_info, trajectory, tracks, local_footprint, &evaluations);
 
   return result;
 }

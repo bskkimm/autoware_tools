@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "../../src/metrics/metric_utils.hpp"
-#include "../../src/metrics/no_at_fault_collision.hpp"
+#include "../../src/metrics/geometry/metric_utils.hpp"
+#include "../../src/metrics/epdms/no_at_fault_collision.hpp"
 
 #include <autoware_lanelet2_extension/utility/message_conversion.hpp>
 #include <autoware_utils_geometry/geometry.hpp>

@@ -14,8 +14,8 @@
 
 #include "open_loop_evaluator.hpp"
 
-#include "metrics/epdms_aggregation.hpp"
-#include "metrics/metric_utils.hpp"
+#include "metrics/epdms/epdms_aggregation.hpp"
+#include "metrics/geometry/metric_utils.hpp"
 #include "metrics/trajectory_metrics.hpp"
 
 #include <autoware/motion_utils/trajectory/conversion.hpp>
@@ -1941,26 +1941,17 @@ void OpenLoopEvaluator::evaluate(
           trajectory_metrics.traffic_light_compliance_available;
         metrics.traffic_light_compliance_reason =
           trajectory_metrics.traffic_light_compliance_reason;
-        if (enabled_metrics_.ego_progress) {
-          const auto ego_progress = metrics::calculate_ego_progress(
-            eval_data.synchronized_data ? eval_data.synchronized_data->trajectory : nullptr,
-            route_handler_, metrics.no_at_fault_collision, metrics.no_at_fault_collision_available,
-            metrics.drivable_area_compliance, metrics.drivable_area_compliance_available,
-            metrics.driving_direction_compliance, metrics.driving_direction_compliance_available,
-            metrics.traffic_light_compliance, metrics.traffic_light_compliance_available);
-          metrics.ego_progress = ego_progress.score;
-          metrics.ego_progress_available = ego_progress.available;
-          metrics.ego_progress_reason = ego_progress.reason;
-          metrics.ego_progress_raw_m = ego_progress.raw_progress_m;
-          metrics.ego_progress_best_raw_m = ego_progress.best_raw_progress_m;
-          metrics.ego_progress_mask = ego_progress.multiplicative_mask;
-          metrics.ego_progress_denominator_m = ego_progress.denominator_m;
-          metrics.ego_progress_start_point = ego_progress.start_point;
-          metrics.ego_progress_end_point = ego_progress.end_point;
-          metrics.ego_progress_route_reference_points = ego_progress.route_reference_points;
-        } else {
-          metrics.ego_progress_reason = "disabled";
-        }
+        metrics.ego_progress = trajectory_metrics.ego_progress;
+        metrics.ego_progress_available = trajectory_metrics.ego_progress_available;
+        metrics.ego_progress_reason = trajectory_metrics.ego_progress_reason;
+        metrics.ego_progress_raw_m = trajectory_metrics.ego_progress_raw_m;
+        metrics.ego_progress_best_raw_m = trajectory_metrics.ego_progress_best_raw_m;
+        metrics.ego_progress_mask = trajectory_metrics.ego_progress_mask;
+        metrics.ego_progress_denominator_m = trajectory_metrics.ego_progress_denominator_m;
+        metrics.ego_progress_start_point = trajectory_metrics.ego_progress_start_point;
+        metrics.ego_progress_end_point = trajectory_metrics.ego_progress_end_point;
+        metrics.ego_progress_route_reference_points =
+          trajectory_metrics.ego_progress_route_reference_points;
 
         metrics::EpdmsMetricSnapshot human_snapshot;
         if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {

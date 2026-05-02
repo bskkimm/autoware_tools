@@ -12,18 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef METRICS__HISTORY_COMFORT_HPP_
-#define METRICS__HISTORY_COMFORT_HPP_
+#ifndef METRICS__EPDMS__EPDMS_TYPES_HPP_
+#define METRICS__EPDMS__EPDMS_TYPES_HPP_
 
-#include "trajectory_metrics.hpp"
+#include "../geometry/metric_utils.hpp"
+
+#include <lanelet2_core/primitives/Lanelet.h>
+
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
 
-void calculate_history_comfort_metrics(
-  const SynchronizedData & sync_data,
-  const HistoryComfortParameters & history_comfort_params, TrajectoryPointMetrics & metrics);
+struct EpdmsContextBuildOptions
+{
+  bool route_relevant_lanelets{false};
+  bool trajectory_footprint_evaluations{false};
+  bool object_tracks{false};
+  bool intersection_context{false};
+};
+
+struct EpdmsContext
+{
+  lanelet::ConstLanelets route_relevant_lanelets;
+  std::vector<TrajectoryFootprintEvaluation> trajectory_footprint_evaluations;
+  std::vector<LoggedObjectTrack> object_tracks;
+};
 
 }  // namespace autoware::planning_data_analyzer::metrics
 
-#endif  // METRICS__HISTORY_COMFORT_HPP_
+#endif  // METRICS__EPDMS__EPDMS_TYPES_HPP_

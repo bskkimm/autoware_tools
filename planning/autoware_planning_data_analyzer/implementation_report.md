@@ -16,9 +16,17 @@ Primary sources:
 - `~/workspace/navsim/navsim/planning/script/run_pdm_score.py`
 - `https://arxiv.org/abs/2406.15349` (NAVSIM)
 - `https://arxiv.org/abs/2506.04218` (pseudo-simulation / NAVSIM v2 context)
-- `planning/autoware_planning_data_analyzer/src/metrics/*.cpp`
-- `planning/autoware_planning_data_analyzer/src/metrics/epdms_aggregation.cpp`
+- `planning/autoware_planning_data_analyzer/src/metrics/trajectory_metrics.cpp`
+- `planning/autoware_planning_data_analyzer/src/metrics/epdms/*.cpp`
+- `planning/autoware_planning_data_analyzer/src/metrics/geometry/*.cpp`
 - `planning/autoware_planning_data_analyzer/src/open_loop_evaluator.cpp`
+
+The EPDMS metric implementation is organized so `trajectory_metrics.cpp` acts as the
+per-trajectory orchestrator. Shared EPDMS artifacts that would otherwise be recomputed
+across subscores are built by `src/metrics/epdms/epdms_context.cpp`: route-relevant
+lanelets, trajectory footprint / semantic drivable-area evaluations, and logged object
+tracks. Geometry, lanelet, object-track, and comfort-signal helpers live under
+`src/metrics/geometry/`.
 
 In the ownership subsections below, the NAVSIM ownership wording follows the "Exact subscore ownership" section of `~/workspace/navsim/EPDMS_report.md`.
 
@@ -64,7 +72,7 @@ Semantically, NC represents the most direct "did this planned behavior crash in 
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_no_at_fault_collision()`
 - **NAVSIM outsourced helper logic:** `pdm_scorer_utils.py::get_collision_type()`
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_polygons`, `self._ego_areas`, `self._states`, `self._collision_time_idcs`
-- **Migrated owner:** `src/metrics/no_at_fault_collision.cpp::calculate_no_at_fault_collision()`
+- **Migrated owner:** `src/metrics/epdms/no_at_fault_collision.cpp::calculate_no_at_fault_collision()`
 - **Migrated local helpers:** `classify_collision()`, `compute_ego_area_flags()`, `build_logged_object_tracks()`, `interpolate_logged_object_state()`, `is_agent_behind()`
 
 ### Required inputs: same availability or replacement?
@@ -618,7 +626,7 @@ Where:
 
 The following describes the local Autoware implementation, not NAVSIM's Python scorer.
 
-In `src/metrics/no_at_fault_collision.cpp`, the process looks like this:
+In `src/metrics/epdms/no_at_fault_collision.cpp`, the process looks like this:
 1.  **Initialization:** Start with a perfect score of 1.0.
 2.  **The Loop:** For every point in the `Trajectory`:
     *   **Step A:** Calculate the Ego Bumper position at that time.
@@ -1132,8 +1140,8 @@ DAC is the **map-compliance safety subscore** for staying inside the drivable re
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_drivable_area_compliance()`
 - **NAVSIM outsourced helper logic:** no dedicated helper; depends on `_calculate_ego_area()`
 - **NAVSIM external state / cached dependency:** `self._ego_areas`, `self._drivable_area_map`
-- **Migrated owner:** `src/metrics/drivable_area_compliance.cpp::calculate_drivable_area_compliance()`
-- **Migrated outsourced helper logic:** `src/metrics/metric_utils.cpp::compute_ego_area_flags()`
+- **Migrated owner:** `src/metrics/epdms/drivable_area_compliance.cpp::calculate_drivable_area_compliance()`
+- **Migrated outsourced helper logic:** `src/metrics/geometry/metric_utils.cpp::compute_ego_area_flags()`
 - **Migrated local helper dependencies:** `collect_route_relevant_lanelets()`, `create_pose_footprint()`, `collect_candidate_road_lanelets()`, `collect_candidate_parking_lots()`, `detect_non_drivable_area()`
 
 ### Required inputs: same availability or replacement?
@@ -1593,7 +1601,7 @@ Semantically, DDC measures how much meaningful forward motion the ego accumulate
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_driving_direction_compliance()`
 - **NAVSIM outsourced helper logic:** no dedicated helper; uses map queries on `self._drivable_area_map`
 - **NAVSIM external state / cached dependency:** `self._ego_coords`, `self._ego_areas`, `self._drivable_area_map`, config thresholds
-- **Migrated owner:** `src/metrics/driving_direction_compliance.cpp::calculate_driving_direction_compliance()`
+- **Migrated owner:** `src/metrics/epdms/driving_direction_compliance.cpp::calculate_driving_direction_compliance()`
 - **Migrated call-site ownership:** `src/metrics/trajectory_metrics.cpp`
 
 ### Required inputs: same availability or replacement?
@@ -1920,7 +1928,7 @@ Semantically, TLC answers "did the ego commit a red-light violation?" rather tha
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_traffic_light_compliance()`
 - **NAVSIM outsourced helper logic:** no dedicated helper
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_polygons`, `self._observation.red_light_token`
-- **Migrated owner:** `src/metrics/traffic_light_compliance.cpp::calculate_traffic_light_compliance()`
+- **Migrated owner:** `src/metrics/epdms/traffic_light_compliance.cpp::calculate_traffic_light_compliance()`
 - **Migrated local helpers:** `find_signal_group()`, `build_controlled_traffic_light_groups()`
 
 ### Required inputs: same availability or replacement?
@@ -2107,7 +2115,7 @@ Semantically, EP represents the "drive somewhere useful" part of PDMS/EPDMS. It 
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_progress()`
 - **NAVSIM outsourced helper logic:** no dedicated helper; uses `self._centerline.project(...)`
 - **NAVSIM external state / cached dependency:** `self._ego_coords`, `self._centerline`, proposal batch state
-- **Migrated owner:** `src/metrics/ego_progress.cpp::calculate_ego_progress()`
+- **Migrated owner:** `src/metrics/epdms/ego_progress.cpp::calculate_ego_progress()`
 - **Migrated local helpers:** `calculate_raw_progress_m()`, `collect_route_relevant_lanelets()`
 
 ### Required inputs: same availability or replacement?
@@ -2253,7 +2261,7 @@ Semantically, TTC is an anticipatory safety measure: whereas NC penalizes realiz
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_ttc()`
 - **NAVSIM outsourced helper logic:** nuPlan helpers `is_agent_ahead`, `is_agent_behind`; shapely polygon creation
 - **NAVSIM external state / cached dependency:** `self._observation`, `self._ego_coords`, `self._ego_areas`, `self._states`, `self._drivable_area_map`, `self._ttc_time_idcs`
-- **Migrated owner:** `src/metrics/ttc_within_bound.cpp::calculate_ttc_within_bound()`
+- **Migrated owner:** `src/metrics/epdms/ttc_within_bound.cpp::calculate_ttc_within_bound()`
 - **Migrated local helpers:** `build_logged_object_tracks()`, `interpolate_logged_object_state()`, `project_pose()`, `is_agent_ahead()`, `is_agent_behind()`
 
 ### Required inputs: same availability or replacement?
@@ -2469,7 +2477,7 @@ Semantically, LK captures a stability / lane-discipline property rather than a h
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_lane_keeping()`
 - **NAVSIM outsourced helper logic:** no dedicated helper; uses centerline geometry and map queries
 - **NAVSIM external state / cached dependency:** `self._ego_coords`, `self._centerline`, `self._drivable_area_map`, config thresholds
-- **Migrated owner:** `src/metrics/lane_keeping.cpp::calculate_lane_keeping_score()`
+- **Migrated owner:** `src/metrics/epdms/lane_keeping.cpp::calculate_lane_keeping_score()`
 - **Migrated call-site ownership:** `src/metrics/trajectory_metrics.cpp`
 
 ### Required inputs: same availability or replacement?
@@ -2648,7 +2656,7 @@ Semantically, HC captures ride quality and control smoothness across the transit
 - **NAVSIM primary owner:** `pdm_scorer.py::_calculate_history_comfort()`
 - **NAVSIM outsourced helper logic:** `pdm_comfort_metrics.py::ego_is_comfortable()`, `ego_states_to_state_array(...)`
 - **NAVSIM external state / cached dependency:** `self._human_past_trajectory`, `self._states`, `proposal_sampling.interval_length`
-- **Migrated owner:** `src/metrics/history_comfort.cpp::calculate_history_comfort_metrics()`
+- **Migrated owner:** `src/metrics/epdms/history_comfort.cpp::calculate_history_comfort_metrics()`
 - **Migrated storage owner:** `src/metrics/trajectory_metrics.cpp` and `src/open_loop_evaluator.cpp`
 
 ### Required inputs: same availability or replacement?
@@ -2831,7 +2839,7 @@ Semantically, EC captures planning smoothness over time at the evaluation-pipeli
 - **NAVSIM used by:** `scene_aggregator.py::SceneAggregator._compute_two_frame_comfort()`
 - **NAVSIM injected into final score by:** `run_pdm_score.py`, `run_pdm_score_one_stage.py`, `run_pdm_score_from_submission.py`
 - **NAVSIM external state / cached dependency:** overlapping adjacent simulated trajectories, adjacency mapping / pseudo closed-loop grouping
-- **Migrated owner:** `src/metrics/extended_comfort.cpp::calculate_extended_comfort()`
+- **Migrated owner:** `src/metrics/epdms/extended_comfort.cpp::calculate_extended_comfort()`
 - **Migrated orchestration owner:** `src/open_loop_evaluator.cpp` phase-2 finalization
 
 ### Required inputs: same availability or replacement?
@@ -3017,7 +3025,7 @@ published Autoware planner trajectories replace NAVSIM's simulated ego-state rol
 - **NAVSIM base aggregation owner:** `pdm_scorer.py::_aggregate_pdm_scores()`
 - **NAVSIM final EPDMS owner:** `run_pdm_score.py::compute_final_scores()` after EC injection
 - **NAVSIM EC ownership feeding aggregation:** `scene_aggregator.py`
-- **Migrated owner:** `src/metrics/epdms_aggregation.cpp::calculate_synthetic_epdms()`
+- **Migrated owner:** `src/metrics/epdms/epdms_aggregation.cpp::calculate_synthetic_epdms()`
 - **Migrated orchestration owner:** `src/open_loop_evaluator.cpp`
 
 ### Required inputs: same availability or replacement?
@@ -3101,8 +3109,8 @@ This project has **no equivalent implementation**.
 - **NAVSIM owner of human-filter logic:** `navsim/evaluate/pdm_score.py`
 - **NAVSIM owner of post-filter score recomputation:** `navsim/evaluate/pdm_score.py`
 - **Migrated owner of human-reference construction:** `src/open_loop_evaluator.cpp::calculate_human_reference_snapshot()`
-- **Migrated owner of human-filter logic:** `src/metrics/epdms_aggregation.cpp::calculate_human_filter_metrics()`
-- **Migrated owner of filtered score aggregation:** `src/metrics/epdms_aggregation.cpp::calculate_synthetic_epdms()`
+- **Migrated owner of human-filter logic:** `src/metrics/epdms/epdms_aggregation.cpp::calculate_human_filter_metrics()`
+- **Migrated owner of filtered score aggregation:** `src/metrics/epdms/epdms_aggregation.cpp::calculate_synthetic_epdms()`
 
 ### Required inputs: same availability or replacement?
 

@@ -15,9 +15,11 @@
 #ifndef METRICS__EGO_PROGRESS_HPP_
 #define METRICS__EGO_PROGRESS_HPP_
 
-#include "../data_types.hpp"
+#include "../../data_types.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
+
+#include <lanelet2_core/primitives/Lanelet.h>
 
 #include <memory>
 #include <string>
@@ -48,7 +50,8 @@ EgoProgressResult calculate_ego_progress(
   bool no_at_fault_collision_available, double drivable_area_compliance,
   bool drivable_area_compliance_available, double driving_direction_compliance,
   bool driving_direction_compliance_available, double traffic_light_compliance,
-  bool traffic_light_compliance_available);
+  bool traffic_light_compliance_available,
+  const lanelet::ConstLanelets * route_relevant_lanelets = nullptr);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

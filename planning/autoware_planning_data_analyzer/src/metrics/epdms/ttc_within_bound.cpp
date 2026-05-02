@@ -14,7 +14,7 @@
 
 #include "ttc_within_bound.hpp"
 
-#include "metric_utils.hpp"
+#include "../geometry/metric_utils.hpp"
 
 #include <autoware/object_recognition_utils/object_classification.hpp>
 #include <autoware_utils_geometry/boost_geometry.hpp>
@@ -293,7 +293,8 @@ TTCWithinBoundResult calculate_ttc_within_bound(
   const std::vector<TimedTrackedObjects> & future_objects,
   const autoware::vehicle_info_utils::VehicleInfo & vehicle_info,
   const std::shared_ptr<RouteHandler> & route_handler,
-  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations)
+  const std::vector<TrajectoryFootprintEvaluation> * footprint_evaluations,
+  const std::vector<LoggedObjectTrack> * object_tracks)
 {
   TTCWithinBoundResult result;
 
@@ -314,8 +315,10 @@ TTCWithinBoundResult calculate_ttc_within_bound(
   result.score = 1.0;
   result.reason = "available";
 
-  const auto object_tracks = build_logged_object_tracks(future_objects);
-  if (object_tracks.empty()) {
+  const auto local_object_tracks =
+    object_tracks ? std::vector<LoggedObjectTrack>{} : build_logged_object_tracks(future_objects);
+  const auto & tracks = object_tracks ? *object_tracks : local_object_tracks;
+  if (tracks.empty()) {
     return result;
   }
 
@@ -351,7 +354,12 @@ TTCWithinBoundResult calculate_ttc_within_bound(
       multiple_lanes = flags.multiple_lanes;
       non_drivable_area = flags.non_drivable_area;
     }
-    const bool ego_in_intersection = is_pose_in_intersection(point.pose, route_handler);
+    const bool ego_in_intersection =
+      !evaluations.empty() && index < evaluations.size() &&
+          evaluations.at(index).ego_area_evaluation.has_value() &&
+          evaluations.at(index).ego_area_evaluation->flags.intersection_context_available
+        ? evaluations.at(index).ego_area_evaluation->flags.in_intersection
+        : is_pose_in_intersection(point.pose, route_handler);
     const bool bad_or_intersection = multiple_lanes || non_drivable_area || ego_in_intersection;
     const double time_s = rclcpp::Duration(point.time_from_start).seconds();
 
@@ -361,7 +369,7 @@ TTCWithinBoundResult calculate_ttc_within_bound(
       const auto projected_pose = project_pose(point.pose, velocity_world, future_offset_s);
       const auto ego_polygon = create_pose_footprint(projected_pose, local_footprint);
 
-      for (const auto & object_track : object_tracks) {
+      for (const auto & object_track : tracks) {
         if (
           object_track.has_valid_object_id &&
           collided_object_ids.count(object_track.object_id) > 0U) {
