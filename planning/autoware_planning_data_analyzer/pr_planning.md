@@ -100,6 +100,93 @@ For every actual subscore migration PR, record the following in the PR descripti
 
 Do not open the PR if the score changed and the reason is not understood.
 
+## PR Description Format
+
+Use the upstream PR template headings, but fill them with the analyzer-specific content below.
+
+```markdown
+## Description
+
+### Scope
+
+- PR type: infrastructure-only / subscore migration / debug-output update / aggregation.
+- Target metric or subscore:
+- Base branch:
+- If stacked, parent PR/branch:
+
+### What Changed
+
+- Concise implementation bullets.
+- Mention whether score semantics changed.
+- Mention whether debug topics changed.
+- Mention whether output JSON/schema changed.
+
+### Expected Behavior
+
+- For infrastructure-only PRs: expected no score/result change.
+- For subscore PRs: expected score behavior and known intentional deltas.
+- For debug-only PRs: expected metric values unchanged.
+
+## How was this PR tested?
+
+### Local Checks
+
+- Build:
+  - Command:
+  - Result:
+- Unit tests:
+  - Command:
+  - Result:
+- Pre-commit:
+  - Command:
+  - Result:
+
+### Full Analyzer Runs
+
+- Takanawa:
+  - Input bag:
+  - Output artifact:
+  - Full command/script:
+- Odaiba, if relevant:
+  - Input bag:
+  - Output artifact:
+  - Full command/script:
+
+### Metric Comparison
+
+- Baseline artifact:
+- PR artifact:
+- Total evaluated trajectories:
+- Availability comparison:
+- Non-1/failure count comparison:
+- Reason-count comparison:
+- Representative changed timestamps:
+- Explanation for every intentional delta:
+
+### Topic Verification
+
+- Metric topics produced:
+- Availability/reason topics produced:
+- Debug topics produced:
+- Previously migrated subscore topics still produced:
+
+## Notes for reviewers
+
+- Review focus:
+- Known limitations:
+- Follow-up PRs:
+- Any intentionally deferred NAVSIM-faithfulness gaps:
+
+## Effects on system behavior
+
+- Runtime behavior:
+- Score behavior:
+- Debug/output behavior:
+- Backward compatibility:
+```
+
+Do not leave validation fields blank. If a section is not applicable, write `N/A` with the reason.
+
 ## Upstream CI Expectations
 
 Observed from upstream PR:
