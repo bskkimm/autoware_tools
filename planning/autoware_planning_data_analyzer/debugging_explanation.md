@@ -43,7 +43,9 @@ or horizon markers.
 | Topic | Message type | Purpose |
 |---|---|---|
 | `/debug/epdms/nc/collision_summary` | `std_msgs/msg/String` | JSON summary for trajectories that contain NC collision events. This is the topic a custom Lichtblick panel should use for the clickable collision list. |
-| `/debug/epdms/nc/horizon_markers` | `visualization_msgs/msg/MarkerArray` | Combined full-horizon map markers: ego footprints, engaged-object footprints, highlighted overlap outlines, and labels. |
+| `/debug/epdms/nc/ego_footprints` | `visualization_msgs/msg/MarkerArray` | Ego future footprint horizon for collision inspection. |
+| `/debug/epdms/nc/object_footprints` | `visualization_msgs/msg/MarkerArray` | Engaged tracked-object future footprint horizon. |
+| `/debug/epdms/nc/overlap_areas` | `visualization_msgs/msg/MarkerArray` | Ego-object overlap outlines. |
 
 The official metric topics still carry the scalar metric result:
 
@@ -71,10 +73,7 @@ The earlier debug design had many separate topics such as:
 /debug/epdms/nc/collision_pairs
 /debug/epdms/nc/front_bumper
 /debug/epdms/nc/bad_area
-/debug/epdms/nc/horizon_ego_footprints
-/debug/epdms/nc/horizon_object_footprints
-/debug/epdms/nc/horizon_overlap_areas
-/debug/epdms/nc/horizon_labels
+/debug/epdms/nc/labels
 ```
 
 Those are no longer the preferred output.
@@ -166,22 +165,20 @@ The marker timestamp is the planner output time, not the future collision time.
 
 Recommended interpretation:
 
-| Marker namespace inside `/debug/epdms/nc/horizon_markers` | Meaning |
+| Marker namespace | Meaning |
 |---|---|
 | `nc_horizon_ego_footprints` | The ego footprint at each trajectory sample in the 4 s horizon. |
 | `nc_horizon_object_footprints` | The engaged object's logged footprint at each matching future sample. |
 | `nc_horizon_overlap_areas` | The intersection polygon between ego and object footprints at overlap samples. |
-| `nc_horizon_labels` | Human-readable event labels. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| ego horizon, no overlap | transparent cyan |
-| object horizon, no overlap | transparent orange |
+| ego horizon, no overlap | transparent orange |
+| object horizon, no overlap | transparent blue |
 | overlap but not at-fault | thick yellow/orange outline |
-| at-fault overlap | thick red/magenta outline |
-| selected/worst event label | text marker near ego footprint |
+| at-fault overlap | thick red outline |
 
 ## Lichtblick Workflow
 
@@ -282,7 +279,6 @@ The DAC debug output is intentionally split into a compact summary topic plus a 
 | `/debug/epdms/dac/road_border_minus_samples` | `visualization_msgs/msg/MarkerArray` | Selected `-normal * rho` semantic probe points used to infer the road side of the closest border segment. |
 | `/debug/epdms/dac/road_border_fallback_corners` | `visualization_msgs/msg/MarkerArray` | Ego footprint vertices accepted by the closest-border road-side fallback. |
 | `/debug/epdms/dac/failing_corners` | `visualization_msgs/msg/MarkerArray` | Highlighted markers for the ego corners that fell outside the admissible set. |
-| `/debug/epdms/dac/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DAC labels such as the first failing `dt` and inside-corner count. |
 
 The official metric topics still carry the scalar metric result:
 
@@ -355,18 +351,16 @@ Recommended interpretation:
 | `/debug/epdms/dac/road_border_minus_samples` | The minus-normal probe points. |
 | `/debug/epdms/dac/road_border_fallback_corners` | Corners accepted because they lie on the inferred road side and in the bounded gap between the semantic drivable boundary and the final `road_border`. |
 | `/debug/epdms/dac/failing_corners` | The ego corners that were outside all admissible semantic polygons and were not accepted by the closest-border side fallback. |
-| `/debug/epdms/dac/labels` | Human-readable DAC labels. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| ego horizon, drivable | transparent cyan |
-| ego horizon, non-drivable | orange |
+| ego horizon, drivable | transparent orange |
+| ego horizon, non-drivable | red |
 | admissible road polygons | cyan/blue |
 | admissible parking polygons | green |
 | failing corners | magenta |
-| DAC label | red text |
 
 ## Lichtblick Workflow
 
@@ -412,7 +406,6 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/dac/road_border_minus_samples
 /debug/epdms/dac/road_border_fallback_corners
 /debug/epdms/dac/failing_corners
-/debug/epdms/dac/labels
 ```
 
 Then each click jumps to the planner output time whose selected trajectory first left
@@ -440,7 +433,6 @@ DDC debugging should answer:
 | `/debug/epdms/ddc/oncoming_segments` | `visualization_msgs/msg/MarkerArray` | The ego-center segments whose progress counted toward wrong-way accumulation. |
 | `/debug/epdms/ddc/route_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby route-consistent admissible lane polygons used by the DDC center-point oncoming check inside the worst 1.0 s window. This historical topic name now also covers same-direction neighboring lanes and adjacent shoulders when they are part of the local admissible corridor. The published outlines include the current DDC soft admissible lane margin and are emitted per-sample within the worst window instead of being deduplicated to unique lane IDs. |
 | `/debug/epdms/ddc/intersection_lane_polygons` | `visualization_msgs/msg/MarkerArray` | Nearby `intersection_area` polygons used by the DDC intersection leniency check inside the worst 1.0 s window. The topic name is historical, but the markers now represent map intersection-area polygons rather than only turn-direction-tagged lanelets. |
-| `/debug/epdms/ddc/labels` | `visualization_msgs/msg/MarkerArray` | Human-readable DDC labels such as score, max wrong-way progress, and worst-window bounds. |
 
 The official metric topics still carry the scalar result:
 
@@ -494,17 +486,15 @@ Recommended interpretation:
 | `/debug/epdms/ddc/oncoming_segments` | Only the centerline segments that contributed to wrong-way accumulation because `Oncoming && !Intersection` held there. |
 | `/debug/epdms/ddc/route_lane_polygons` | Nearby route-consistent admissible lane polygons that counted as not-oncoming in the worst 1.0 s window. This can include same-direction neighboring lanes and adjacent shoulders. The outlines include the current DDC soft lane margin and are emitted for each sample in the worst window so the local boundary under the current ego position remains visible. |
 | `/debug/epdms/ddc/intersection_lane_polygons` | Nearby `intersection_area` polygons that granted intersection leniency in the worst 1.0 s window. |
-| `/debug/epdms/ddc/labels` | Human-readable DDC summary label. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| ego-center horizon | transparent cyan |
-| counted oncoming segments | orange |
+| ego-center horizon | orange |
+| counted oncoming segments | red |
 | nearby route-lane polygons | cyan/blue |
 | nearby intersection polygons | green |
-| DDC label | red text |
 
 ## Lichtblick Workflow
 
@@ -543,7 +533,6 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/ddc/oncoming_segments
 /debug/epdms/ddc/route_lane_polygons
 /debug/epdms/ddc/intersection_lane_polygons
-/debug/epdms/ddc/labels
 ```
 
 Then each click jumps to the planner output time and shows:
@@ -569,7 +558,6 @@ When TLC is enabled and a trajectory scores below `1.0`, the analyzer writes:
 /debug/epdms/tlc/violation_summary
 /debug/epdms/tlc/ego_footprints
 /debug/epdms/tlc/stop_lines
-/debug/epdms/tlc/labels
 ```
 
 ### Summary Payload
@@ -614,16 +602,14 @@ Recommended interpretation:
 |---|---|
 | `/debug/epdms/tlc/ego_footprints` | Ego footprint path over the full evaluated horizon. The failing sample is highlighted more strongly. |
 | `/debug/epdms/tlc/stop_lines` | Stop line belonging to the selected movement-compatible traffic-light regulatory element. This is the scoring primitive. |
-| `/debug/epdms/tlc/labels` | Human-readable TLC summary label. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| ego-footprint horizon | transparent cyan |
-| failing ego footprint | orange |
-| stop line | yellow/orange |
-| TLC label | red text |
+| ego-footprint horizon | transparent orange |
+| failing ego footprint | red |
+| stop line | red |
 
 ### Lichtblick Workflow
 
@@ -660,7 +646,6 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 ```text
 /debug/epdms/tlc/ego_footprints
 /debug/epdms/tlc/stop_lines
-/debug/epdms/tlc/labels
 ```
 
 Then each click shows:
@@ -700,7 +685,6 @@ produce TTC violation summaries or 3D marker output.
 /debug/epdms/ttc/ego_footprints
 /debug/epdms/ttc/object_footprints
 /debug/epdms/ttc/overlap_areas
-/debug/epdms/ttc/labels
 ```
 
 ### Summary Payload
@@ -747,23 +731,21 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/ttc/ego_footprints` | The full trajectory prefix up to the TTC base sample is shown first in dim cyan, then the selected TTC sample's projected ego footprints at checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s` are drawn on top. Overlap offsets are highlighted more strongly. These polygons are anchored to the ego road-surface z and then lifted only by a small marker offset. |
-| `/debug/epdms/ttc/object_footprints` | The same object's matched prefix footprints are shown in dim orange up to the TTC base sample, then the same logged object's queried future footprints at the checked TTC offsets are drawn on top. Overlap offsets are highlighted more strongly. These polygons use the same local road-surface z as the paired ego footprint instead of the object's 3D center height. |
+| `/debug/epdms/ttc/ego_footprints` | The full trajectory prefix up to the TTC base sample is shown first in orange, then the selected TTC sample's projected ego footprints at checked offsets `0.0`, `0.3`, `0.6`, and `0.9 s` are drawn in deep orange. Overlap offsets are red. These polygons are anchored to the ego road-surface z and then lifted only by a small marker offset. |
+| `/debug/epdms/ttc/object_footprints` | The same object's matched prefix footprints are shown in blue up to the TTC base sample, then the same logged object's queried future footprints at the checked TTC offsets are drawn in deep blue. Overlap offsets are red. These polygons use the same local road-surface z as the paired ego footprint instead of the object's 3D center height. |
 | `/debug/epdms/ttc/overlap_areas` | The overlap polygon(s) at the checked offsets that actually overlap. The selected failing offset is included in this set and is anchored to the same local road-surface z as the paired TTC footprint markers. |
-| `/debug/epdms/ttc/labels` | Human-readable TTC summary label. |
 
 Suggested visual semantics:
 
 | Case | Color |
 |---|---|
-| TTC ego prefix before TTC base sample | pale cyan |
-| TTC ego checked TTC offsets, no overlap | deep blue |
-| TTC ego footprint, overlap offset | orange |
-| TTC object prefix before TTC base sample | pale orange |
-| TTC object checked TTC offsets, no overlap | strong amber |
-| TTC object footprint, overlap offset | yellow/orange |
-| TTC overlap | magenta |
-| TTC label | red text |
+| TTC ego prefix before TTC base sample | orange |
+| TTC ego checked TTC offsets, no overlap | deep orange |
+| TTC ego footprint, overlap offset | red |
+| TTC object prefix before TTC base sample | blue |
+| TTC object checked TTC offsets, no overlap | deep blue |
+| TTC object footprint, overlap offset | red |
+| TTC overlap | red |
 
 ### Lichtblick Workflow
 
@@ -801,7 +783,6 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 /debug/epdms/ttc/ego_footprints
 /debug/epdms/ttc/object_footprints
 /debug/epdms/ttc/overlap_areas
-/debug/epdms/ttc/labels
 ```
 
 ## LK Debugging
@@ -821,7 +802,6 @@ When LK is enabled and a trajectory scores below `1.0`, the analyzer writes:
 /debug/epdms/lk/violation_summary
 /debug/epdms/lk/ego_center_path
 /debug/epdms/lk/reference_centerlines
-/debug/epdms/lk/labels
 ```
 
 ### Summary Payload
@@ -863,9 +843,8 @@ Recommended interpretation:
 
 | Topic | Meaning |
 |---|---|
-| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are cyan, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are orange, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. The LK deviation threshold is `0.6 m`. |
-| `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon. |
-| `/debug/epdms/lk/labels` | Human-readable LK summary label (`LK`, max run, peak deviation). |
+| `/debug/epdms/lk/ego_center_path` | Full 4 s ego-center horizon, emitted as state-colored line segments. Normal segments are orange, intersection-relaxed segments are green, ordinary over-threshold non-intersection segments are yellow, and the failure-causing continuous run is red. Lane-change and queue/release-grace samples are not accumulated into the failure run, so those parts remain non-failure context even when their lateral deviation exceeds the base threshold. Lane-change masking is driven only by explicit turn-indicator or hazard-light active intervals, expanded by `1.0 s` before activation and `1.0 s` after deactivation. The LK deviation threshold is `0.6 m`. |
+| `/debug/epdms/lk/reference_centerlines` | The unique reference lanelet centerlines actually used for LK deviation measurement over the failing horizon, drawn in green. |
 
 ### Lichtblick Workflow
 
@@ -902,7 +881,6 @@ context.seekPlayback?.(trajectory_stamp_sec + 0.005);
 ```text
 /debug/epdms/lk/ego_center_path
 /debug/epdms/lk/reference_centerlines
-/debug/epdms/lk/labels
 ```
 
 This TTC horizon is not the full 4-second trajectory horizon. It is the local TTC
@@ -944,7 +922,7 @@ Suggested visual semantics:
 | Case | Color |
 |---|---|
 | planned 4 s horizon | orange |
-| GT 4 s horizon | cyan |
+| GT 4 s horizon | green |
 
 ## HC History Comfort Debugging
 
@@ -982,7 +960,6 @@ HC-specific debug outputs:
 /debug/epdms/hc/sample_times
 /debug/epdms/hc/segments
 /debug/epdms/hc/horizon_footprints
-/debug/epdms/hc/labels
 ```
 
 Recommended interpretation:
@@ -992,20 +969,15 @@ Recommended interpretation:
 | `/debug/epdms/hc/component_status` | JSON summary for the evaluated trajectory: score, sample count, failed components, and peak values/times for `ax`, `ay`, jerk, `jx`, yaw rate, and yaw acceleration. |
 | `/debug/epdms/hc/sample_times` | Time coordinate for each padded sample relative to the trajectory stamp. Negative values are past human history; non-negative values are the planned future. |
 | `/debug/epdms/hc/segments` | Segment id per padded sample. `0` means past human/ego kinematic history; `2` means planned trajectory. |
-| `/debug/epdms/hc/horizon_footprints` | 3D footprint outlines for every padded HC sample. Passing samples are muted blue-gray; failed samples use the dominant failed component color by severity ratio; the worst peak sample is highlighted in white. |
-| `/debug/epdms/hc/labels` | 3D label at the peak sample with HC score, peak component, severity ratio, and relative sample time. |
+| `/debug/epdms/hc/horizon_footprints` | 3D footprint outlines for every padded HC sample. Passing samples are orange, all failed samples are red, and the worst peak sample is highlighted in deep pink. |
 
 HC 3D color mapping:
 
 | Component state | Color intent |
 |---|---|
-| Pass / normal sample | Muted blue-gray, low alpha |
-| `ax` failure | Orange-red |
-| `ay` failure | Yellow |
-| `jerk` failure | Magenta |
-| `jx` failure | Pink |
-| `yaw_rate` failure | Cyan |
-| `yaw_accel` failure | Deep blue |
+| Pass / normal sample | Orange, low alpha |
+| Any failed component | Red |
+| Worst peak failed sample | Deep pink |
 | Worst peak sample | White, thicker outline |
 
 Lichtblick panel expectation:
@@ -1099,7 +1071,6 @@ EP-specific debug outputs:
 /debug/epdms/ep/progress_summary
 /debug/epdms/ep/route_progress_points
 /debug/epdms/ep/route_reference
-/debug/epdms/ep/labels
 ```
 
 Recommended interpretation:
@@ -1109,7 +1080,6 @@ Recommended interpretation:
 | `/debug/epdms/ep/progress_summary` | JSON summary with EP score, availability, raw route progress, masked denominator, NC/DAC/DDC/TLC values, and the single-proposal reason. |
 | `/debug/epdms/ep/route_progress_points` | Start/end ego center markers and the straight chord between the trajectory endpoints used for route-progress inspection. |
 | `/debug/epdms/ep/route_reference` | Route centerline points collected from the route lanelets used for arc-length projection. |
-| `/debug/epdms/ep/labels` | Human-readable 3D EP summary label. |
 
 Later work: full NAVSIM candidate-batch EP should evaluate NC/DAC/DDC/TLC for every
 candidate in `/diffusion_planner/output/trajectories`, then use

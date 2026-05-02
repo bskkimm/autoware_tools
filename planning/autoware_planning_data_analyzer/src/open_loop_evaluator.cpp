@@ -372,31 +372,6 @@ visualization_msgs::msg::Marker make_filled_polygon_marker(
   return marker;
 }
 
-visualization_msgs::msg::Marker make_text_marker(
-  const rclcpp::Time & stamp, const std::string & ns, const int32_t id,
-  const geometry_msgs::msg::Point & position, const std::string & text,
-  const std_msgs::msg::ColorRGBA & color, const double lifetime_s)
-{
-  auto marker = make_marker_base(stamp, ns, id, color, lifetime_s);
-  marker.type = visualization_msgs::msg::Marker::TEXT_VIEW_FACING;
-  marker.pose.position = position;
-  marker.pose.position.z += 2.0;
-  marker.scale.z = 1.0;
-  marker.text = text;
-  return marker;
-}
-
-std_msgs::msg::ColorRGBA nc_event_color(const metrics::NoAtFaultCollisionDebugEvent & event)
-{
-  if (!event.at_fault) {
-    return make_color(0.85F, 0.85F, 0.85F, 0.85F);
-  }
-  if (event.event_score <= 0.0) {
-    return make_color(1.0F, 0.05F, 0.05F, 1.0F);
-  }
-  return make_color(1.0F, 0.8F, 0.0F, 1.0F);
-}
-
 bool should_write_nc_debug(
   const metrics::TrajectoryPointMetrics & metrics,
   const OpenLoopEvaluator::NCDebugMode debug_mode)
@@ -452,7 +427,8 @@ std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   if (footprint.collision) {
     return make_color(1.0F, 0.8F, 0.0F, 1.0F);
   }
-  return ego ? make_color(0.0F, 0.8F, 1.0F, 0.65F) : make_color(1.0F, 0.55F, 0.0F, 0.65F);
+  return ego ? make_color(1.0F, 0.55F, 0.0F, 0.65F)
+             : make_color(0.1F, 0.45F, 1.0F, 0.65F);
 }
 
 struct HCComponentStatus
@@ -535,27 +511,10 @@ HCComponentStatus hc_component_status_at(
 std_msgs::msg::ColorRGBA hc_component_color(const std::string & component, const bool peak)
 {
   if (peak) {
-    return make_color(1.0F, 1.0F, 1.0F, 1.0F);
+    return make_color(1.0F, 0.0F, 0.65F, 1.0F);
   }
-  if (component == "ax") {
-    return make_color(1.0F, 0.25F, 0.05F, 0.95F);
-  }
-  if (component == "ay") {
-    return make_color(1.0F, 0.85F, 0.05F, 0.95F);
-  }
-  if (component == "jerk") {
-    return make_color(1.0F, 0.0F, 0.85F, 0.95F);
-  }
-  if (component == "jx") {
-    return make_color(1.0F, 0.35F, 0.75F, 0.95F);
-  }
-  if (component == "yaw_rate") {
-    return make_color(0.0F, 0.9F, 1.0F, 0.95F);
-  }
-  if (component == "yaw_accel") {
-    return make_color(0.05F, 0.18F, 1.0F, 0.95F);
-  }
-  return make_color(0.45F, 0.62F, 0.78F, 0.45F);
+  return component == "pass" ? make_color(1.0F, 0.55F, 0.0F, 0.45F)
+                             : make_color(1.0F, 0.05F, 0.05F, 0.95F);
 }
 
 const metrics::NoAtFaultCollisionDebugEvent * find_worst_nc_event(
@@ -851,11 +810,9 @@ void write_nc_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray ego_footprints;
   visualization_msgs::msg::MarkerArray object_footprints;
   visualization_msgs::msg::MarkerArray overlap_areas;
-  visualization_msgs::msg::MarkerArray labels;
   ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
   object_footprints.markers.push_back(make_delete_all_marker(timestamp));
   overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
@@ -882,21 +839,9 @@ void write_nc_debug_topics_to_bag(
       overlap.at_fault ? 0.6 : 0.4, true, marker_lifetime_s, 0.28));
   }
 
-  marker_id = 0;
-  for (const auto & event : debug_info.events) {
-    std::ostringstream label;
-    label << "NC=" << metrics.no_at_fault_collision << "\ndt=" << std::fixed
-          << std::setprecision(1) << event.time_s << "s\n" << event.collision_type << "\n"
-          << event.object_label;
-    labels.markers.push_back(make_text_marker(
-      timestamp, "nc_horizon_labels", marker_id++, event.ego_center, label.str(),
-      nc_event_color(event), marker_lifetime_s));
-  }
-
   bag_writer.write(ego_footprints, nc_debug_topic("ego_footprints"), timestamp);
   bag_writer.write(object_footprints, nc_debug_topic("object_footprints"), timestamp);
   bag_writer.write(overlap_areas, nc_debug_topic("overlap_areas"), timestamp);
-  bag_writer.write(labels, nc_debug_topic("labels"), timestamp);
 }
 
 void write_dac_debug_topics_to_bag(
@@ -932,7 +877,6 @@ void write_dac_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray road_border_minus_samples;
   visualization_msgs::msg::MarkerArray road_border_fallback_corners;
   visualization_msgs::msg::MarkerArray failing_corners;
-  visualization_msgs::msg::MarkerArray labels;
   ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
   admissible_road_areas.markers.push_back(make_delete_all_marker(timestamp));
   admissible_shoulder_areas.markers.push_back(make_delete_all_marker(timestamp));
@@ -949,14 +893,13 @@ void write_dac_debug_topics_to_bag(
   road_border_minus_samples.markers.push_back(make_delete_all_marker(timestamp));
   road_border_fallback_corners.markers.push_back(make_delete_all_marker(timestamp));
   failing_corners.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
     ego_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_ego_footprints", marker_id++, footprint.footprint,
-      footprint.non_drivable_area ? make_color(1.0F, 0.35F, 0.0F, 1.0F)
-                                  : make_color(0.0F, 0.8F, 1.0F, 0.6F),
+      footprint.non_drivable_area ? make_color(1.0F, 0.05F, 0.05F, 1.0F)
+                                  : make_color(1.0F, 0.55F, 0.0F, 0.6F),
       footprint.non_drivable_area ? 0.22 : 0.12, true, marker_lifetime_s, 0.10));
   }
 
@@ -1072,14 +1015,6 @@ void write_dac_debug_topics_to_bag(
       marker_lifetime_s, 0.16));
   }
 
-  std::ostringstream label;
-  label << "DAC=" << metrics.drivable_area_compliance << "\ndt=" << std::fixed
-        << std::setprecision(1) << debug_info.first_failure_time_s << "s\ninside corners="
-        << debug_info.corner_count_inside << "/4";
-  labels.markers.push_back(make_text_marker(
-    timestamp, "dac_horizon_labels", 0, debug_info.label_anchor, label.str(),
-    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
-
   bag_writer.write(ego_footprints, dac_debug_topic("ego_footprints"), timestamp);
   bag_writer.write(admissible_road_areas, dac_debug_topic("admissible_road_areas"), timestamp);
   bag_writer.write(
@@ -1108,7 +1043,6 @@ void write_dac_debug_topics_to_bag(
   bag_writer.write(
     road_border_fallback_corners, dac_debug_topic("road_border_fallback_corners"), timestamp);
   bag_writer.write(failing_corners, dac_debug_topic("failing_corners"), timestamp);
-  bag_writer.write(labels, dac_debug_topic("labels"), timestamp);
 }
 
 void write_ddc_debug_topics_to_bag(
@@ -1132,12 +1066,10 @@ void write_ddc_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray oncoming_segments;
   visualization_msgs::msg::MarkerArray route_lane_polygons;
   visualization_msgs::msg::MarkerArray intersection_lane_polygons;
-  visualization_msgs::msg::MarkerArray labels;
   ego_centers.markers.push_back(make_delete_all_marker(timestamp));
   oncoming_segments.markers.push_back(make_delete_all_marker(timestamp));
   route_lane_polygons.markers.push_back(make_delete_all_marker(timestamp));
   intersection_lane_polygons.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   std::vector<geometry_msgs::msg::Point> center_points;
   center_points.reserve(debug_info.samples.size());
@@ -1151,12 +1083,12 @@ void write_ddc_debug_topics_to_bag(
     oncoming_segments.markers.push_back(make_line_strip_marker(
       timestamp, "ddc_oncoming_segments", marker_id++,
       {debug_info.samples.at(index - 1).ego_center, sample.ego_center},
-      make_color(1.0F, 0.35F, 0.0F, 1.0F), 0.18, false, marker_lifetime_s, 0.12));
+      make_color(1.0F, 0.05F, 0.05F, 1.0F), 0.18, false, marker_lifetime_s, 0.12));
   }
 
   if (center_points.size() >= 2U) {
     ego_centers.markers.push_back(make_line_strip_marker(
-      timestamp, "ddc_ego_centers", 0, center_points, make_color(0.0F, 0.8F, 1.0F, 0.8F), 0.12,
+      timestamp, "ddc_ego_centers", 0, center_points, make_color(1.0F, 0.55F, 0.0F, 0.8F), 0.12,
       false, marker_lifetime_s, 0.08));
   }
 
@@ -1174,27 +1106,11 @@ void write_ddc_debug_topics_to_bag(
       make_color(0.2F, 1.0F, 0.4F, 0.90F), 0.20, true, marker_lifetime_s, 0.22));
   }
 
-  const bool has_margin_only_sample = std::any_of(
-    debug_info.samples.begin(), debug_info.samples.end(),
-    [](const auto & sample) { return sample.in_lane_margin_only; });
-  std::ostringstream label;
-  label << "DDC=" << metrics.driving_direction_compliance << "\nmax=" << std::fixed
-        << std::setprecision(2) << metrics.max_oncoming_progress_m << "m\nwindow=["
-        << std::setprecision(1) << debug_info.worst_window_start_time_s << ", "
-        << debug_info.worst_window_end_time_s << "]s";
-  if (has_margin_only_sample) {
-    label << "\nsoft lane margin used";
-  }
-  labels.markers.push_back(make_text_marker(
-    timestamp, "ddc_labels", 0, debug_info.label_anchor, label.str(),
-    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
-
   bag_writer.write(ego_centers, ddc_debug_topic("ego_centers"), timestamp);
   bag_writer.write(oncoming_segments, ddc_debug_topic("oncoming_segments"), timestamp);
   bag_writer.write(route_lane_polygons, ddc_debug_topic("route_lane_polygons"), timestamp);
   bag_writer.write(
     intersection_lane_polygons, ddc_debug_topic("intersection_lane_polygons"), timestamp);
-  bag_writer.write(labels, ddc_debug_topic("labels"), timestamp);
 }
 
 void write_tlc_debug_topics_to_bag(
@@ -1216,17 +1132,15 @@ void write_tlc_debug_topics_to_bag(
 
   visualization_msgs::msg::MarkerArray ego_footprints;
   visualization_msgs::msg::MarkerArray stop_lines;
-  visualization_msgs::msg::MarkerArray labels;
   ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
   stop_lines.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
     const bool failed = std::abs(footprint.time_s - debug_info.first_failure_time_s) < 1.0e-3;
     ego_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "tlc_ego_footprints", marker_id++, footprint.polygon,
-      failed ? make_color(1.0F, 0.35F, 0.0F, 1.0F) : make_color(0.0F, 0.8F, 1.0F, 0.60F),
+      failed ? make_color(1.0F, 0.05F, 0.05F, 1.0F) : make_color(1.0F, 0.55F, 0.0F, 0.60F),
       failed ? 0.22 : 0.12, true, marker_lifetime_s, 0.12));
   }
 
@@ -1234,23 +1148,11 @@ void write_tlc_debug_topics_to_bag(
   for (const auto & stop_line : debug_info.stop_lines) {
     stop_lines.markers.push_back(make_line_strip_marker(
       timestamp, "tlc_stop_lines", marker_id++, stop_line.polygon,
-      make_color(1.0F, 0.8F, 0.0F, 0.95F), 0.18, false, marker_lifetime_s, 0.28));
+      make_color(1.0F, 0.05F, 0.05F, 0.95F), 0.18, false, marker_lifetime_s, 0.28));
   }
-
-  std::ostringstream label;
-  label << "TLC=" << metrics.traffic_light_compliance << "\ndt=" << std::fixed
-        << std::setprecision(1) << debug_info.first_failure_time_s << "s\nstop lines="
-        << debug_info.selected_stop_line_count;
-  if (debug_info.intended_movement.has_value()) {
-    label << "\nmove=" << *debug_info.intended_movement;
-  }
-  labels.markers.push_back(make_text_marker(
-    timestamp, "tlc_labels", 0, debug_info.label_anchor, label.str(),
-    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
 
   bag_writer.write(ego_footprints, tlc_debug_topic("ego_footprints"), timestamp);
   bag_writer.write(stop_lines, tlc_debug_topic("stop_lines"), timestamp);
-  bag_writer.write(labels, tlc_debug_topic("labels"), timestamp);
 }
 
 void write_ttc_debug_topics_to_bag(
@@ -1273,19 +1175,17 @@ void write_ttc_debug_topics_to_bag(
   visualization_msgs::msg::MarkerArray ego_footprints;
   visualization_msgs::msg::MarkerArray object_footprints;
   visualization_msgs::msg::MarkerArray overlap_areas;
-  visualization_msgs::msg::MarkerArray labels;
   ego_footprints.markers.push_back(make_delete_all_marker(timestamp));
   object_footprints.markers.push_back(make_delete_all_marker(timestamp));
   overlap_areas.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (const auto & footprint : debug_info.ego_horizon_footprints) {
     const bool prefix = footprint.prefix;
     const double width = prefix ? 0.08 : (footprint.overlap ? 0.28 : 0.12);
-    const auto color = prefix ? make_color(0.35F, 0.88F, 1.0F, 0.22F)
-                              : (footprint.overlap ? make_color(1.0F, 0.35F, 0.0F, 1.0F)
-                                                   : make_color(0.08F, 0.24F, 0.92F, 0.82F));
+    const auto color = prefix ? make_color(1.0F, 0.55F, 0.0F, 0.28F)
+                              : (footprint.overlap ? make_color(1.0F, 0.05F, 0.05F, 1.0F)
+                                                   : make_color(0.95F, 0.28F, 0.0F, 0.88F));
     ego_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "ttc_ego_footprints", marker_id++, footprint.footprint,
       color,
@@ -1296,9 +1196,9 @@ void write_ttc_debug_topics_to_bag(
   for (const auto & footprint : debug_info.object_horizon_footprints) {
     const bool prefix = footprint.prefix;
     const double width = prefix ? 0.08 : (footprint.overlap ? 0.28 : 0.12);
-    const auto color = prefix ? make_color(1.0F, 0.72F, 0.28F, 0.22F)
-                              : (footprint.overlap ? make_color(1.0F, 0.8F, 0.0F, 1.0F)
-                                                   : make_color(0.95F, 0.56F, 0.10F, 0.82F));
+    const auto color = prefix ? make_color(0.1F, 0.45F, 1.0F, 0.28F)
+                              : (footprint.overlap ? make_color(1.0F, 0.05F, 0.05F, 1.0F)
+                                                   : make_color(0.02F, 0.12F, 0.70F, 0.88F));
     object_footprints.markers.push_back(make_line_strip_marker(
       timestamp, "ttc_object_footprints", marker_id++, footprint.footprint,
       color,
@@ -1309,25 +1209,12 @@ void write_ttc_debug_topics_to_bag(
   for (const auto & overlap : debug_info.overlap_areas) {
     overlap_areas.markers.push_back(make_line_strip_marker(
       timestamp, "ttc_overlap_areas", marker_id++, overlap.polygon,
-      make_color(1.0F, 0.0F, 0.8F, 1.0F), 0.40, true, marker_lifetime_s, 0.24));
-  }
-
-  marker_id = 0;
-  for (const auto & event : debug_info.events) {
-    std::ostringstream label;
-    label << "TTC=" << metrics.time_to_collision_within_bound << "\ndt=" << std::fixed
-          << std::setprecision(1) << event.time_s << "s, delta=" << event.future_offset_s
-          << "s\n" << event.object_label << "\ncond=" << ttc_area_condition_string(event)
-          << "\nahead=" << event.ahead << ", behind=" << event.behind;
-    labels.markers.push_back(make_text_marker(
-      timestamp, "ttc_labels", marker_id++, event.ego_center, label.str(),
-      make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
+      make_color(1.0F, 0.05F, 0.05F, 1.0F), 0.40, true, marker_lifetime_s, 0.24));
   }
 
   bag_writer.write(ego_footprints, ttc_debug_topic("ego_footprints"), timestamp);
   bag_writer.write(object_footprints, ttc_debug_topic("object_footprints"), timestamp);
   bag_writer.write(overlap_areas, ttc_debug_topic("overlap_areas"), timestamp);
-  bag_writer.write(labels, ttc_debug_topic("labels"), timestamp);
 }
 
 void write_lk_debug_topics_to_bag(
@@ -1345,10 +1232,8 @@ void write_lk_debug_topics_to_bag(
 
   visualization_msgs::msg::MarkerArray ego_center_path;
   visualization_msgs::msg::MarkerArray reference_centerlines;
-  visualization_msgs::msg::MarkerArray labels;
   ego_center_path.markers.push_back(make_delete_all_marker(timestamp));
   reference_centerlines.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (std::size_t index = 1; index < debug_info.samples.size(); ++index) {
@@ -1359,7 +1244,7 @@ void write_lk_debug_topics_to_bag(
     const auto color = in_failure_run ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
                        : sample.is_in_intersection ? make_color(0.2F, 1.0F, 0.4F, 0.95F)
                        : violating                 ? make_color(1.0F, 0.65F, 0.0F, 0.95F)
-                                                   : make_color(0.0F, 0.8F, 1.0F, 0.85F);
+                                                   : make_color(1.0F, 0.55F, 0.0F, 0.85F);
     const double width = in_failure_run ? 0.18 : 0.12;
     ego_center_path.markers.push_back(make_line_strip_marker(
       timestamp, "lk_ego_center_path", marker_id++, {previous.ego_center, sample.ego_center},
@@ -1377,21 +1262,12 @@ void write_lk_debug_topics_to_bag(
     }
     reference_centerlines.markers.push_back(make_line_strip_marker(
       timestamp, "lk_reference_centerlines", marker_id++, sample.reference_centerline,
-      make_color(0.95F, 0.90F, 0.20F, 0.80F), 0.08, false, marker_lifetime_s, 0.12));
+      make_color(0.2F, 1.0F, 0.4F, 0.80F), 0.08, false, marker_lifetime_s, 0.12));
   }
-
-  std::ostringstream label;
-  label << "LK=" << metrics.lane_keeping << "\nmax run=" << std::fixed << std::setprecision(2)
-        << debug_info.max_continuous_violation_time_s << "s\npeak |d|="
-        << debug_info.peak_abs_lateral_deviation_m << "m";
-  labels.markers.push_back(make_text_marker(
-    timestamp, "lk_labels", 0, debug_info.label_anchor, label.str(),
-    make_color(1.0F, 0.2F, 0.2F, 1.0F), marker_lifetime_s));
 
   bag_writer.write(ego_center_path, lk_debug_topic("ego_center_path"), timestamp);
   bag_writer.write(
     reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
-  bag_writer.write(labels, lk_debug_topic("labels"), timestamp);
 }
 
 void write_ep_debug_topics_to_bag(
@@ -1408,10 +1284,8 @@ void write_ep_debug_topics_to_bag(
 
   visualization_msgs::msg::MarkerArray route_progress_points;
   visualization_msgs::msg::MarkerArray route_reference;
-  visualization_msgs::msg::MarkerArray labels;
   route_progress_points.markers.push_back(make_delete_all_marker(timestamp));
   route_reference.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   route_progress_points.markers.push_back(make_line_strip_marker(
     timestamp, "ep_start_point", 0, square_marker_points(metrics.ego_progress_start_point, 0.35),
@@ -1430,17 +1304,8 @@ void write_ep_debug_topics_to_bag(
       make_color(1.0F, 0.85F, 0.15F, 0.85F), 0.12, false, marker_lifetime_s, 0.14));
   }
 
-  std::ostringstream label;
-  label << "EP=" << std::fixed << std::setprecision(2) << metrics.ego_progress
-        << "\nraw=" << metrics.ego_progress_raw_m << "m\nmask=" << metrics.ego_progress_mask
-        << "\nden=" << metrics.ego_progress_denominator_m << "m";
-  labels.markers.push_back(make_text_marker(
-    timestamp, "ep_labels", 0, metrics.ego_progress_end_point, label.str(),
-    make_color(1.0F, 0.95F, 0.25F, 1.0F), marker_lifetime_s));
-
   bag_writer.write(route_progress_points, ep_debug_topic("route_progress_points"), timestamp);
   bag_writer.write(route_reference, ep_debug_topic("route_reference"), timestamp);
-  bag_writer.write(labels, ep_debug_topic("labels"), timestamp);
 }
 
 void write_hc_debug_topics_to_bag(
@@ -1468,9 +1333,7 @@ void write_hc_debug_topics_to_bag(
   }
 
   visualization_msgs::msg::MarkerArray horizon_footprints;
-  visualization_msgs::msg::MarkerArray labels;
   horizon_footprints.markers.push_back(make_delete_all_marker(timestamp));
-  labels.markers.push_back(make_delete_all_marker(timestamp));
 
   int32_t marker_id = 0;
   for (std::size_t index = 0; index < metrics.history_comfort_sample_poses.size(); ++index) {
@@ -1486,26 +1349,7 @@ void write_hc_debug_topics_to_bag(
       polygon_to_msg_points(footprint, pose.position.z), hc_component_color(status.name, peak),
       width, true, marker_lifetime_s, z_offset));
   }
-
-  if (!metrics.history_comfort_sample_poses.empty()) {
-    const auto & peak_pose = metrics.history_comfort_sample_poses.at(peak_index);
-    const auto & peak_status = statuses.at(peak_index);
-    std::ostringstream label;
-    label << "HC=" << metrics.history_comfort << "\npeak=" << peak_status.name
-          << "\nseverity=" << std::fixed << std::setprecision(2) << peak_status.severity;
-    if (peak_index < metrics.history_comfort_sample_times.size()) {
-      label << "\ndt=" << std::setprecision(1) << metrics.history_comfort_sample_times.at(peak_index)
-            << "s";
-    }
-    labels.markers.push_back(make_text_marker(
-      timestamp, "hc_labels", 0, peak_pose.position, label.str(),
-      peak_status.severity > 1.0 ? make_color(1.0F, 0.2F, 0.2F, 1.0F)
-                                 : make_color(0.65F, 0.80F, 0.95F, 1.0F),
-      marker_lifetime_s));
-  }
-
   bag_writer.write(horizon_footprints, hc_debug_topic("horizon_footprints"), timestamp);
-  bag_writer.write(labels, hc_debug_topic("labels"), timestamp);
 }
 
 void write_trajectory_horizon_debug_topics_to_bag(
@@ -1540,7 +1384,7 @@ void write_trajectory_horizon_debug_topics_to_bag(
     gt_markers.markers.push_back(make_filled_polygon_marker(
       timestamp, "trajectory_gt_horizon_4s", marker_id++,
       polygon_to_msg_points(footprint, point.pose.position.z + 0.08),
-      make_color(0.0F, 0.85F, 1.0F, 0.35F), marker_lifetime_s, 0.0));
+      make_color(0.2F, 1.0F, 0.4F, 0.35F), marker_lifetime_s, 0.0));
   }
 
   bag_writer.write(planned_markers, trajectory_debug_topic("planned_horizon_4s"), timestamp);
@@ -3790,7 +3634,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(ttc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(ttc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(ttc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ttc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.history_comfort) {
     add_topic(metric_topic("history_comfort"), "std_msgs/msg/Float64");
@@ -3798,7 +3641,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(hc_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
     add_topic(hc_debug_topic("segments"), "std_msgs/msg/Float64MultiArray");
     add_topic(hc_debug_topic("horizon_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(hc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
     add_topic(trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray");
@@ -3826,7 +3668,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(lk_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(lk_debug_topic("ego_center_path"), "visualization_msgs/msg/MarkerArray");
     add_topic(lk_debug_topic("reference_centerlines"), "visualization_msgs/msg/MarkerArray");
-    add_topic(lk_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.ego_progress) {
     add_topic(metric_topic("ego_progress"), "std_msgs/msg/Float64");
@@ -3835,7 +3676,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(ep_debug_topic("progress_summary"), "std_msgs/msg/String");
     add_topic(ep_debug_topic("route_progress_points"), "visualization_msgs/msg/MarkerArray");
     add_topic(ep_debug_topic("route_reference"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ep_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.drivable_area_compliance) {
     add_topic(metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64");
@@ -3865,7 +3705,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(
       dac_debug_topic("road_border_fallback_corners"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("failing_corners"), "visualization_msgs/msg/MarkerArray");
-    add_topic(dac_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.no_at_fault_collision) {
     add_topic(metric_topic("no_at_fault_collision"), "std_msgs/msg/Float64");
@@ -3876,7 +3715,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(nc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(nc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(nc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
-    add_topic(nc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.driving_direction_compliance) {
     add_topic(metric_topic("driving_direction_compliance"), "std_msgs/msg/Float64");
@@ -3889,7 +3727,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(ddc_debug_topic("route_lane_polygons"), "visualization_msgs/msg/MarkerArray");
     add_topic(
       ddc_debug_topic("intersection_lane_polygons"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ddc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.traffic_light_compliance) {
     add_topic(metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64");
@@ -3898,7 +3735,6 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(tlc_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(tlc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(tlc_debug_topic("stop_lines"), "visualization_msgs/msg/MarkerArray");
-    add_topic(tlc_debug_topic("labels"), "visualization_msgs/msg/MarkerArray");
   }
   add_topic(trajectory_debug_topic("planned_horizon_4s"), "visualization_msgs/msg/MarkerArray");
   add_topic(trajectory_debug_topic("gt_horizon_4s"), "visualization_msgs/msg/MarkerArray");
