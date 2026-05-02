@@ -14,7 +14,7 @@
 
 #include "traffic_light_compliance.hpp"
 
-#include "../geometry/metric_utils.hpp"
+#include "../../geometry/metric_utils.hpp"
 
 #include <autoware/lanelet2_utils/intersection.hpp>
 #include <autoware/traffic_light_utils/traffic_light_utils.hpp>

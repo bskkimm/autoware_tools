@@ -15,7 +15,7 @@
 #ifndef METRICS__EPDMS__EPDMS_TYPES_HPP_
 #define METRICS__EPDMS__EPDMS_TYPES_HPP_
 
-#include "../geometry/metric_utils.hpp"
+#include "../../geometry/metric_utils.hpp"
 
 #include <lanelet2_core/primitives/Lanelet.h>
 

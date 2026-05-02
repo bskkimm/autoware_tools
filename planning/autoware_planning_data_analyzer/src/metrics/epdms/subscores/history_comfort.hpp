@@ -15,7 +15,7 @@
 #ifndef METRICS__HISTORY_COMFORT_HPP_
 #define METRICS__HISTORY_COMFORT_HPP_
 
-#include "../trajectory_metrics.hpp"
+#include "../../trajectory_metrics.hpp"
 
 namespace autoware::planning_data_analyzer::metrics
 {

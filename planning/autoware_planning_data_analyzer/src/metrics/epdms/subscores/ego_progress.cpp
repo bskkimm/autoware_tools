@@ -14,7 +14,7 @@
 
 #include "ego_progress.hpp"
 
-#include "../geometry/metric_utils.hpp"
+#include "../../geometry/metric_utils.hpp"
 
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
 

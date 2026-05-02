@@ -10,18 +10,18 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/open_loop_evaluator.cpp
   src/metrics/deviation_metrics.cpp
   src/metrics/geometry/comfort_signal.cpp
-  src/metrics/epdms/epdms_context.cpp
-  src/metrics/epdms/epdms_aggregation.cpp
-  src/metrics/epdms/ego_progress.cpp
-  src/metrics/epdms/driving_direction_compliance.cpp
-  src/metrics/epdms/history_comfort.cpp
-  src/metrics/epdms/lane_keeping.cpp
+  src/metrics/epdms/context/epdms_context.cpp
+  src/metrics/epdms/aggregation/epdms_aggregation.cpp
+  src/metrics/epdms/subscores/ego_progress.cpp
+  src/metrics/epdms/subscores/driving_direction_compliance.cpp
+  src/metrics/epdms/subscores/history_comfort.cpp
+  src/metrics/epdms/subscores/lane_keeping.cpp
   src/metrics/geometry/metric_utils.cpp
-  src/metrics/epdms/drivable_area_compliance.cpp
-  src/metrics/epdms/extended_comfort.cpp
-  src/metrics/epdms/ttc_within_bound.cpp
-  src/metrics/epdms/no_at_fault_collision.cpp
-  src/metrics/epdms/traffic_light_compliance.cpp
+  src/metrics/epdms/subscores/drivable_area_compliance.cpp
+  src/metrics/epdms/subscores/extended_comfort.cpp
+  src/metrics/epdms/subscores/ttc_within_bound.cpp
+  src/metrics/epdms/subscores/no_at_fault_collision.cpp
+  src/metrics/epdms/subscores/traffic_light_compliance.cpp
   src/metrics/trajectory_metrics.cpp
   src/utils/bag_utils.cpp
   src/utils/json_utils.cpp

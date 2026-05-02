@@ -14,8 +14,8 @@
 
 #include "history_comfort.hpp"
 
-#include "../geometry/comfort_signal.hpp"
-#include "../geometry/metric_utils.hpp"
+#include "../../geometry/comfort_signal.hpp"
+#include "../../geometry/metric_utils.hpp"
 
 #include <algorithm>
 #include <cmath>

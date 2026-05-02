@@ -14,7 +14,7 @@
 
 #include "extended_comfort.hpp"
 
-#include "../geometry/comfort_signal.hpp"
+#include "../../geometry/comfort_signal.hpp"
 
 #include <rclcpp/rclcpp.hpp>
 

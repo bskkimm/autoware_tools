@@ -14,7 +14,7 @@
 
 #include "ttc_within_bound.hpp"
 
-#include "../geometry/metric_utils.hpp"
+#include "../../geometry/metric_utils.hpp"
 
 #include <autoware/object_recognition_utils/object_classification.hpp>
 #include <autoware_utils_geometry/boost_geometry.hpp>

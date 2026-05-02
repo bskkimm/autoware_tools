@@ -16,12 +16,12 @@
 #define METRICS__TRAJECTORY_METRICS_HPP_
 
 #include "../data_types.hpp"
-#include "epdms/drivable_area_compliance.hpp"
-#include "epdms/driving_direction_compliance.hpp"
-#include "epdms/lane_keeping.hpp"
-#include "epdms/no_at_fault_collision.hpp"
-#include "epdms/traffic_light_compliance.hpp"
-#include "epdms/ttc_within_bound.hpp"
+#include "epdms/subscores/drivable_area_compliance.hpp"
+#include "epdms/subscores/driving_direction_compliance.hpp"
+#include "epdms/subscores/lane_keeping.hpp"
+#include "epdms/subscores/no_at_fault_collision.hpp"
+#include "epdms/subscores/traffic_light_compliance.hpp"
+#include "epdms/subscores/ttc_within_bound.hpp"
 
 #include <autoware/route_handler/route_handler.hpp>
 #include <autoware_vehicle_info_utils/vehicle_info.hpp>

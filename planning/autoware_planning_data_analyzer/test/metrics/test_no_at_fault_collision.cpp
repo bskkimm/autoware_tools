@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "../../src/metrics/geometry/metric_utils.hpp"
-#include "../../src/metrics/epdms/no_at_fault_collision.hpp"
+#include "../../src/metrics/epdms/subscores/no_at_fault_collision.hpp"
 
 #include <autoware_lanelet2_extension/utility/message_conversion.hpp>
 #include <autoware_utils_geometry/geometry.hpp>
