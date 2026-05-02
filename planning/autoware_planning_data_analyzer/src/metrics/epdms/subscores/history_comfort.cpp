@@ -187,10 +187,15 @@ void calculate_history_comfort_metrics(
   const auto states = build_padded_states(sync_data, history_comfort_params);
   if (states.empty()) {
     metrics.history_comfort = 1.0;
+    metrics.history_comfort_available = true;
+    metrics.history_comfort_reason = "available_navsim_default_pass";
     metrics.history_comfort_debug_summary =
       "{\"score\":1,\"reason\":\"missing_past_or_future_states_navsim_default_pass\"}";
     return;
   }
+
+  metrics.history_comfort_available = true;
+  metrics.history_comfort_reason = "available";
 
   std::vector<ComfortSignalInput> signal_inputs;
   signal_inputs.reserve(states.size());

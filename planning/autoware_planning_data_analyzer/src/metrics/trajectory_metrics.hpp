@@ -83,6 +83,8 @@ struct TrajectoryPointMetrics
   std::vector<double> lateral_deviations;
   std::vector<double> travel_distances;
   double history_comfort{0.0};
+  bool history_comfort_available{false};
+  std::string history_comfort_reason{"unavailable"};
   std::string history_comfort_debug_summary;
   double time_to_collision_within_bound{0.0};
   bool time_to_collision_within_bound_available{false};

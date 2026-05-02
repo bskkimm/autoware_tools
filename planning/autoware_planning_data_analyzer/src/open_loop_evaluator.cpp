@@ -1754,6 +1754,8 @@ void OpenLoopEvaluator::evaluate(
           future_objects);
         auto metrics = evaluate_trajectory(eval_data);
         metrics.history_comfort = trajectory_metrics.history_comfort;
+        metrics.history_comfort_available = trajectory_metrics.history_comfort_available;
+        metrics.history_comfort_reason = trajectory_metrics.history_comfort_reason;
         metrics.time_to_collision_within_bound = trajectory_metrics.time_to_collision_within_bound;
         metrics.time_to_collision_within_bound_available =
           trajectory_metrics.time_to_collision_within_bound_available;
@@ -3013,12 +3015,22 @@ nlohmann::json OpenLoopEvaluator::get_summary_as_json() const
 
   std::vector<double> history_comfort_values;
   history_comfort_values.reserve(metrics_list_.size());
+  std::size_t history_comfort_available_count = 0;
+  std::map<std::string, std::size_t> history_comfort_reason_counts;
   for (const auto & m : metrics_list_) {
-    history_comfort_values.push_back(m.history_comfort);
+    ++history_comfort_reason_counts[m.history_comfort_reason];
+    if (m.history_comfort_available) {
+      history_comfort_values.push_back(m.history_comfort);
+      ++history_comfort_available_count;
+    }
   }
   emit_metric(
     "aggregate", "history_comfort", "Binary history comfort subscore across trajectories [-]",
     history_comfort_values);
+  j["aggregate/history_comfort_available_count"] = history_comfort_available_count;
+  j["aggregate/history_comfort_unavailable_count"] =
+    metrics_list_.size() - history_comfort_available_count;
+  j["aggregate/history_comfort_reason_counts"] = history_comfort_reason_counts;
   std::vector<double> extended_comfort_values;
   extended_comfort_values.reserve(metrics_list_.size());
   std::size_t extended_comfort_available_count = 0;
@@ -3406,6 +3418,8 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
     traj["longitudinal_deviations"] = m.longitudinal_deviations;
     traj["ttc"] = m.ttc;
     traj["history_comfort"] = m.history_comfort;
+    traj["history_comfort_available"] = m.history_comfort_available;
+    traj["history_comfort_reason"] = m.history_comfort_reason;
     traj["extended_comfort"] = m.extended_comfort;
     traj["extended_comfort_available"] = m.extended_comfort_available;
     traj["extended_comfort_reason"] = m.extended_comfort_reason;
@@ -3538,6 +3552,9 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
       traj["trajectory_point_metrics"]["lateral_deviations"] = pm.lateral_deviations;
       traj["trajectory_point_metrics"]["travel_distances"] = pm.travel_distances;
       traj["trajectory_point_metrics"]["history_comfort"] = pm.history_comfort;
+      traj["trajectory_point_metrics"]["history_comfort_available"] =
+        pm.history_comfort_available;
+      traj["trajectory_point_metrics"]["history_comfort_reason"] = pm.history_comfort_reason;
       traj["trajectory_point_metrics"]["history_comfort_debug_summary"] =
         pm.history_comfort_debug_summary;
       traj["trajectory_point_metrics"]["time_to_collision_within_bound"] =
