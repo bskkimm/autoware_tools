@@ -258,3 +258,58 @@ Recommended order:
 
 Keep PRs stacked only where dependency is unavoidable. If a PR can be independent, branch it from
 the latest `upstream/main`.
+
+
+## PR status:
+
+### Common EPDMS infrastructure and shared helpers
+PR opened: https://github.com/autowarefoundation/autoware_tools/pull/421
+
+## Ultimate EPDMS file tree after All pr:
+```
+│──src
+│   └── metrics
+│       ├── deviation_metrics.cpp
+│       ├── deviation_metrics.hpp
+│       ├── metric_types.hpp
+│       ├── trajectory_metrics.cpp
+│       ├── trajectory_metrics.hpp
+│       ├── epdms
+│       │   ├── aggregation
+│       │   │   ├── epdms_aggregation.cpp
+│       │   │   └── epdms_aggregation.hpp
+│       │   ├── context
+│       │   │   ├── epdms_context.cpp
+│       │   │   ├── epdms_context.hpp
+│       │   │   └── epdms_types.hpp
+│       │   └── subscores
+│       │       ├── drivable_area_compliance.cpp
+│       │       ├── drivable_area_compliance.hpp
+│       │       ├── driving_direction_compliance.cpp
+│       │       ├── driving_direction_compliance.hpp
+│       │       ├── ego_progress.cpp
+│       │       ├── ego_progress.hpp
+│       │       ├── extended_comfort.cpp
+│       │       ├── extended_comfort.hpp
+│       │       ├── history_comfort.cpp
+│       │       ├── history_comfort.hpp
+│       │       ├── lane_keeping.cpp
+│       │       ├── lane_keeping.hpp
+│       │       ├── no_at_fault_collision.cpp
+│       │       ├── no_at_fault_collision.hpp
+│       │       ├── traffic_light_compliance.cpp
+│       │       ├── traffic_light_compliance.hpp
+│       │       ├── ttc_within_bound.cpp
+│       │       └── ttc_within_bound.hpp
+│       └── geometry
+│           ├── comfort_signal.cpp
+│           ├── comfort_signal.hpp
+│           ├── ego_footprint.cpp
+│           ├── ego_footprint.hpp
+│           ├── lanelet_queries.cpp
+│           ├── lanelet_queries.hpp
+│           ├── metric_utils.cpp
+│           ├── metric_utils.hpp
+│           ├── object_tracks.cpp
+│           └── object_tracks.hpp
+```
