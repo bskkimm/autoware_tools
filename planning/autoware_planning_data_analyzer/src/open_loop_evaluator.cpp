@@ -1526,8 +1526,8 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   human_snapshot.history_comfort_available = true;
   human_snapshot.extended_comfort = 0.0;
   human_snapshot.extended_comfort_available = false;
-  human_snapshot.ego_progress = 1.0;
-  human_snapshot.ego_progress_available = false;
+  human_snapshot.ego_progress = human_point_metrics.ego_progress;
+  human_snapshot.ego_progress_available = human_point_metrics.ego_progress_available;
   human_snapshot.time_to_collision_within_bound =
     human_point_metrics.time_to_collision_within_bound;
   human_snapshot.time_to_collision_within_bound_available =

@@ -3116,19 +3116,18 @@ This project has **no equivalent implementation**.
 
 - **Same NAVSIM human reference inputs available?** **Partially**
 - **NAVSIM requires:** a scored human trajectory through the same simulator / scorer stack on original scenes
-- **Migrated replacement:** clone the synchronized sample and substitute the ground-truth trajectory for per-trajectory metrics; compute EC from consecutive ground-truth trajectories; do not compute a human EP proposal set
-- **Key consequence:** the migrated code has **no human ego-progress reference**, so EP is never actually human-filtered.
+- **Migrated replacement:** clone the synchronized sample and substitute the ground-truth trajectory for per-trajectory metrics.
+- Human EP is computed by the same local single-proposal EP implementation on the ground-truth trajectory. This generally yields `1.0`, matching the practical NAVSIM human-only scoring behavior, but still keeps the filter path available if a human EP reference becomes `0`.
 
 ### Platform deviations and impact
 
 - NAVSIM code filters columns in `PDMResults` when the human score is exactly zero, then recomputes multiplicative and weighted values.
-- Because `PDMResults` does not store EC, NAVSIM code does **not** human-filter EC in that path.
-- The migrated code explicitly stores a human EC snapshot and can filter EC.
-- The migrated code sets `human_snapshot.ego_progress_available = false`, so EP is effectively **never** filtered.
-- Therefore:
-  - **NAVSIM code behavior:** filters `NC, DAC, DDC, TLC, EP, TTC, LK, HC`; does **not** filter EC.
-  - **Migrated behavior:** filters `NC, DAC, DDC, TLC, TTC, LK, HC, EC`; does **not** filter EP.
-- **Impact:** **High.** This is one of the most important behavioral differences in the migration.
+- Because `PDMResults` does not store EC, NAVSIM code does **not** human-filter EC in that path. EC is injected later into the weighted vector.
+- The migrated code now follows that behavior at the single-trajectory aggregation level:
+  - filters `NC, DAC, DDC, TLC, EP, TTC, LK, HC`
+  - does **not** filter `EC`
+  - then recomputes the 16-weight final EPDMS using filtered base metrics plus unfiltered agent EC.
+- **Impact:** **Low** for the final single-trajectory aggregation formula after this patch. The remaining gap is NAVSIM's pseudo closed-loop scene aggregation, which is still not implemented in this project.
 
 ### Equation comparison
 
@@ -3180,15 +3179,15 @@ $$
 \mathrm{synthetic\_epdms\_human\_filtered}_{aw} =
 \left(F_{NC}^{aw}F_{DAC}^{aw}F_{DDC}^{aw}F_{TLC}^{aw}\right)\cdot
 \frac{
-5\mathrm{EP}+5F_{TTC}^{aw}+2F_{LK}^{aw}+2F_{HC}^{aw}+2F_{EC}^{aw}
+5F_{EP}^{aw}+5F_{TTC}^{aw}+2F_{LK}^{aw}+2F_{HC}^{aw}+2\mathrm{EC}
 }{16}.
 $$
 
-The highlighted difference is that the migrated implementation uses plain `EP`, not $F_{EP}$, but does use $F_{EC}^{aw}$.
+This matches the NAVSIM code path at the final single-trajectory formula level: EP is part of the filtered base metric vector, while EC remains unfiltered because NAVSIM injects EC after the human-filtered `PDMResults` columns have already been recomputed.
 
 ### Assessment
 
-The migrated human-filtered implementation is **not equivalent** to NAVSIM code. This is the most important aggregation-level deviation after HC/EC/EP semantics.
+The migrated human-filtered implementation is **formula-equivalent to NAVSIM's single-trajectory code path** after this patch. It is still not equivalent to NAVSIM's full published pseudo closed-loop aggregation because this project does not construct or weight second-stage synthetic scenes.
 
 ---
 

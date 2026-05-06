@@ -142,14 +142,11 @@ SyntheticEpdmsMetrics calculate_synthetic_epdms(
       human_filter_metrics.drivable_area_compliance.filtered *
       human_filter_metrics.driving_direction_compliance.filtered *
       human_filter_metrics.traffic_light_compliance.filtered;
-    const double filtered_ego_progress =
-      human_filter_metrics.ego_progress.filter_applied ? 1.0 : agent_metrics.ego_progress;
     result.human_filtered.weighted_metrics =
-      (5.0 * filtered_ego_progress +
+      (5.0 * human_filter_metrics.ego_progress.filtered +
        5.0 * human_filter_metrics.time_to_collision_within_bound.filtered +
        2.0 * human_filter_metrics.lane_keeping.filtered +
-       2.0 * human_filter_metrics.history_comfort.filtered +
-       2.0 * human_filter_metrics.extended_comfort.filtered) /
+       2.0 * human_filter_metrics.history_comfort.filtered + 2.0 * agent_metrics.extended_comfort) /
       kSyntheticWeightedDenominator;
     result.human_filtered.epdms =
       result.human_filtered.multiplicative_metrics_prod * result.human_filtered.weighted_metrics;
