@@ -169,19 +169,24 @@ TEST_F(OpenLoopGTSourceModeTest, VariantsNamespaceOpenLoopResultTopics)
     });
   };
 
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/history_comfort"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/extended_comfort"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/time_to_collision_within_bound"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/lane_keeping"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/ego_progress"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/driving_direction_compliance"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/traffic_light_compliance"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw_available"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered_available"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/history_comfort"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/history_comfort_available"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/history_comfort_reason"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/extended_comfort"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/time_to_collision_within_bound"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/time_to_collision_infraction_time_s"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/lane_keeping"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/ego_progress"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/drivable_area_compliance"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/no_at_fault_collision"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/driving_direction_compliance"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/traffic_light_compliance"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_raw"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_raw_available"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_human_filtered"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_human_filtered_available"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/history_comfort"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/collision_summary"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/ego_footprints"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/object_footprints"));
@@ -230,9 +235,9 @@ TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
     });
   };
 
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/time_to_at_fault_collision_s"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision_available"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/no_at_fault_collision"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/time_to_at_fault_collision_s"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/no_at_fault_collision_available"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/collision_summary"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/ego_footprints"));
   EXPECT_FALSE(has_topic("/debug/epdms/nc/object_footprints"));
@@ -240,9 +245,9 @@ TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
   EXPECT_TRUE(has_topic("/planning/trajectory"));
   EXPECT_TRUE(has_topic("/perception/object_recognition/tracking/objects"));
 
-  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/time_to_collision_within_bound"));
-  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));
-  EXPECT_FALSE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/epdms/time_to_collision_within_bound"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/epdms/drivable_area_compliance"));
+  EXPECT_FALSE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_raw"));
   EXPECT_FALSE(has_topic("/trajectory/raw/longitudinal_accelerations"));
   EXPECT_FALSE(has_topic("/trajectory/raw/travel_distances"));
   EXPECT_FALSE(has_topic("/evaluation/compared_trajectory/raw"));
@@ -264,10 +269,10 @@ TEST_F(OpenLoopGTSourceModeTest, EmptyEnabledMetricsMeansAllMetrics)
     });
   };
 
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/history_comfort"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));
-  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/history_comfort"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/no_at_fault_collision"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/drivable_area_compliance"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/epdms/synthetic_epdms_raw"));
 }
 
 TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsRejectsUnknownNames)

@@ -955,7 +955,7 @@ the whole sequence using NAVSIM-style local polynomial smoothing / derivatives.
 Core scalar output:
 
 ```text
-/open_loop/metrics/raw/history_comfort
+/open_loop/metrics/epdms/history_comfort
 ```
 
 Per-sample signal outputs:

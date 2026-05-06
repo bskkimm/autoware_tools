@@ -364,6 +364,7 @@ private:
     const rclcpp::Time & normalized_timestamp) const;
 
   std::string metric_topic(const std::string & metric_name) const;
+  std::string epdms_metric_topic(const std::string & metric_name) const;
   std::string trajectory_metric_topic(const std::string & metric_name) const;
   std::string compared_trajectory_topic() const;
   std::string dlr_result_topic() const;
