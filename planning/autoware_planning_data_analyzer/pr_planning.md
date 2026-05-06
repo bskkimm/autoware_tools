@@ -1,19 +1,165 @@
 # EPDMS Upstream PR Planning Runbook
 
-This runbook is mandatory for gradual EPDMS migration PRs from the `kim` remote into
+This runbook is the source of truth for the remaining gradual EPDMS PR series into
 `upstream/main` of `autowarefoundation/autoware_tools`.
+
+PR #421 is already merged and is treated as the first accepted PR in this series. For the
+remaining PRs, use the current `kim` implementation branch as the extraction reference:
+
+```text
+refactor/epdms-metric-topics
+```
+
+Do not use the older EPDMS-only source tree as the reference anymore. The current reference
+branch contains the intended EPDMS source layout, runtime controls, aggregation/human-filter
+logic, and EPDMS metric-topic namespace.
+
+## Current Reference Layout
+
+The complete target layout for the EPDMS-related analyzer code is:
+
+```text
+planning/autoware_planning_data_analyzer/src/
+  metrics/
+    metric_types.hpp
+    trajectory_metrics.hpp
+    trajectory_metrics.cpp
+
+    geometry/
+      comfort_signal.hpp
+      comfort_signal.cpp
+      ego_footprint.hpp
+      ego_footprint.cpp
+      lanelet_queries.hpp
+      lanelet_queries.cpp
+      metric_utils.hpp
+      metric_utils.cpp
+      object_tracks.hpp
+      object_tracks.cpp
+
+    epdms/
+      context/
+        epdms_context.hpp
+        epdms_context.cpp
+        epdms_types.hpp
+
+      subscores/
+        no_at_fault_collision.hpp
+        no_at_fault_collision.cpp
+        drivable_area_compliance.hpp
+        drivable_area_compliance.cpp
+        driving_direction_compliance.hpp
+        driving_direction_compliance.cpp
+        traffic_light_compliance.hpp
+        traffic_light_compliance.cpp
+        ttc_within_bound.hpp
+        ttc_within_bound.cpp
+        lane_keeping.hpp
+        lane_keeping.cpp
+        history_comfort.hpp
+        history_comfort.cpp
+        extended_comfort.hpp
+        extended_comfort.cpp
+        ego_progress.hpp
+        ego_progress.cpp
+
+      aggregation/
+        epdms_aggregation.hpp
+        epdms_aggregation.cpp
+```
+
+Keep `metrics/geometry/*` outside `metrics/epdms/*` because those helpers are general metric
+geometry utilities and may be reused by non-EPDMS metrics later.
 
 ## Branch Strategy
 
-- Always start each upstream PR branch from the latest `upstream/main`, unless the PR is
-  intentionally stacked on a previous not-yet-merged migration PR.
-- Do not rebase or directly PR the long-lived `kim` implementation branch. Port only the
-  intended PR slice.
-- Keep PRs reviewable: one common infrastructure slice or one subscore migration slice per PR.
-- If a PR depends on a previous PR, set the GitHub PR base to that previous PR branch to avoid
-  duplicated diffs.
-- Before starting the next slice, ensure the current slice is committed, pushed, and has a
-  reproducible validation record.
+- Start every upstream PR branch from latest `upstream/main`, unless it is intentionally stacked
+  on another not-yet-merged PR.
+- Do not open PRs directly from the long-lived `kim` branch. Port only the intended PR slice.
+- Use signed commits:
+
+```bash
+git commit -s -m "refactor(planning_data_analyzer): ..."
+```
+
+- Avoid `migrate` in branch names and PR title prefixes. Prefer:
+  - `refactor/planning-data-analyzer-epdms-context`
+  - `feat/planning-data-analyzer-epdms-nc`
+  - `fix/planning-data-analyzer-epdms-aggregation`
+- Keep each PR reviewable: one infrastructure slice, one subscore slice, or one output-contract
+  slice.
+- If a PR depends on an unmerged previous PR, set the GitHub PR base to that previous PR branch
+  so the diff does not duplicate earlier work.
+- Before starting a new PR slice, commit and push the current slice and record validation paths.
+
+## Remaining PR Order
+
+Recommended order after merged PR #421:
+
+1. Shared metric source layout and reusable helpers.
+   - Add `metrics/trajectory_metrics.*`, `metrics/metric_types.hpp`, `metrics/geometry/*`, and
+     `metrics/epdms/context/*`.
+   - Keep score behavior unchanged as much as possible.
+   - This PR should mainly reduce duplication and create the final file layout.
+
+2. Runtime controls and output topic contract.
+   - Add default-all EPDMS metric selection.
+   - Add `open_loop.debug_topics_enabled`, default `false`.
+   - Move EPDMS score topics to `/open_loop/metrics/epdms/*`.
+   - Keep diagnostic arrays excluded from the EPDMS namespace.
+
+3. NC and shared object-track usage.
+   - Port NAVSIM-faithful NC logic from the current reference branch.
+   - Use recorded tracked objects from the selected object-track source.
+   - Preserve NC debug outputs behind `open_loop.debug_topics_enabled`.
+
+4. DAC.
+   - Port semantic drivable-area logic using road lanelets, road shoulder lanelets,
+     `intersection_area`, `hatched_road_markings`, and `parking_lot`.
+   - Do not include the experimental road-border fallback unless it is explicitly revalidated
+     and accepted for upstream.
+   - Document exactly which road-space categories are admitted/excluded.
+
+5. DDC.
+   - Port wrong-way/oncoming progress logic.
+   - Keep DAC-style generic non-drivable intrusion separate from DDC oncoming progress.
+   - Reuse route/lanelet context where semantics match.
+
+6. TLC.
+   - Port stop-line based traffic-light compliance logic.
+   - Include signal-group association and movement selection.
+   - Preserve right/left arrow handling and turn-indicator movement inference.
+
+7. TTC.
+   - Port NAVSIM-style recorded-object TTC logic.
+   - Reuse object-track preprocessing where possible.
+   - Preserve `BadOrIntersection = MultipleLanes OR NonDrivableArea OR Intersection` semantics.
+
+8. LK.
+   - Port sample-wise centerline deviation logic.
+   - Keep Autoware centerline selection as the intentional NAVSIM deviation.
+   - Use turn-indicator/hazard-based lane-change exemption only.
+
+9. HC and EC.
+   - Port NAVSIM-style history comfort using past human states plus planned horizon.
+   - Port two-frame extended comfort.
+   - Keep comfort signal computation in shared `metrics/geometry/comfort_signal.*`.
+   - Split HC and EC into separate PRs if the diff becomes hard to review.
+
+10. EP.
+    - Port NAVSIM-faithful ego progress logic using the current single selected trajectory topic.
+    - Leave the future multi-candidate trajectory source as a documented follow-up.
+
+11. Aggregation and human-filtered EPDMS.
+    - Port NAVSIM-faithful synthetic EPDMS aggregation.
+    - Human filter applies to NC, DAC, DDC, TLC, EP, TTC, LK, and HC.
+    - Human filter does not apply to EC.
+    - Use GT/human reference metrics for filtering where available.
+
+12. Documentation and cleanup.
+    - Align `implementation_report.md`.
+    - Align `debugging_explanation.md`.
+    - Remove stale topic names, stale labels, and obsolete transitional code.
 
 ## Required Local Checks Before Every PR
 
@@ -47,85 +193,125 @@ Pre-commit:
 pre-commit run --all-files
 ```
 
-If this is too broad for an intermediate local check, at minimum run pre-commit on changed files
-first, then run `pre-commit run --all-files` before opening the PR.
+If the broad pre-commit check is too slow during local iteration, first run pre-commit on changed
+files, then run `pre-commit run --all-files` before opening the PR.
 
-## Required Full Analyzer Validation
+## Full Analyzer Validation
 
-Before opening each PR, run the full analyzer pipeline, not only unit tests.
+Before opening each PR, run the analyzer pipeline. Use the `pilot-auto.x2` underlay for local
+validation:
 
-- For infrastructure-only PRs, verify the result JSON and debug topic set are behaviorally
-  unchanged against the latest accepted baseline for both bags.
-- For PRs that migrate or change a subscore, compare the migrated subscore against the existing
-  `kim` artifact for `x2_takanawa`.
-- When the subscore is expected to change behavior, report the exact expected deltas:
-  - total evaluated trajectories
-  - available/unavailable count
-  - number of non-1 scores
-  - first/representative failure timestamps
-  - reason-count changes
-  - expected debug topics produced
-- Also check that already-migrated subscores do not regress:
-  - metric topics still exist
-  - debug topics still exist
-  - availability counts stay consistent unless intentionally changed
-  - failure counts stay consistent unless intentionally changed
+```bash
+source /opt/ros/humble/setup.bash
+source /home/beomseokkim2/workspace/pilot-auto.x2/install/setup.bash
+```
 
-Use cumulative EPDMS metrics in the full run. The cumulative set grows as migration proceeds:
+Do not modify files inside `/home/beomseokkim2/workspace/pilot-auto.x2`. If an upstream PR branch
+temporarily needs the same dependency behavior as the `kim` reference branch to run against the
+`pilot-auto.x2` underlay, patch only the PR branch, run validation, then restore the upstream
+dependency state before committing and pushing.
+
+Validate with cumulative EPDMS metrics:
 
 ```yaml
 open_loop.enabled_metrics: ['nc', 'dac', 'ddc', 'tlc', 'ttc', 'lk', 'hc', 'ec', 'ep']
 ```
 
-For the current migration work, validate at least:
+Validation policy:
 
-- `x2_takanawa`: primary regression comparison against existing `kim` artifacts.
-- `x2_odaiba`: cross-map sanity check when the PR touches map/object/subscore semantics.
+- Infrastructure-only PRs: score JSON and topic set should be behaviorally unchanged against the
+  accepted baseline unless the PR explicitly changes output names.
+- Subscore PRs: compare the PR-branch result to the current `kim` reference artifact for the same
+  subscore.
+- Aggregation/human-filter PRs: compare raw subscore values, raw EPDMS, human references,
+  filter-applied counts, and human-filtered EPDMS.
+- Always check already-ported subscores for regressions.
 
-## Subscore PR Acceptance Checklist
+Required bags:
 
-For every actual subscore migration PR, record the following in the PR description:
+- `x2_takanawa`: primary regression comparison against the accepted `kim` reference artifact.
+- `x2_odaiba`: required when touching map semantics, object semantics, DAC, DDC, NC, TTC, TLC, or
+  aggregation. Recommended for all remaining EPDMS PRs if runtime allows.
 
-- Baseline artifact path from `kim`.
-- New PR-branch artifact path.
-- Full run command or script path.
-- Build result.
-- Unit test result.
-- Pre-commit result.
-- Metric topic presence.
-- Debug topic presence.
-- Failure count comparison.
-- Availability comparison.
-- Representative timestamp diagnosis if counts differ.
+For every full run, record:
 
-Do not open the PR if the score changed and the reason is not understood.
+- input bag path
+- map path
+- output artifact path
+- exact command or script path
+- evaluated trajectory count
+- available/unavailable count per subscore
+- non-1 count per subscore
+- representative failure timestamps
+- metric topics produced
+- debug topics produced when `open_loop.debug_topics_enabled:=true`
+
+Do not open a PR if score deltas exist and the reason is not understood.
+
+## Output Topic Contract
+
+EPDMS score, availability, reason, and aggregate score topics should use:
+
+```text
+/open_loop/metrics/epdms/*
+```
+
+Diagnostic trajectory arrays remain outside that namespace:
+
+```text
+/trajectory/raw/ttc_values
+/trajectory/raw/lateral_deviations
+/trajectory/raw/travel_distances
+/trajectory/raw/longitudinal_accelerations
+/trajectory/raw/lateral_accelerations
+/trajectory/raw/lateral_jerks
+/trajectory/raw/jerk_magnitudes
+/trajectory/raw/longitudinal_jerks
+/trajectory/raw/yaw_rates
+/trajectory/raw/yaw_accelerations
+```
+
+Non-EPDMS raw metrics remain under:
+
+```text
+/open_loop/metrics/raw/*
+```
+
+Debug topics remain under:
+
+```text
+/debug/epdms/*
+```
+
+and must be disabled by default unless `open_loop.debug_topics_enabled:=true`.
 
 ## PR Description Format
 
-Use the upstream PR template headings, but fill them with the analyzer-specific content below.
+Use the upstream PR template headings, filled with the concise analyzer-specific content below.
 
 ```markdown
 ## Description
 
 ### Scope
 
-- PR type: infrastructure-only / subscore migration / debug-output update / aggregation.
+- PR type: infrastructure / subscore / runtime-control / output-topic / aggregation / docs.
 - Target metric or subscore:
 - Base branch:
-- If stacked, parent PR/branch:
+- Parent PR/branch if stacked:
+- This is PR N in the EPDMS patch PR series.
 
 ### What Changed
 
 - Concise implementation bullets.
-- Mention whether score semantics changed.
-- Mention whether debug topics changed.
-- Mention whether output JSON/schema changed.
+- Score semantics changed: yes/no.
+- Debug topics changed: yes/no.
+- Output topic or JSON schema changed: yes/no.
 
 ### Expected Behavior
 
-- For infrastructure-only PRs: expected no score/result change.
-- For subscore PRs: expected score behavior and known intentional deltas.
-- For debug-only PRs: expected metric values unchanged.
+- Expected no score change / expected score change:
+- Expected topic change:
+- Known intentional deltas:
 
 ## How was this PR tested?
 
@@ -144,13 +330,13 @@ Use the upstream PR template headings, but fill them with the analyzer-specific 
 ### Full Analyzer Runs
 
 - Takanawa:
-  - Input bag:
+  - Input:
   - Output artifact:
-  - Full command/script:
-- Odaiba, if relevant:
-  - Input bag:
+  - Command/script:
+- Odaiba:
+  - Input:
   - Output artifact:
-  - Full command/script:
+  - Command/script:
 
 ### Metric Comparison
 
@@ -161,21 +347,21 @@ Use the upstream PR template headings, but fill them with the analyzer-specific 
 - Non-1/failure count comparison:
 - Reason-count comparison:
 - Representative changed timestamps:
-- Explanation for every intentional delta:
+- Explanation for intentional deltas:
 
 ### Topic Verification
 
 - Metric topics produced:
 - Availability/reason topics produced:
 - Debug topics produced:
-- Previously migrated subscore topics still produced:
+- Existing ported topics still produced:
 
 ## Notes for reviewers
 
 - Review focus:
 - Known limitations:
 - Follow-up PRs:
-- Any intentionally deferred NAVSIM-faithfulness gaps:
+- Deferred NAVSIM-faithfulness gaps:
 
 ## Effects on system behavior
 
@@ -189,25 +375,7 @@ Do not leave validation fields blank. If a section is not applicable, write `N/A
 
 ## Upstream CI Expectations
 
-Observed from upstream PR:
-
-- Reference PR: <https://github.com/autowarefoundation/autoware_tools/pull/401>
-- Required DCO check exists and passed there as `DCO`.
-- Use signed commits for every commit:
-
-```bash
-git commit -s -m "feat(planning_data_analyzer): ..."
-```
-
-- PR title must satisfy semantic PR rules, e.g.:
-  - `feat(planning_data_analyzer): migrate NC EPDMS metric`
-  - `fix(planning_data_analyzer): align TTC object filtering`
-  - `refactor(planning_data_analyzer): add EPDMS shared context`
-- The differential build/test workflow runs only when label
-  `tag:run-build-and-test-differential` is present.
-- Use `component:planning` for analyzer PRs.
-
-Checks observed on PR #401:
+Observed upstream checks include:
 
 - `DCO`
 - `semantic-pull-request / semantic-pull-request`
@@ -219,97 +387,32 @@ Checks observed on PR #401:
 - Codecov patch/project checks
 - Mergify checks
 
-Local pre-commit config includes:
+Use semantic PR titles, for example:
 
-- markdown/yaml/json/xml checks
-- markdownlint
-- prettier
-- yamllint
-- package dependency checks
-- ROS package formatting hooks
-- shellcheck/shfmt
-- black/isort
-- `clang-format`
-- `cpplint`
+```text
+refactor(planning_data_analyzer): add EPDMS shared metric context
+feat(planning_data_analyzer): add NAVSIM-style NC metric
+fix(planning_data_analyzer): align EPDMS human-filter aggregation
+```
 
-The common local failure risks for analyzer PRs are:
+The differential build/test workflow may require the label:
+
+```text
+tag:run-build-and-test-differential
+```
+
+Use:
+
+```text
+component:planning
+```
+
+Common local failure risks:
 
 - missing `Signed-off-by`
-- clang-format changes on C++ files
-- cpplint include-order or line-length issues
-- markdownlint on migration docs
+- `clang-format` drift
+- cpplint include-order or line-length failures
+- markdownlint failures in planning docs
 - stale package dependencies if new dependencies are added
-- differential build/test label missing on the PR
+- missing differential build/test label
 
-## PR Slice Order
-
-Recommended order:
-
-1. Common EPDMS infrastructure and shared helpers.
-2. NC.
-3. DAC.
-4. DDC.
-5. TLC.
-6. TTC.
-7. LK.
-8. HC and EC, or split if the diff is large.
-9. EP.
-10. Aggregation, human-filtered outputs, docs, and cleanup.
-
-Keep PRs stacked only where dependency is unavoidable. If a PR can be independent, branch it from
-the latest `upstream/main`.
-
-
-## PR status:
-
-### Common EPDMS infrastructure and shared helpers
-PR opened: https://github.com/autowarefoundation/autoware_tools/pull/421
-
-## Ultimate EPDMS file tree after All pr:
-```
-│──src
-│   └── metrics
-│       ├── deviation_metrics.cpp
-│       ├── deviation_metrics.hpp
-│       ├── metric_types.hpp
-│       ├── trajectory_metrics.cpp
-│       ├── trajectory_metrics.hpp
-│       ├── epdms
-│       │   ├── aggregation
-│       │   │   ├── epdms_aggregation.cpp
-│       │   │   └── epdms_aggregation.hpp
-│       │   ├── context
-│       │   │   ├── epdms_context.cpp
-│       │   │   ├── epdms_context.hpp
-│       │   │   └── epdms_types.hpp
-│       │   └── subscores
-│       │       ├── drivable_area_compliance.cpp
-│       │       ├── drivable_area_compliance.hpp
-│       │       ├── driving_direction_compliance.cpp
-│       │       ├── driving_direction_compliance.hpp
-│       │       ├── ego_progress.cpp
-│       │       ├── ego_progress.hpp
-│       │       ├── extended_comfort.cpp
-│       │       ├── extended_comfort.hpp
-│       │       ├── history_comfort.cpp
-│       │       ├── history_comfort.hpp
-│       │       ├── lane_keeping.cpp
-│       │       ├── lane_keeping.hpp
-│       │       ├── no_at_fault_collision.cpp
-│       │       ├── no_at_fault_collision.hpp
-│       │       ├── traffic_light_compliance.cpp
-│       │       ├── traffic_light_compliance.hpp
-│       │       ├── ttc_within_bound.cpp
-│       │       └── ttc_within_bound.hpp
-│       └── geometry
-│           ├── comfort_signal.cpp
-│           ├── comfort_signal.hpp
-│           ├── ego_footprint.cpp
-│           ├── ego_footprint.hpp
-│           ├── lanelet_queries.cpp
-│           ├── lanelet_queries.hpp
-│           ├── metric_utils.cpp
-│           ├── metric_utils.hpp
-│           ├── object_tracks.cpp
-│           └── object_tracks.hpp
-```
