@@ -97,10 +97,13 @@ git commit -s -m "refactor(planning_data_analyzer): ..."
 Recommended order after merged PR #421:
 
 1. Shared metric source layout and reusable helpers.
-   - Add `metrics/trajectory_metrics.*`, `metrics/metric_types.hpp`, `metrics/geometry/*`, and
-     `metrics/epdms/context/*`.
+   - Add reusable geometry helpers first, especially `metrics/geometry/comfort_signal.*`,
+     `metrics/geometry/ego_footprint.*`, and `metrics/geometry/lanelet_queries.*`.
+   - Do not pull `metrics/geometry/object_tracks.*` or `metrics/epdms/context/*` into this first
+     helper PR unless the tracked-object/data-type changes they require are also intentionally in
+     scope.
    - Keep score behavior unchanged as much as possible.
-   - This PR should mainly reduce duplication and create the final file layout.
+   - This PR should mainly reduce duplication and create the safe shared helper layout.
 
 2. Runtime controls and output topic contract.
    - Add default-all EPDMS metric selection.
@@ -111,6 +114,9 @@ Recommended order after merged PR #421:
 3. NC and shared object-track usage.
    - Port NAVSIM-faithful NC logic from the current reference branch.
    - Use recorded tracked objects from the selected object-track source.
+   - Add `metrics/geometry/object_tracks.*` and `metrics/epdms/context/*` here, or in a
+     immediately preceding object-track/context infrastructure PR, because those helpers depend on
+     tracked-object data-type changes.
    - Preserve NC debug outputs behind `open_loop.debug_topics_enabled`.
 
 4. DAC.
@@ -193,8 +199,32 @@ Pre-commit:
 pre-commit run --all-files
 ```
 
+This is a hard gate. Do not open or update an upstream PR until `pre-commit run --all-files`
+finishes successfully on the exact branch tip being pushed.
+
+Important lessons from PR #423:
+
+- `pre-commit-optional` passing in GitHub Actions is not enough. The required upstream status can
+  still fail as `pre-commit.ci - pr`.
+- Local build, CTest, and full analyzer validation do not exercise all pre-commit hooks.
+- The `ros-include-guard` hook rewrites include guards based on the full path. New headers under
+  `src/metrics/geometry/` must use guards like:
+
+```cpp
+#ifndef METRICS__GEOMETRY__COMFORT_SIGNAL_HPP_
+#define METRICS__GEOMETRY__COMFORT_SIGNAL_HPP_
+```
+
+- If any hook modifies files, commit those modifications and rerun `pre-commit run --all-files`
+  from the beginning. Passing only the previously failed hook is not sufficient for opening the PR.
+
 If the broad pre-commit check is too slow during local iteration, first run pre-commit on changed
-files, then run `pre-commit run --all-files` before opening the PR.
+files, but `pre-commit run --all-files` must still pass before push/PR:
+
+```bash
+pre-commit run --files <changed-files>
+pre-commit run --all-files
+```
 
 ## Full Analyzer Validation
 
@@ -211,10 +241,24 @@ temporarily needs the same dependency behavior as the `kim` reference branch to 
 `pilot-auto.x2` underlay, patch only the PR branch, run validation, then restore the upstream
 dependency state before committing and pushing.
 
+The lanelet dependency mismatch is a known validation-only issue:
+
+- `autowarefoundation/autoware_tools:main` can use newer
+  `autoware::experimental::lanelet2_utils::*` APIs.
+- The local `pilot-auto.x2` underlay used for reproducible full-run validation may expose older
+  `lanelet::utils::*` wrappers instead.
+- For full-run validation against `pilot-auto.x2`, it is acceptable to temporarily patch only the
+  upstream PR branch to call the `pilot-auto.x2`-compatible lanelet APIs.
+- After validation, restore the upstream-compatible lanelet calls before committing/pushing the PR.
+- Never commit the temporary `pilot-auto.x2` compatibility patch unless the PR explicitly targets
+  that dependency compatibility.
+- Before pushing, confirm with `git diff upstream/main..HEAD` and `git status --short` that no
+  validation-only lanelet dependency edits remain.
+
 Validate with cumulative EPDMS metrics:
 
 ```yaml
-open_loop.enabled_metrics: ['nc', 'dac', 'ddc', 'tlc', 'ttc', 'lk', 'hc', 'ec', 'ep']
+open_loop.enabled_metrics: ["nc", "dac", "ddc", "tlc", "ttc", "lk", "hc", "ec", "ep"]
 ```
 
 Validation policy:
@@ -415,4 +459,3 @@ Common local failure risks:
 - markdownlint failures in planning docs
 - stale package dependencies if new dependencies are added
 - missing differential build/test label
-
