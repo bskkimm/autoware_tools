@@ -21,6 +21,31 @@ When implementing or refactoring analyzer metrics, especially EPDMS-related logi
 - Any deduplication must preserve current observable behavior unless the change explicitly
   targets a verified bug.
 
+## Upstream PR planning rule
+
+When creating, updating, or preparing upstream PRs for
+`autowarefoundation/autoware_tools`, prioritize and follow:
+
+```text
+planning/autoware_planning_data_analyzer/pr_planning.md
+```
+
+That runbook is a hard gate for the EPDMS upstream PR series. In particular:
+
+- Branch from latest `upstream/main`, unless explicitly stacking on an unmerged parent PR.
+- Port only the intended PR slice from the `kim` reference branch.
+- Keep temporary `pilot-auto.x2` lanelet compatibility edits validation-only. Restore them before
+  commit, push, or PR creation so the final PR remains compatible with Autoware Foundation
+  dependencies.
+- Run build, package tests, and the required full analyzer validation.
+- Run `pre-commit run --all-files` on the exact branch tip that will be pushed. It must pass before
+  opening or updating the PR.
+- If a pre-commit hook modifies files, commit those modifications and rerun
+  `pre-commit run --all-files` from the beginning.
+- Confirm `git diff upstream/main..HEAD` and `git status --short` show no validation-only edits or
+  unintended files before push.
+- Use signed commits and the PR description format from the runbook.
+
 ## Practical guidance
 
 - Reuse helper functions and cached shared artifacts before adding new per-metric loops that
