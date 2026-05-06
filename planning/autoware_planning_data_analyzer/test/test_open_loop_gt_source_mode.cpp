@@ -182,19 +182,36 @@ TEST_F(OpenLoopGTSourceModeTest, VariantsNamespaceOpenLoopResultTopics)
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw_available"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_human_filtered_available"));
-  EXPECT_TRUE(has_topic("/debug/nc/collision_summary"));
-  EXPECT_TRUE(has_topic("/debug/nc/ego_footprints"));
-  EXPECT_TRUE(has_topic("/debug/nc/object_footprints"));
-  EXPECT_TRUE(has_topic("/debug/nc/overlap_areas"));
-  EXPECT_TRUE(has_topic("/debug/nc/labels"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_markers"));
-  EXPECT_FALSE(has_topic("/debug/nc/score"));
-  EXPECT_FALSE(has_topic("/debug/nc/events"));
-  EXPECT_FALSE(has_topic("/debug/nc/worst_event/collision_type"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_ego_footprints"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_object_footprints"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_overlap_areas"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_labels"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/collision_summary"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/ego_footprints"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/object_footprints"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/overlap_areas"));
+  EXPECT_FALSE(has_topic("/debug/epdms/trajectory/planned_horizon_4s"));
+  EXPECT_FALSE(has_topic("/debug/epdms/trajectory/gt_horizon_4s"));
+}
+
+TEST_F(OpenLoopGTSourceModeTest, DebugTopicsAreProducedOnlyWhenExplicitlyEnabled)
+{
+  OpenLoopEvaluator evaluator(
+    rclcpp::get_logger("open_loop_gt_source_test"), nullptr,
+    OpenLoopEvaluator::GTSourceMode::GT_TRAJECTORY, 200.0);
+
+  evaluator.set_metric_variant("raw");
+  evaluator.set_debug_topics_enabled(true);
+
+  const auto topics = evaluator.get_result_topics();
+  const auto has_topic = [&topics](const std::string & topic_name) {
+    return std::any_of(topics.begin(), topics.end(), [&topic_name](const auto & topic) {
+      return topic.first == topic_name;
+    });
+  };
+
+  EXPECT_TRUE(has_topic("/debug/epdms/nc/collision_summary"));
+  EXPECT_TRUE(has_topic("/debug/epdms/nc/ego_footprints"));
+  EXPECT_TRUE(has_topic("/debug/epdms/nc/object_footprints"));
+  EXPECT_TRUE(has_topic("/debug/epdms/nc/overlap_areas"));
+  EXPECT_TRUE(has_topic("/debug/epdms/trajectory/planned_horizon_4s"));
+  EXPECT_TRUE(has_topic("/debug/epdms/trajectory/gt_horizon_4s"));
 }
 
 TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
@@ -216,18 +233,10 @@ TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/time_to_at_fault_collision_s"));
   EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision_available"));
-  EXPECT_TRUE(has_topic("/debug/nc/collision_summary"));
-  EXPECT_TRUE(has_topic("/debug/nc/ego_footprints"));
-  EXPECT_TRUE(has_topic("/debug/nc/object_footprints"));
-  EXPECT_TRUE(has_topic("/debug/nc/overlap_areas"));
-  EXPECT_TRUE(has_topic("/debug/nc/labels"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_markers"));
-  EXPECT_FALSE(has_topic("/debug/nc/score"));
-  EXPECT_FALSE(has_topic("/debug/nc/events"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_ego_footprints"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_object_footprints"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_overlap_areas"));
-  EXPECT_FALSE(has_topic("/debug/nc/horizon_labels"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/collision_summary"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/ego_footprints"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/object_footprints"));
+  EXPECT_FALSE(has_topic("/debug/epdms/nc/overlap_areas"));
   EXPECT_TRUE(has_topic("/planning/trajectory"));
   EXPECT_TRUE(has_topic("/perception/object_recognition/tracking/objects"));
 
@@ -237,6 +246,28 @@ TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsCanRestrictResultTopicsToNC)
   EXPECT_FALSE(has_topic("/trajectory/raw/longitudinal_accelerations"));
   EXPECT_FALSE(has_topic("/trajectory/raw/travel_distances"));
   EXPECT_FALSE(has_topic("/evaluation/compared_trajectory/raw"));
+}
+
+TEST_F(OpenLoopGTSourceModeTest, EmptyEnabledMetricsMeansAllMetrics)
+{
+  OpenLoopEvaluator evaluator(
+    rclcpp::get_logger("open_loop_gt_source_test"), nullptr,
+    OpenLoopEvaluator::GTSourceMode::GT_TRAJECTORY, 200.0);
+
+  evaluator.set_metric_variant("raw");
+  evaluator.set_enabled_metrics({});
+
+  const auto topics = evaluator.get_result_topics();
+  const auto has_topic = [&topics](const std::string & topic_name) {
+    return std::any_of(topics.begin(), topics.end(), [&topic_name](const auto & topic) {
+      return topic.first == topic_name;
+    });
+  };
+
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/history_comfort"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/no_at_fault_collision"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/drivable_area_compliance"));
+  EXPECT_TRUE(has_topic("/open_loop/metrics/raw/synthetic_epdms_raw"));
 }
 
 TEST_F(OpenLoopGTSourceModeTest, EnabledMetricsRejectsUnknownNames)

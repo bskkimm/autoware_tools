@@ -73,7 +73,7 @@ struct OpenLoopTrajectoryMetrics
   double history_comfort{0.0};              // Binary comfort subscore for the trajectory
   bool history_comfort_available{false};
   std::string history_comfort_reason{"unavailable"};
-  double extended_comfort{0.0};             // Binary extended comfort subscore
+  double extended_comfort{0.0};  // Binary extended comfort subscore
   bool extended_comfort_available{false};
   std::string extended_comfort_reason{"unavailable"};
   std::string extended_comfort_debug_summary;
@@ -213,6 +213,8 @@ public:
   {
     nc_debug_marker_lifetime_s_ = lifetime_s;
   }
+
+  void set_debug_topics_enabled(const bool enabled) { debug_topics_enabled_ = enabled; }
 
   void set_extended_comfort_parameters(const metrics::ExtendedComfortParameters & parameters)
   {
@@ -392,6 +394,7 @@ private:
   double trajectory_evaluation_horizon_s_{0.0};
   NCDebugMode nc_debug_mode_{NCDebugMode::FAILURES_ONLY};
   double nc_debug_marker_lifetime_s_{0.2};
+  bool debug_topics_enabled_{false};
   std::vector<double> evaluation_horizons_;
 };
 

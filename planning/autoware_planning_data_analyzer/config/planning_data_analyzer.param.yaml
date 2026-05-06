@@ -55,10 +55,13 @@
       # 0.0 means use the full trajectory from the bag.
       trajectory_evaluation_horizon: 4.0
       # NC debug marker output mode: "off", "failures_only", or "all_collisions".
+      # Used only when open_loop.debug_topics_enabled is true.
       nc_debug_mode: "failures_only"
       # NC debug marker lifetime [s]. Keep short so seeking to one t0 does not show stale t0 labels.
       nc_debug_marker_lifetime: 0.2
-      # Metrics to calculate and write. ["all"] keeps full behavior.
+      # Debug topics are off by default. Set true to write /debug/epdms/* topics.
+      debug_topics_enabled: false
+      # Metrics to calculate and write. Unspecified means all metrics.
       # Aliases: trajectory, hc, ec, ttc, lk, ep, dac, nc, ddc, tlc, epdms.
       enabled_metrics: ["all"]
       # DLR result horizon checkpoints in seconds.

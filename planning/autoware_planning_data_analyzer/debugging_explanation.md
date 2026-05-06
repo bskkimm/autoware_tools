@@ -3,6 +3,22 @@
 This note describes the intended debugging workflow for the no-at-fault collision
 (NC) metric.
 
+## Debug Topic Runtime Switch
+
+EPDMS debug topics are disabled by default. Metric computation, JSON output, and
+`/open_loop/metrics/...` result topics are still produced according to
+`open_loop.enabled_metrics`.
+
+To write Lichtblick-oriented debug topics such as `/debug/epdms/nc/*`,
+`/debug/epdms/dac/*`, and `/debug/epdms/trajectory/*`, explicitly run with:
+
+```bash
+-p open_loop.debug_topics_enabled:=true
+```
+
+`open_loop.nc_debug_mode` still controls NC detail level, but only after
+`open_loop.debug_topics_enabled` is true.
+
 The goal is not to display every NC internal scalar as a separate topic. The useful
 debugging view is:
 

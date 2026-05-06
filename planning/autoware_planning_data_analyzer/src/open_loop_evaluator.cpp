@@ -157,8 +157,8 @@ std::vector<TimedTrackedObjects> get_future_objects_for_trajectory(
   auto trajectory_horizon_ns =
     rclcpp::Duration(trajectory.points.back().time_from_start).nanoseconds();
   if (horizon_s > 0.0) {
-    trajectory_horizon_ns = std::min(
-      trajectory_horizon_ns, rclcpp::Duration::from_seconds(horizon_s).nanoseconds());
+    trajectory_horizon_ns =
+      std::min(trajectory_horizon_ns, rclcpp::Duration::from_seconds(horizon_s).nanoseconds());
   }
 
   constexpr rcutils_time_point_value_t kFutureObjectRangeMarginNs =
@@ -320,7 +320,9 @@ std::vector<geometry_msgs::msg::Point> polygon_to_msg_points(
     msg.z = z;
     points.push_back(msg);
   }
-  if (!points.empty() && (points.front().x != points.back().x || points.front().y != points.back().y)) {
+  if (
+    !points.empty() &&
+    (points.front().x != points.back().x || points.front().y != points.back().y)) {
     points.push_back(points.front());
   }
   return points;
@@ -373,8 +375,7 @@ visualization_msgs::msg::Marker make_filled_polygon_marker(
 }
 
 bool should_write_nc_debug(
-  const metrics::TrajectoryPointMetrics & metrics,
-  const OpenLoopEvaluator::NCDebugMode debug_mode)
+  const metrics::TrajectoryPointMetrics & metrics, const OpenLoopEvaluator::NCDebugMode debug_mode)
 {
   if (debug_mode == OpenLoopEvaluator::NCDebugMode::OFF) {
     return false;
@@ -392,7 +393,8 @@ bool should_write_dac_debug(const metrics::TrajectoryPointMetrics & metrics)
 
 bool should_write_ddc_debug(const metrics::TrajectoryPointMetrics & metrics)
 {
-  return metrics.driving_direction_compliance_available && metrics.driving_direction_compliance < 1.0;
+  return metrics.driving_direction_compliance_available &&
+         metrics.driving_direction_compliance < 1.0;
 }
 
 bool should_write_tlc_debug(const metrics::TrajectoryPointMetrics & metrics)
@@ -427,8 +429,7 @@ std_msgs::msg::ColorRGBA nc_horizon_footprint_color(
   if (footprint.collision) {
     return make_color(1.0F, 0.8F, 0.0F, 1.0F);
   }
-  return ego ? make_color(1.0F, 0.55F, 0.0F, 0.65F)
-             : make_color(0.1F, 0.45F, 1.0F, 0.65F);
+  return ego ? make_color(1.0F, 0.55F, 0.0F, 0.65F) : make_color(0.1F, 0.45F, 1.0F, 0.65F);
 }
 
 struct HCComponentStatus
@@ -460,8 +461,7 @@ double longitudinal_acceleration_ratio(
   return 0.0;
 }
 
-void consider_hc_component(
-  HCComponentStatus & status, const std::string & name, const double ratio)
+void consider_hc_component(HCComponentStatus & status, const std::string & name, const double ratio)
 {
   if (ratio > status.severity) {
     status.name = name;
@@ -486,7 +486,8 @@ HCComponentStatus hc_component_status_at(
   }
   if (index < metrics.jerk_magnitudes.size()) {
     consider_hc_component(
-      status, "jerk", threshold_ratio(metrics.jerk_magnitudes.at(index), params.max_jerk_magnitude));
+      status, "jerk",
+      threshold_ratio(metrics.jerk_magnitudes.at(index), params.max_jerk_magnitude));
   }
   if (index < metrics.longitudinal_jerks.size()) {
     consider_hc_component(
@@ -546,10 +547,9 @@ nlohmann::json dac_debug_summary_to_json(
     {"score", metrics.drivable_area_compliance},
     {"reason", metrics.drivable_area_compliance_reason},
     {"first_failure_time_s", debug_info.first_failure_time_s},
-    {"failure_stamp_sec",
-     std::isfinite(debug_info.first_failure_time_s)
-       ? timestamp.seconds() + debug_info.first_failure_time_s
-       : std::numeric_limits<double>::quiet_NaN()},
+    {"failure_stamp_sec", std::isfinite(debug_info.first_failure_time_s)
+                            ? timestamp.seconds() + debug_info.first_failure_time_s
+                            : std::numeric_limits<double>::quiet_NaN()},
     {"failing_corner_indices", debug_info.failing_corner_indices},
     {"corner_count_inside", debug_info.corner_count_inside},
     {"route_candidate_count", debug_info.route_candidate_count},
@@ -615,15 +615,13 @@ nlohmann::json nc_debug_summary_to_json(
     {"score", metrics.no_at_fault_collision},
     {"reason", metrics.no_at_fault_collision_reason},
     {"worst_time_s", metrics.time_to_at_fault_collision_s},
-    {"worst_event_stamp_sec",
-     std::isfinite(metrics.time_to_at_fault_collision_s)
-       ? timestamp.seconds() + metrics.time_to_at_fault_collision_s
-       : std::numeric_limits<double>::quiet_NaN()},
+    {"worst_event_stamp_sec", std::isfinite(metrics.time_to_at_fault_collision_s)
+                                ? timestamp.seconds() + metrics.time_to_at_fault_collision_s
+                                : std::numeric_limits<double>::quiet_NaN()},
     {"event_count", debug_info.events.size()},
-    {"at_fault_event_count",
-     std::count_if(debug_info.events.begin(), debug_info.events.end(), [](const auto & event) {
-       return event.at_fault;
-     })},
+    {"at_fault_event_count", std::count_if(
+                               debug_info.events.begin(), debug_info.events.end(),
+                               [](const auto & event) { return event.at_fault; })},
     {"worst_object_id", worst_event ? worst_event->object_id : "invalid"},
     {"worst_object_label", worst_event ? worst_event->object_label : "UNKNOWN"},
     {"worst_collision_type", worst_event ? worst_event->collision_type : "NONE"},
@@ -655,10 +653,9 @@ nlohmann::json tlc_debug_summary_to_json(
     {"score", metrics.traffic_light_compliance},
     {"reason", metrics.traffic_light_compliance_reason},
     {"first_failure_time_s", debug_info.first_failure_time_s},
-    {"failure_stamp_sec",
-     std::isfinite(debug_info.first_failure_time_s)
-       ? timestamp.seconds() + debug_info.first_failure_time_s
-       : std::numeric_limits<double>::quiet_NaN()},
+    {"failure_stamp_sec", std::isfinite(debug_info.first_failure_time_s)
+                            ? timestamp.seconds() + debug_info.first_failure_time_s
+                            : std::numeric_limits<double>::quiet_NaN()},
     {"intended_movement",
      debug_info.intended_movement.has_value() ? *debug_info.intended_movement : "unknown"},
     {"regulatory_element_ids", debug_info.regulatory_element_ids},
@@ -726,10 +723,9 @@ nlohmann::json ttc_debug_summary_to_json(
     {"score", metrics.time_to_collision_within_bound},
     {"reason", metrics.time_to_collision_within_bound_reason},
     {"first_failure_time_s", metrics.time_to_collision_infraction_time_s},
-    {"failure_stamp_sec",
-     std::isfinite(metrics.time_to_collision_infraction_time_s)
-       ? timestamp.seconds() + metrics.time_to_collision_infraction_time_s
-       : std::numeric_limits<double>::quiet_NaN()},
+    {"failure_stamp_sec", std::isfinite(metrics.time_to_collision_infraction_time_s)
+                            ? timestamp.seconds() + metrics.time_to_collision_infraction_time_s
+                            : std::numeric_limits<double>::quiet_NaN()},
     {"future_offset_s", event ? event->future_offset_s : 0.0},
     {"object_id", event ? event->object_id : "invalid"},
     {"object_label", event ? event->object_label : "UNKNOWN"},
@@ -744,8 +740,8 @@ nlohmann::json ttc_debug_summary_to_json(
 }
 
 nlohmann::json lk_debug_summary_to_json(
-  const metrics::TrajectoryPointMetrics & metrics,
-  const metrics::LaneKeepingDebugInfo & debug_info, const rclcpp::Time & timestamp)
+  const metrics::TrajectoryPointMetrics & metrics, const metrics::LaneKeepingDebugInfo & debug_info,
+  const rclcpp::Time & timestamp)
 {
   return nlohmann::json{
     {"trajectory_stamp_sec", timestamp.seconds()},
@@ -792,14 +788,13 @@ void write_nc_debug_topics_to_bag(
 
   const auto & debug_info = metrics.no_at_fault_collision_debug;
   const auto * worst_event = find_worst_nc_event(debug_info);
-  const bool has_horizon_debug =
-    !debug_info.ego_horizon_footprints.empty() || !debug_info.object_horizon_footprints.empty() ||
-    !debug_info.overlap_areas.empty() || !debug_info.events.empty();
+  const bool has_horizon_debug = !debug_info.ego_horizon_footprints.empty() ||
+                                 !debug_info.object_horizon_footprints.empty() ||
+                                 !debug_info.overlap_areas.empty() || !debug_info.events.empty();
 
   if (!debug_info.events.empty()) {
     std_msgs::msg::String summary_msg;
-    summary_msg.data =
-      nc_debug_summary_to_json(metrics, debug_info, worst_event, timestamp).dump();
+    summary_msg.data = nc_debug_summary_to_json(metrics, debug_info, worst_event, timestamp).dump();
     bag_writer.write(summary_msg, nc_debug_topic("collision_summary"), timestamp);
   }
 
@@ -834,8 +829,7 @@ void write_nc_debug_topics_to_bag(
   for (const auto & overlap : debug_info.overlap_areas) {
     overlap_areas.markers.push_back(make_line_strip_marker(
       timestamp, "nc_horizon_overlap_areas", marker_id++, overlap.polygon,
-      overlap.at_fault ? make_color(1.0F, 0.0F, 0.8F, 1.0F)
-                       : make_color(1.0F, 0.6F, 0.0F, 1.0F),
+      overlap.at_fault ? make_color(1.0F, 0.0F, 0.8F, 1.0F) : make_color(1.0F, 0.6F, 0.0F, 1.0F),
       overlap.at_fault ? 0.6 : 0.4, true, marker_lifetime_s, 0.28));
   }
 
@@ -963,48 +957,48 @@ void write_dac_debug_topics_to_bag(
   for (const auto & point : debug_info.semantic_boundary_points) {
     semantic_boundary_points.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_semantic_boundary_points", marker_id++,
-      square_marker_points(point.point, 0.12), make_color(1.0F, 0.85F, 0.05F, 1.0F), 0.10,
-      false, marker_lifetime_s, 0.13));
+      square_marker_points(point.point, 0.12), make_color(1.0F, 0.85F, 0.05F, 1.0F), 0.10, false,
+      marker_lifetime_s, 0.13));
   }
 
   marker_id = 0;
   for (const auto & point : debug_info.road_border_closest_points) {
     road_border_closest_points.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_road_border_closest_points", marker_id++,
-      square_marker_points(point.point, 0.12), make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.10,
-      false, marker_lifetime_s, 0.14));
+      square_marker_points(point.point, 0.12), make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.10, false,
+      marker_lifetime_s, 0.14));
   }
 
   marker_id = 0;
   for (const auto & point : debug_info.corner_projection_points) {
     corner_projection_points.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_corner_projection_points", marker_id++,
-      square_marker_points(point.point, 0.10), make_color(1.0F, 1.0F, 1.0F, 1.0F), 0.08,
-      false, marker_lifetime_s, 0.15));
+      square_marker_points(point.point, 0.10), make_color(1.0F, 1.0F, 1.0F, 1.0F), 0.08, false,
+      marker_lifetime_s, 0.15));
   }
 
   marker_id = 0;
   for (const auto & sample : debug_info.road_border_plus_samples) {
     road_border_plus_samples.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_road_border_plus_samples", marker_id++,
-      square_marker_points(sample.point, 0.12), make_color(0.1F, 0.45F, 1.0F, 1.0F), 0.10,
-      false, marker_lifetime_s, 0.13));
+      square_marker_points(sample.point, 0.12), make_color(0.1F, 0.45F, 1.0F, 1.0F), 0.10, false,
+      marker_lifetime_s, 0.13));
   }
 
   marker_id = 0;
   for (const auto & sample : debug_info.road_border_minus_samples) {
     road_border_minus_samples.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_road_border_minus_samples", marker_id++,
-      square_marker_points(sample.point, 0.12), make_color(0.15F, 1.0F, 0.35F, 1.0F), 0.10,
-      false, marker_lifetime_s, 0.14));
+      square_marker_points(sample.point, 0.12), make_color(0.15F, 1.0F, 0.35F, 1.0F), 0.10, false,
+      marker_lifetime_s, 0.14));
   }
 
   marker_id = 0;
   for (const auto & corner : debug_info.road_border_fallback_corners) {
     road_border_fallback_corners.markers.push_back(make_line_strip_marker(
       timestamp, "dac_horizon_road_border_fallback_corners", marker_id++,
-      square_marker_points(corner.point, 0.14), make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.12,
-      false, marker_lifetime_s, 0.17));
+      square_marker_points(corner.point, 0.14), make_color(0.75F, 0.15F, 1.0F, 1.0F), 0.12, false,
+      marker_lifetime_s, 0.17));
   }
 
   marker_id = 0;
@@ -1028,16 +1022,17 @@ void write_dac_debug_topics_to_bag(
     admissible_parking_areas, dac_debug_topic("admissible_parking_areas"), timestamp);
   bag_writer.write(road_border_lines, dac_debug_topic("road_border_lines"), timestamp);
   bag_writer.write(
-    road_border_side_test_segments, dac_debug_topic("road_border_side_test_segments"),
-    timestamp);
-  bag_writer.write(road_border_gap_segments, dac_debug_topic("road_border_gap_segments"), timestamp);
+    road_border_side_test_segments, dac_debug_topic("road_border_side_test_segments"), timestamp);
+  bag_writer.write(
+    road_border_gap_segments, dac_debug_topic("road_border_gap_segments"), timestamp);
   bag_writer.write(
     semantic_boundary_points, dac_debug_topic("semantic_boundary_points"), timestamp);
   bag_writer.write(
     road_border_closest_points, dac_debug_topic("road_border_closest_points"), timestamp);
   bag_writer.write(
     corner_projection_points, dac_debug_topic("corner_projection_points"), timestamp);
-  bag_writer.write(road_border_plus_samples, dac_debug_topic("road_border_plus_samples"), timestamp);
+  bag_writer.write(
+    road_border_plus_samples, dac_debug_topic("road_border_plus_samples"), timestamp);
   bag_writer.write(
     road_border_minus_samples, dac_debug_topic("road_border_minus_samples"), timestamp);
   bag_writer.write(
@@ -1187,9 +1182,8 @@ void write_ttc_debug_topics_to_bag(
                               : (footprint.overlap ? make_color(1.0F, 0.05F, 0.05F, 1.0F)
                                                    : make_color(0.95F, 0.28F, 0.0F, 0.88F));
     ego_footprints.markers.push_back(make_line_strip_marker(
-      timestamp, "ttc_ego_footprints", marker_id++, footprint.footprint,
-      color,
-      width, true, marker_lifetime_s, 0.12));
+      timestamp, "ttc_ego_footprints", marker_id++, footprint.footprint, color, width, true,
+      marker_lifetime_s, 0.12));
   }
 
   marker_id = 0;
@@ -1200,9 +1194,8 @@ void write_ttc_debug_topics_to_bag(
                               : (footprint.overlap ? make_color(1.0F, 0.05F, 0.05F, 1.0F)
                                                    : make_color(0.02F, 0.12F, 0.70F, 0.88F));
     object_footprints.markers.push_back(make_line_strip_marker(
-      timestamp, "ttc_object_footprints", marker_id++, footprint.footprint,
-      color,
-      width, true, marker_lifetime_s, 0.18));
+      timestamp, "ttc_object_footprints", marker_id++, footprint.footprint, color, width, true,
+      marker_lifetime_s, 0.18));
   }
 
   marker_id = 0;
@@ -1241,14 +1234,14 @@ void write_lk_debug_topics_to_bag(
     const auto & sample = debug_info.samples.at(index);
     const bool violating = sample.over_threshold && !sample.is_in_intersection;
     const bool in_failure_run = sample.in_failure_run;
-    const auto color = in_failure_run ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
+    const auto color = in_failure_run              ? make_color(1.0F, 0.12F, 0.12F, 1.0F)
                        : sample.is_in_intersection ? make_color(0.2F, 1.0F, 0.4F, 0.95F)
                        : violating                 ? make_color(1.0F, 0.65F, 0.0F, 0.95F)
                                                    : make_color(1.0F, 0.55F, 0.0F, 0.85F);
     const double width = in_failure_run ? 0.18 : 0.12;
     ego_center_path.markers.push_back(make_line_strip_marker(
-      timestamp, "lk_ego_center_path", marker_id++, {previous.ego_center, sample.ego_center},
-      color, width, false, marker_lifetime_s, 0.08));
+      timestamp, "lk_ego_center_path", marker_id++, {previous.ego_center, sample.ego_center}, color,
+      width, false, marker_lifetime_s, 0.08));
   }
 
   std::set<std::int64_t> seen_lanelet_ids;
@@ -1266,8 +1259,7 @@ void write_lk_debug_topics_to_bag(
   }
 
   bag_writer.write(ego_center_path, lk_debug_topic("ego_center_path"), timestamp);
-  bag_writer.write(
-    reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
+  bag_writer.write(reference_centerlines, lk_debug_topic("reference_centerlines"), timestamp);
 }
 
 void write_ep_debug_topics_to_bag(
@@ -1361,7 +1353,8 @@ void write_trajectory_horizon_debug_topics_to_bag(
   constexpr double kDebugHorizonSeconds = 4.0;
   const auto local_footprint = vehicle_info.createFootprint(0.0);
 
-  const auto planned_horizon = truncate_trajectory_by_horizon(planned_trajectory, kDebugHorizonSeconds);
+  const auto planned_horizon =
+    truncate_trajectory_by_horizon(planned_trajectory, kDebugHorizonSeconds);
   const auto gt_horizon = truncate_trajectory_by_horizon(gt_trajectory, kDebugHorizonSeconds);
 
   visualization_msgs::msg::MarkerArray planned_markers;
@@ -1525,8 +1518,8 @@ metrics::EpdmsMetricSnapshot calculate_human_reference_snapshot(
   const auto human_sync_data =
     clone_with_trajectory(eval_data.synchronized_data, eval_data.ground_truth_trajectory);
   const auto human_point_metrics = metrics::calculate_trajectory_point_metrics(
-    human_sync_data, &eval_data.ground_truth_trajectory, route_handler, history_comfort_params, lane_keeping_params,
-    driving_direction_params, vehicle_info, enabled_metrics, future_objects);
+    human_sync_data, &eval_data.ground_truth_trajectory, route_handler, history_comfort_params,
+    lane_keeping_params, driving_direction_params, vehicle_info, enabled_metrics, future_objects);
 
   metrics::EpdmsMetricSnapshot human_snapshot;
   human_snapshot.history_comfort = human_point_metrics.history_comfort;
@@ -1749,9 +1742,9 @@ void OpenLoopEvaluator::evaluate(
                 trajectory_evaluation_horizon_s_)
             : std::vector<TimedTrackedObjects>{};
         auto trajectory_metrics = metrics::calculate_trajectory_point_metrics(
-          eval_data.synchronized_data, &eval_data.ground_truth_trajectory, route_handler_, history_comfort_params_,
-          lane_keeping_params_, driving_direction_params_, vehicle_info_, enabled_metrics_,
-          future_objects);
+          eval_data.synchronized_data, &eval_data.ground_truth_trajectory, route_handler_,
+          history_comfort_params_, lane_keeping_params_, driving_direction_params_, vehicle_info_,
+          enabled_metrics_, future_objects);
         auto metrics = evaluate_trajectory(eval_data);
         metrics.history_comfort = trajectory_metrics.history_comfort;
         metrics.history_comfort_available = trajectory_metrics.history_comfort_available;
@@ -2681,7 +2674,7 @@ void OpenLoopEvaluator::save_metrics_to_bag(
   if (enabled_metrics_.extended_comfort) {
     reason_msg.data = metrics.extended_comfort_reason;
     bag_writer.write(reason_msg, metric_topic("extended_comfort_reason"), message_timestamp);
-    if (!metrics.extended_comfort_debug_summary.empty()) {
+    if (debug_topics_enabled_ && !metrics.extended_comfort_debug_summary.empty()) {
       reason_msg.data = metrics.extended_comfort_debug_summary;
       bag_writer.write(reason_msg, ec_debug_topic("comparison_summary"), message_timestamp);
       array_msg.data = metrics.extended_comfort_sample_times;
@@ -2711,7 +2704,8 @@ void OpenLoopEvaluator::save_metrics_to_bag(
   }
   if (enabled_metrics_.drivable_area_compliance) {
     reason_msg.data = metrics.drivable_area_compliance_reason;
-    bag_writer.write(reason_msg, metric_topic("drivable_area_compliance_reason"), message_timestamp);
+    bag_writer.write(
+      reason_msg, metric_topic("drivable_area_compliance_reason"), message_timestamp);
   }
   if (enabled_metrics_.no_at_fault_collision) {
     reason_msg.data = metrics.no_at_fault_collision_reason;
@@ -2724,7 +2718,8 @@ void OpenLoopEvaluator::save_metrics_to_bag(
   }
   if (enabled_metrics_.traffic_light_compliance) {
     reason_msg.data = metrics.traffic_light_compliance_reason;
-    bag_writer.write(reason_msg, metric_topic("traffic_light_compliance_reason"), message_timestamp);
+    bag_writer.write(
+      reason_msg, metric_topic("traffic_light_compliance_reason"), message_timestamp);
   }
 
   if (enabled_metrics_.trajectory_errors) {
@@ -2739,12 +2734,12 @@ void OpenLoopEvaluator::save_metrics_to_bag(
     bag_writer.write(gt_traj_msg, compared_trajectory_topic(), message_timestamp);
   }
 
-  if (eval_data.synchronized_data->trajectory) {
+  if (debug_topics_enabled_ && eval_data.synchronized_data->trajectory) {
     write_trajectory_horizon_debug_topics_to_bag(
       *eval_data.synchronized_data->trajectory, ground_truth_trajectory, vehicle_info_, bag_writer,
       message_timestamp, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.ego_progress) {
+  if (debug_topics_enabled_ && enabled_metrics_.ego_progress) {
     write_ep_debug_topics_to_bag(
       metrics, bag_writer, message_timestamp, nc_debug_marker_lifetime_s_);
   }
@@ -2757,13 +2752,15 @@ void OpenLoopEvaluator::set_nc_debug_mode(const std::string & mode)
     nc_debug_mode_ = NCDebugMode::OFF;
     return;
   }
-  if (normalized_mode == "failures_only" || normalized_mode == "failures-only" ||
-      normalized_mode == "failures") {
+  if (
+    normalized_mode == "failures_only" || normalized_mode == "failures-only" ||
+    normalized_mode == "failures") {
     nc_debug_mode_ = NCDebugMode::FAILURES_ONLY;
     return;
   }
-  if (normalized_mode == "all_collisions" || normalized_mode == "all-collisions" ||
-      normalized_mode == "all") {
+  if (
+    normalized_mode == "all_collisions" || normalized_mode == "all-collisions" ||
+    normalized_mode == "all") {
     nc_debug_mode_ = NCDebugMode::ALL_COLLISIONS;
     return;
   }
@@ -2784,13 +2781,6 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
 
   if (enabled_metrics_.history_comfort) {
     std_msgs::msg::Float64MultiArray msg;
-    std_msgs::msg::String summary_msg;
-    summary_msg.data = metrics.history_comfort_debug_summary;
-    bag_writer.write(summary_msg, hc_debug_topic("component_status"), normalized_timestamp);
-    msg.data = metrics.history_comfort_sample_times;
-    bag_writer.write(msg, hc_debug_topic("sample_times"), normalized_timestamp);
-    msg.data = metrics.history_comfort_segment_ids;
-    bag_writer.write(msg, hc_debug_topic("segments"), normalized_timestamp);
     msg.data = metrics.longitudinal_accelerations;
     bag_writer.write(
       msg, trajectory_metric_topic("longitudinal_accelerations"), normalized_timestamp);
@@ -2806,9 +2796,18 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     bag_writer.write(msg, trajectory_metric_topic("yaw_rates"), normalized_timestamp);
     msg.data = metrics.yaw_accelerations;
     bag_writer.write(msg, trajectory_metric_topic("yaw_accelerations"), normalized_timestamp);
-    write_hc_debug_topics_to_bag(
-      metrics, history_comfort_params_, vehicle_info_, bag_writer, normalized_timestamp,
-      nc_debug_marker_lifetime_s_);
+    if (debug_topics_enabled_) {
+      std_msgs::msg::String summary_msg;
+      summary_msg.data = metrics.history_comfort_debug_summary;
+      bag_writer.write(summary_msg, hc_debug_topic("component_status"), normalized_timestamp);
+      msg.data = metrics.history_comfort_sample_times;
+      bag_writer.write(msg, hc_debug_topic("sample_times"), normalized_timestamp);
+      msg.data = metrics.history_comfort_segment_ids;
+      bag_writer.write(msg, hc_debug_topic("segments"), normalized_timestamp);
+      write_hc_debug_topics_to_bag(
+        metrics, history_comfort_params_, vehicle_info_, bag_writer, normalized_timestamp,
+        nc_debug_marker_lifetime_s_);
+    }
   }
 
   if (enabled_metrics_.lane_keeping) {
@@ -2823,27 +2822,27 @@ void OpenLoopEvaluator::save_trajectory_point_metrics_to_bag_with_variant(
     bag_writer.write(msg, trajectory_metric_topic("travel_distances"), normalized_timestamp);
   }
 
-  if (enabled_metrics_.no_at_fault_collision) {
+  if (debug_topics_enabled_ && enabled_metrics_.no_at_fault_collision) {
     write_nc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_mode_, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.drivable_area_compliance) {
+  if (debug_topics_enabled_ && enabled_metrics_.drivable_area_compliance) {
     write_dac_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.driving_direction_compliance) {
+  if (debug_topics_enabled_ && enabled_metrics_.driving_direction_compliance) {
     write_ddc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.traffic_light_compliance) {
+  if (debug_topics_enabled_ && enabled_metrics_.traffic_light_compliance) {
     write_tlc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.time_to_collision_within_bound) {
+  if (debug_topics_enabled_ && enabled_metrics_.time_to_collision_within_bound) {
     write_ttc_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
-  if (enabled_metrics_.lane_keeping) {
+  if (debug_topics_enabled_ && enabled_metrics_.lane_keeping) {
     write_lk_debug_topics_to_bag(
       metrics, bag_writer, normalized_timestamp, nc_debug_marker_lifetime_s_);
   }
@@ -3552,8 +3551,7 @@ nlohmann::json OpenLoopEvaluator::get_full_results_as_json() const
       traj["trajectory_point_metrics"]["lateral_deviations"] = pm.lateral_deviations;
       traj["trajectory_point_metrics"]["travel_distances"] = pm.travel_distances;
       traj["trajectory_point_metrics"]["history_comfort"] = pm.history_comfort;
-      traj["trajectory_point_metrics"]["history_comfort_available"] =
-        pm.history_comfort_available;
+      traj["trajectory_point_metrics"]["history_comfort_available"] = pm.history_comfort_available;
       traj["trajectory_point_metrics"]["history_comfort_reason"] = pm.history_comfort_reason;
       traj["trajectory_point_metrics"]["history_comfort_debug_summary"] =
         pm.history_comfort_debug_summary;
@@ -3647,69 +3645,79 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("time_to_collision_within_bound_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("time_to_collision_within_bound_reason"), "std_msgs/msg/String");
     add_topic(trajectory_metric_topic("ttc_values"), "std_msgs/msg/Float64MultiArray");
-    add_topic(ttc_debug_topic("violation_summary"), "std_msgs/msg/String");
-    add_topic(ttc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ttc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ttc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
+    if (debug_topics_enabled_) {
+      add_topic(ttc_debug_topic("violation_summary"), "std_msgs/msg/String");
+      add_topic(ttc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
+      add_topic(ttc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
+      add_topic(ttc_debug_topic("overlap_areas"), "visualization_msgs/msg/MarkerArray");
+    }
   }
   if (enabled_metrics_.history_comfort) {
     add_topic(metric_topic("history_comfort"), "std_msgs/msg/Float64");
-    add_topic(hc_debug_topic("component_status"), "std_msgs/msg/String");
-    add_topic(hc_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
-    add_topic(hc_debug_topic("segments"), "std_msgs/msg/Float64MultiArray");
-    add_topic(hc_debug_topic("horizon_footprints"), "visualization_msgs/msg/MarkerArray");
-    add_topic(trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
+    add_topic(
+      trajectory_metric_topic("longitudinal_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_accelerations"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("lateral_jerks"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("jerk_magnitudes"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("longitudinal_jerks"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("yaw_rates"), "std_msgs/msg/Float64MultiArray");
     add_topic(trajectory_metric_topic("yaw_accelerations"), "std_msgs/msg/Float64MultiArray");
+    if (debug_topics_enabled_) {
+      add_topic(hc_debug_topic("component_status"), "std_msgs/msg/String");
+      add_topic(hc_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
+      add_topic(hc_debug_topic("segments"), "std_msgs/msg/Float64MultiArray");
+      add_topic(hc_debug_topic("horizon_footprints"), "visualization_msgs/msg/MarkerArray");
+    }
   }
   if (enabled_metrics_.extended_comfort) {
     add_topic(metric_topic("extended_comfort"), "std_msgs/msg/Float64");
     add_topic(metric_topic("extended_comfort_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("extended_comfort_reason"), "std_msgs/msg/String");
-    add_topic(ec_debug_topic("comparison_summary"), "std_msgs/msg/String");
-    add_topic(ec_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
-    add_topic(ec_debug_topic("delta_acceleration"), "std_msgs/msg/Float64MultiArray");
-    add_topic(ec_debug_topic("delta_jerk"), "std_msgs/msg/Float64MultiArray");
-    add_topic(ec_debug_topic("delta_yaw_rate"), "std_msgs/msg/Float64MultiArray");
-    add_topic(ec_debug_topic("delta_yaw_accel"), "std_msgs/msg/Float64MultiArray");
+    if (debug_topics_enabled_) {
+      add_topic(ec_debug_topic("comparison_summary"), "std_msgs/msg/String");
+      add_topic(ec_debug_topic("sample_times"), "std_msgs/msg/Float64MultiArray");
+      add_topic(ec_debug_topic("delta_acceleration"), "std_msgs/msg/Float64MultiArray");
+      add_topic(ec_debug_topic("delta_jerk"), "std_msgs/msg/Float64MultiArray");
+      add_topic(ec_debug_topic("delta_yaw_rate"), "std_msgs/msg/Float64MultiArray");
+      add_topic(ec_debug_topic("delta_yaw_accel"), "std_msgs/msg/Float64MultiArray");
+    }
   }
   if (enabled_metrics_.lane_keeping) {
     add_topic(metric_topic("lane_keeping"), "std_msgs/msg/Float64");
     add_topic(metric_topic("lane_keeping_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("lane_keeping_reason"), "std_msgs/msg/String");
     add_topic(trajectory_metric_topic("lateral_deviations"), "std_msgs/msg/Float64MultiArray");
-    add_topic(lk_debug_topic("violation_summary"), "std_msgs/msg/String");
-    add_topic(lk_debug_topic("ego_center_path"), "visualization_msgs/msg/MarkerArray");
-    add_topic(lk_debug_topic("reference_centerlines"), "visualization_msgs/msg/MarkerArray");
+    if (debug_topics_enabled_) {
+      add_topic(lk_debug_topic("violation_summary"), "std_msgs/msg/String");
+      add_topic(lk_debug_topic("ego_center_path"), "visualization_msgs/msg/MarkerArray");
+      add_topic(lk_debug_topic("reference_centerlines"), "visualization_msgs/msg/MarkerArray");
+    }
   }
   if (enabled_metrics_.ego_progress) {
     add_topic(metric_topic("ego_progress"), "std_msgs/msg/Float64");
     add_topic(metric_topic("ego_progress_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("ego_progress_reason"), "std_msgs/msg/String");
-    add_topic(ep_debug_topic("progress_summary"), "std_msgs/msg/String");
-    add_topic(ep_debug_topic("route_progress_points"), "visualization_msgs/msg/MarkerArray");
-    add_topic(ep_debug_topic("route_reference"), "visualization_msgs/msg/MarkerArray");
+    if (debug_topics_enabled_) {
+      add_topic(ep_debug_topic("progress_summary"), "std_msgs/msg/String");
+      add_topic(ep_debug_topic("route_progress_points"), "visualization_msgs/msg/MarkerArray");
+      add_topic(ep_debug_topic("route_reference"), "visualization_msgs/msg/MarkerArray");
+    }
   }
   if (enabled_metrics_.drivable_area_compliance) {
     add_topic(metric_topic("drivable_area_compliance"), "std_msgs/msg/Float64");
     add_topic(metric_topic("drivable_area_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("drivable_area_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (debug_topics_enabled_ && enabled_metrics_.drivable_area_compliance) {
     add_topic(dac_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(dac_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("admissible_road_areas"), "visualization_msgs/msg/MarkerArray");
-    add_topic(
-      dac_debug_topic("admissible_shoulder_areas"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("admissible_shoulder_areas"), "visualization_msgs/msg/MarkerArray");
     add_topic(
       dac_debug_topic("admissible_intersection_areas"), "visualization_msgs/msg/MarkerArray");
     add_topic(
-      dac_debug_topic("admissible_hatched_road_markings"),
-      "visualization_msgs/msg/MarkerArray");
-    add_topic(
-      dac_debug_topic("admissible_parking_areas"), "visualization_msgs/msg/MarkerArray");
+      dac_debug_topic("admissible_hatched_road_markings"), "visualization_msgs/msg/MarkerArray");
+    add_topic(dac_debug_topic("admissible_parking_areas"), "visualization_msgs/msg/MarkerArray");
     add_topic(dac_debug_topic("road_border_lines"), "visualization_msgs/msg/MarkerArray");
     add_topic(
       dac_debug_topic("road_border_side_test_segments"), "visualization_msgs/msg/MarkerArray");
@@ -3728,6 +3736,8 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("time_to_at_fault_collision_s"), "std_msgs/msg/Float64");
     add_topic(metric_topic("no_at_fault_collision_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("no_at_fault_collision_reason"), "std_msgs/msg/String");
+  }
+  if (debug_topics_enabled_ && enabled_metrics_.no_at_fault_collision) {
     add_topic(nc_debug_topic("collision_summary"), "std_msgs/msg/String");
     add_topic(nc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(nc_debug_topic("object_footprints"), "visualization_msgs/msg/MarkerArray");
@@ -3738,23 +3748,28 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(metric_topic("max_oncoming_progress_m"), "std_msgs/msg/Float64");
     add_topic(metric_topic("driving_direction_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("driving_direction_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (debug_topics_enabled_ && enabled_metrics_.driving_direction_compliance) {
     add_topic(ddc_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(ddc_debug_topic("ego_centers"), "visualization_msgs/msg/MarkerArray");
     add_topic(ddc_debug_topic("oncoming_segments"), "visualization_msgs/msg/MarkerArray");
     add_topic(ddc_debug_topic("route_lane_polygons"), "visualization_msgs/msg/MarkerArray");
-    add_topic(
-      ddc_debug_topic("intersection_lane_polygons"), "visualization_msgs/msg/MarkerArray");
+    add_topic(ddc_debug_topic("intersection_lane_polygons"), "visualization_msgs/msg/MarkerArray");
   }
   if (enabled_metrics_.traffic_light_compliance) {
     add_topic(metric_topic("traffic_light_compliance"), "std_msgs/msg/Float64");
     add_topic(metric_topic("traffic_light_compliance_available"), "std_msgs/msg/Bool");
     add_topic(metric_topic("traffic_light_compliance_reason"), "std_msgs/msg/String");
+  }
+  if (debug_topics_enabled_ && enabled_metrics_.traffic_light_compliance) {
     add_topic(tlc_debug_topic("violation_summary"), "std_msgs/msg/String");
     add_topic(tlc_debug_topic("ego_footprints"), "visualization_msgs/msg/MarkerArray");
     add_topic(tlc_debug_topic("stop_lines"), "visualization_msgs/msg/MarkerArray");
   }
-  add_topic(trajectory_debug_topic("planned_horizon_4s"), "visualization_msgs/msg/MarkerArray");
-  add_topic(trajectory_debug_topic("gt_horizon_4s"), "visualization_msgs/msg/MarkerArray");
+  if (debug_topics_enabled_) {
+    add_topic(trajectory_debug_topic("planned_horizon_4s"), "visualization_msgs/msg/MarkerArray");
+    add_topic(trajectory_debug_topic("gt_horizon_4s"), "visualization_msgs/msg/MarkerArray");
+  }
   if (enabled_metrics_.synthetic_epdms && all_epdms_inputs_enabled(enabled_metrics_)) {
     add_topic(metric_topic("synthetic_epdms_raw"), "std_msgs/msg/Float64");
     add_topic(metric_topic("synthetic_epdms_raw_available"), "std_msgs/msg/Bool");
@@ -3767,7 +3782,8 @@ std::vector<std::pair<std::string, std::string>> OpenLoopEvaluator::get_result_t
     add_topic(compared_trajectory_topic(), "autoware_planning_msgs/msg/Trajectory");
   }
   add_topic(
-    "/perception/object_recognition/tracking/objects", "autoware_perception_msgs/msg/TrackedObjects");
+    "/perception/object_recognition/tracking/objects",
+    "autoware_perception_msgs/msg/TrackedObjects");
   add_topic("/tf", "tf2_msgs/msg/TFMessage");
   add_topic("/tf_static", "tf2_msgs/msg/TFMessage");
   return topics;

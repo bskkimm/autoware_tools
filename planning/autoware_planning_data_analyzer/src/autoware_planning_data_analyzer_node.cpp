@@ -122,8 +122,12 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   nc_debug_mode_ = get_or_declare_parameter<std::string>(*this, "open_loop.nc_debug_mode");
   nc_debug_marker_lifetime_s_ =
     get_or_declare_parameter<double>(*this, "open_loop.nc_debug_marker_lifetime");
+  debug_topics_enabled_ = get_or_declare_parameter<bool>(*this, "open_loop.debug_topics_enabled");
   enabled_metric_names_ =
-    get_or_declare_parameter<std::vector<std::string>>(*this, "open_loop.enabled_metrics");
+    has_parameter("open_loop.enabled_metrics")
+      ? get_parameter("open_loop.enabled_metrics").get_value<std::vector<std::string>>()
+      : declare_parameter<std::vector<std::string>>(
+          "open_loop.enabled_metrics", std::vector<std::string>{});
   gt_source_mode_ = get_or_declare_parameter<std::string>(*this, "open_loop.gt_source_mode");
   gt_trajectory_topic_name_ =
     get_or_declare_parameter<std::string>(*this, "open_loop.gt_trajectory_topic");
@@ -174,8 +178,7 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
     hazard_lights_topic_name_ = get_parameter("hazard_lights_topic").get_value<std::string>();
   } else {
     hazard_lights_topic_name_ =
-      declare_parameter<std::string>(
-        "hazard_lights_topic", "/vehicle/status/hazard_lights_status");
+      declare_parameter<std::string>("hazard_lights_topic", "/vehicle/status/hazard_lights_status");
   }
   turn_indicators_topic_name_ =
     get_or_declare_parameter<std::string>(*this, "turn_indicators_topic");
@@ -196,8 +199,8 @@ AutowarePlanningDataAnalyzerNode::AutowarePlanningDataAnalyzerNode(
   }
   if (nc_debug_marker_lifetime_s_ < 0.0) {
     throw std::runtime_error(
-      "Invalid open_loop.nc_debug_marker_lifetime: " +
-      std::to_string(nc_debug_marker_lifetime_s_) + ". Expected >= 0.");
+      "Invalid open_loop.nc_debug_marker_lifetime: " + std::to_string(nc_debug_marker_lifetime_s_) +
+      ". Expected >= 0.");
   }
   if (gt_sync_tolerance_ms_ < 0.0) {
     throw std::runtime_error(
@@ -535,6 +538,7 @@ void AutowarePlanningDataAnalyzerNode::run_evaluation()
       evaluator.set_trajectory_evaluation_horizon(trajectory_evaluation_horizon_s_);
       evaluator.set_nc_debug_mode(nc_debug_mode_);
       evaluator.set_nc_debug_marker_lifetime(nc_debug_marker_lifetime_s_);
+      evaluator.set_debug_topics_enabled(debug_topics_enabled_);
       evaluator.set_extended_comfort_parameters(extended_comfort_parameters_);
       auto times =
         evaluator.run_evaluation_from_bag(bag_path_, evaluation_bag_writer_.get(), topic_names);
