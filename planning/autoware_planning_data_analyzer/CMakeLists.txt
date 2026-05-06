@@ -10,6 +10,8 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/open_loop_evaluator.cpp
   src/metrics/deviation_metrics.cpp
   src/metrics/geometry/comfort_signal.cpp
+  src/metrics/geometry/ego_footprint.cpp
+  src/metrics/geometry/lanelet_queries.cpp
   src/metrics/epdms/context/epdms_context.cpp
   src/metrics/epdms/aggregation/epdms_aggregation.cpp
   src/metrics/epdms/subscores/ego_progress.cpp
@@ -17,6 +19,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/metrics/epdms/subscores/history_comfort.cpp
   src/metrics/epdms/subscores/lane_keeping.cpp
   src/metrics/geometry/metric_utils.cpp
+  src/metrics/geometry/object_tracks.cpp
   src/metrics/epdms/subscores/drivable_area_compliance.cpp
   src/metrics/epdms/subscores/extended_comfort.cpp
   src/metrics/epdms/subscores/ttc_within_bound.cpp
