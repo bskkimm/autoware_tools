@@ -102,7 +102,9 @@ Recommended order after merged PR #421:
    - Do not pull `metrics/geometry/object_tracks.*` or `metrics/epdms/context/*` into this first
      helper PR unless the tracked-object/data-type changes they require are also intentionally in
      scope.
-   - Keep score behavior unchanged as much as possible.
+   - Keep existing score behavior unchanged. This helper PR may introduce preparatory EPDMS helper
+     APIs for follow-up subscore PRs, but existing public helper functions used by current metrics
+     must keep their previous semantics.
    - This PR should mainly reduce duplication and create the safe shared helper layout.
 
 2. Runtime controls and output topic contract.
@@ -166,6 +168,34 @@ Recommended order after merged PR #421:
     - Align `implementation_report.md`.
     - Align `debugging_explanation.md`.
     - Remove stale topic names, stale labels, and obsolete transitional code.
+
+## Preparatory Helper PR Policy
+
+For infrastructure PRs that introduce shared helpers before the first subscore caller exists,
+follow these rules:
+
+- Existing helper APIs must remain behavior-preserving. Do not hide a semantic change behind an
+  old function name.
+- If a broader NAVSIM/EPDMS-specific interpretation is needed, introduce it under a new explicit
+  helper name and switch callers only in the later subscore PR that intentionally changes the
+  metric semantics.
+- Example from PR #423:
+  - `is_pose_in_intersection()` must keep the old closest-reference-route-lanelet behavior while
+    the PR is presented as an infrastructure/refactor PR.
+  - Broader logic using local route-consistent lanelets, `intersection_area` polygons, and lane
+    margins should live in a separate EPDMS context helper and should be connected to TTC/DDC/DAC
+    only in the later subscore PR where the score delta is documented and validated.
+- Large helper APIs that are intentionally unused until follow-up PRs are acceptable only if the PR
+  description and header comments say so clearly.
+- Do not keep legacy or abandoned helper fields only for future possibility. If the latest reference
+  branch no longer uses a concept, remove it from the preparatory PR. For example, do not keep a
+  road-border polygon/envelope field if the accepted design uses line/segment/probe evidence rather
+  than a road-border envelope polygon.
+- Keep common headers lightweight. Do not make `metric_utils.hpp` include large helper headers such
+  as `ego_footprint.hpp` or `lanelet_queries.hpp` just to preserve transitive includes. Add direct
+  includes at call sites instead.
+- Naming should distinguish stored probe/evaluation data from tests. Avoid names like `*Test` for
+  runtime debug/evaluation records; prefer names such as `*Probe` or `*Evaluation`.
 
 ## Required Local Checks Before Every PR
 
