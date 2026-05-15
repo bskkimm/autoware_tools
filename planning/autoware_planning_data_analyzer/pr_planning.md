@@ -209,6 +209,13 @@ follow these rules:
   duplicated local functions.
 - Prefer existing Autoware utility functions over local reimplementations when semantics match, for
   example angle normalization and squared-distance helpers.
+- If an existing Autoware utility appears to accept the desired type, try the direct utility call
+  first. If the required validation underlay fails to compile that direct form, keep the adapter
+  minimal and add a short comment explaining the compatibility reason.
+- Example from PR #423: `calc_squared_distance2d(Point2d, Point2d)` passed pre-commit but failed
+  against the required `pilot-auto.x2` validation underlay because that dependency version routes
+  through message-style `.x/.y/.z` fields. In that case, keeping a `Point2d` to
+  `geometry_msgs::msg::Point` adapter is acceptable only with an explicit compatibility comment.
 - Reviewer comments about duplicated helper expressions should be handled in the current PR when
   they are local to the touched files and can be fixed without changing metric semantics.
 
@@ -297,6 +304,10 @@ The lanelet dependency mismatch is a known validation-only issue:
 - After validation, restore the upstream-compatible lanelet calls before committing/pushing the PR.
 - Never commit the temporary `pilot-auto.x2` compatibility patch unless the PR explicitly targets
   that dependency compatibility.
+- If a reviewer requests use of a newer utility form, validate both the upstream-intended form and
+  the `pilot-auto.x2` validation form. If they differ, document the compile result in the PR thread
+  and keep the pushed code compatible with the required validation underlay unless the PR
+  explicitly changes dependency requirements.
 - Before pushing, confirm with `git diff upstream/main..HEAD` and `git status --short` that no
   validation-only lanelet dependency edits remain.
 
