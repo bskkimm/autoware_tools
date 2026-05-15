@@ -97,6 +97,54 @@ git commit -s -m "refactor(planning_data_analyzer): ..."
   reviewer feedback changes the PR strategy, validation workflow, helper design, or recurring
   coding rules.
 
+## Mandatory Duplication Audit Before Every PR Push
+
+This is a hard gate. A general note to "avoid duplication" is not enough. Before opening or
+updating every upstream PR, inspect the staged PR diff and actively remove repeated expressions
+introduced by that PR.
+
+Run and review:
+
+```bash
+git diff --name-only upstream/main..HEAD
+git diff upstream/main..HEAD -- <changed-files>
+```
+
+If the PR is stacked on an unmerged PR, compare against the parent PR branch instead of
+`upstream/main`.
+
+During the audit, search specifically for these introduced patterns:
+
+- Three or more near-identical blocks that differ only by metric name, topic name, enabled flag,
+  message variable, or score field.
+- Repeated score/available/reason topic declarations or writes.
+- Repeated `if (enabled...) { ... writer.write(...) ... }` blocks.
+- Repeated topic-prefix, topic-suffix, or alias-list construction.
+- Repeated lanelet, polygon, footprint, object-track, or comfort-signal helper expressions.
+- Repeated comments that explain the same behavior in multiple places.
+
+Required action:
+
+- Replace repeated write/register blocks with a local lambda, small helper function, loop over a
+  table, or a typed descriptor list.
+- Replace repeated suffix/prefix handling with a helper, constant, or descriptor table.
+- Replace repeated geometry/metric expressions with an existing shared helper before adding a new
+  local helper.
+- Keep behavior and review scope more important than abstraction. Do not introduce a broad
+  cross-file framework only to remove one harmless two-line repeat.
+- If repetition remains because abstraction would hide metric semantics or make the PR larger,
+  state that explicitly in the PR description.
+
+The PR description must include this line:
+
+```markdown
+- Duplication audit: performed; repeated introduced patterns handled by <helper/table/lambda/etc.>;
+  remaining repetition is intentional because <reason or N/A>.
+```
+
+Do not push the PR branch until this duplication audit line is true. `pre-commit` passing is not a
+substitute for this audit.
+
 ## Remaining PR Order
 
 Recommended order after merged PR #421:
@@ -414,6 +462,8 @@ Use the upstream PR template headings, filled with the concise analyzer-specific
 - Score semantics changed: yes/no.
 - Debug topics changed: yes/no.
 - Output topic or JSON schema changed: yes/no.
+- Duplication audit: performed; repeated introduced patterns handled by <helper/table/lambda/etc.>;
+  remaining repetition is intentional because <reason or N/A>.
 
 ### Expected Behavior
 
