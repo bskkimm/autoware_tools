@@ -91,6 +91,11 @@ git commit -s -m "refactor(planning_data_analyzer): ..."
 - If a PR depends on an unmerged previous PR, set the GitHub PR base to that previous PR branch
   so the diff does not duplicate earlier work.
 - Before starting a new PR slice, commit and push the current slice and record validation paths.
+- After opening each PR, update this runbook with any PR-specific lessons that affect the remaining
+  EPDMS PR series.
+- When modifying an existing PR in response to reviewer comments, update this runbook if the
+  reviewer feedback changes the PR strategy, validation workflow, helper design, or recurring
+  coding rules.
 
 ## Remaining PR Order
 
@@ -196,6 +201,16 @@ follow these rules:
   includes at call sites instead.
 - Naming should distinguish stored probe/evaluation data from tests. Avoid names like `*Test` for
   runtime debug/evaluation records; prefer names such as `*Probe` or `*Evaluation`.
+- Be strict about duplicated helper expressions in preparatory helper PRs. Before adding a new
+  anonymous-namespace helper, check whether the same expression already exists in another geometry
+  helper file or in Autoware utility libraries.
+- If two helper files need the same lanelet/polygon conversion, point containment, unique-append,
+  bounding-box, distance, or angle-normalization logic, prefer a small shared internal helper over
+  duplicated local functions.
+- Prefer existing Autoware utility functions over local reimplementations when semantics match, for
+  example angle normalization and squared-distance helpers.
+- Reviewer comments about duplicated helper expressions should be handled in the current PR when
+  they are local to the touched files and can be fixed without changing metric semantics.
 
 ## Required Local Checks Before Every PR
 
