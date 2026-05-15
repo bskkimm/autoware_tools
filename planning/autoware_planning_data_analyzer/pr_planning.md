@@ -102,6 +102,7 @@ git commit -s -m "refactor(planning_data_analyzer): ..."
 Recommended order after merged PR #421:
 
 1. Shared metric source layout and reusable helpers.
+   - Status: merged as PR #423.
    - Add reusable geometry helpers first, especially `metrics/geometry/comfort_signal.*`,
      `metrics/geometry/ego_footprint.*`, and `metrics/geometry/lanelet_queries.*`.
    - Do not pull `metrics/geometry/object_tracks.*` or `metrics/epdms/context/*` into this first
@@ -113,6 +114,13 @@ Recommended order after merged PR #421:
    - This PR should mainly reduce duplication and create the safe shared helper layout.
 
 2. Runtime controls and output topic contract.
+   - Status: opened as PR #425 from
+     `bskkimm:feat/planning-data-analyzer-epdms-runtime-topics`.
+   - Validation recorded:
+     - Takanawa full run: `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260515_215540`
+     - `pre-commit run --all-files`: passed
+     - Local `pilot-auto.x2` build/CTest: passed with temporary validation-only lanelet API
+       compatibility patch restored before commit
    - Add default-all EPDMS metric selection.
    - Add `open_loop.debug_topics_enabled`, default `false`.
    - Move EPDMS score topics to `/open_loop/metrics/epdms/*`.
