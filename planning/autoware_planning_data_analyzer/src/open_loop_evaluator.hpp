@@ -405,6 +405,7 @@ private:
   std::vector<double> evaluation_horizons_;
   double override_window_sec_{0.0};
   std::vector<utils::ControlModeEvent> control_mode_events_;
+  std::vector<TimedTrackedObjects> object_timeline_;
   bool debug_topics_enabled_{false};
 };
 
