@@ -383,6 +383,19 @@ Validation policy:
   filter-applied counts, and human-filtered EPDMS.
 - Always check already-ported subscores for regressions.
 
+Required Takanawa score baseline:
+
+- Use `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345` as the primary full-score
+  baseline for EPDMS PR validation.
+- This baseline contains all EPDMS subscore JSON fields, raw synthetic EPDMS, human references,
+  human-filtered subscores, and aggregate reason/availability counts.
+- Baseline evaluated trajectory count: `8695`.
+- This baseline does not contain `/debug/epdms/*` topics. Use it for score/JSON regression, not as
+  the debug-topic contract baseline.
+- When a PR changes a subscore intentionally, compare that subscore against this baseline and
+  explain each intentional delta. Already-ported unchanged subscores should remain unchanged unless
+  the PR explicitly documents a dependency-driven delta.
+
 Required bags:
 
 - `x2_takanawa`: primary regression comparison against the accepted `kim` reference artifact.
