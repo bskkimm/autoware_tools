@@ -377,8 +377,16 @@ Validation policy:
 
 - Infrastructure-only PRs: score JSON and topic set should be behaviorally unchanged against the
   accepted baseline unless the PR explicitly changes output names.
-- Subscore PRs: compare the PR-branch result to the current `kim` reference artifact for the same
-  subscore.
+- Subscore PRs are exact migration PRs. Port the same logic from the current reference branch
+  (`kim/refactor/epdms-metric-topics`) into the target upstream PR branch. Do not approximate,
+  simplify, or independently reimplement the subscore logic.
+- Subscore PRs must reproduce the current `kim` reference artifact for that subscore exactly:
+  evaluated count, available/unavailable counts, score mean, non-1 count, reason counts, and
+  changed timestamp set must match. If exact reproduction is impossible, stop and diagnose before
+  committing/pushing.
+- A subscore PR may have score deltas only when the PR intentionally changes semantics beyond the
+  current reference branch. That must be explicitly planned before implementation and documented in
+  the PR description with timestamp-level evidence. Otherwise, any score delta is a blocker.
 - Aggregation/human-filter PRs: compare raw subscore values, raw EPDMS, human references,
   filter-applied counts, and human-filtered EPDMS.
 - Always check already-ported subscores for regressions.
@@ -415,7 +423,10 @@ For every full run, record:
 - metric topics produced
 - debug topics produced when `open_loop.debug_topics_enabled:=true`
 
-Do not open a PR if score deltas exist and the reason is not understood.
+Do not open a PR if score deltas exist and the reason is not understood. For exact subscore
+migration PRs, understanding the delta is not sufficient: the branch must be corrected until it
+reproduces the reference artifact exactly, unless an intentional semantic delta was approved before
+the work began.
 
 ## Output Topic Contract
 
