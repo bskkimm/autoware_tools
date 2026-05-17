@@ -423,6 +423,11 @@ For every full run, record:
 - metric topics produced
 - debug topics produced when `open_loop.debug_topics_enabled:=true`
 
+Full-run artifacts are large. After the comparison against the baseline/reference artifact is
+complete and the needed summary is recorded, delete the newly produced full-run artifact directory
+unless it must be kept for reviewer inspection or explicit follow-up debugging. Do not delete the
+required baseline artifact.
+
 Do not open a PR if score deltas exist and the reason is not understood. For exact subscore
 migration PRs, understanding the delta is not sufficient: the branch must be corrected until it
 reproduces the reference artifact exactly, unless an intentional semantic delta was approved before
