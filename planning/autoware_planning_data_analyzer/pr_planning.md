@@ -404,11 +404,12 @@ Required Takanawa score baseline:
   explain each intentional delta. Already-ported unchanged subscores should remain unchanged unless
   the PR explicitly documents a dependency-driven delta.
 
-Required bags:
+Required bag:
 
 - `x2_takanawa`: primary regression comparison against the accepted `kim` reference artifact.
-- `x2_odaiba`: required when touching map semantics, object semantics, DAC, DDC, NC, TTC, TLC, or
-  aggregation. Recommended for all remaining EPDMS PRs if runtime allows.
+- Do not run `x2_odaiba` during consecutive PR preparation unless the user explicitly requests it
+  for that PR. The default required full-run validation for remaining EPDMS prep branches is
+  Takanawa only.
 
 For every full run, record:
 
@@ -521,9 +522,7 @@ Use the upstream PR template headings, filled with the concise analyzer-specific
   - Output artifact:
   - Command/script:
 - Odaiba:
-  - Input:
-  - Output artifact:
-  - Command/script:
+  - Not run unless explicitly requested.
 
 ### Metric Comparison
 
