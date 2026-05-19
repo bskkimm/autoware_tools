@@ -298,6 +298,9 @@ Recommended order after merged PR #421:
    - Port stop-line based traffic-light compliance logic.
    - Include signal-group association and movement selection.
    - Preserve right/left arrow handling and turn-indicator movement inference.
+   - Do not include TLC debug payload in this score-migration PR unless it is published/tested in
+     the same PR. The prepared branch removed write-only TLC debug fields to avoid the DDC
+     `worst_window_*` review issue.
    - Validation recorded:
      - Takanawa cumulative run with `['nc','dac','ddc','tlc']`:
        `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_012118`.
