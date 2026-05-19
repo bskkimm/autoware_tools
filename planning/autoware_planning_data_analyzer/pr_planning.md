@@ -291,9 +291,27 @@ Recommended order after merged PR #421:
      - `pre-commit run --all-files`: passed after opening PR #428.
 
 2. TLC.
+   - Status: prepared as `bskkimm:feat/planning-data-analyzer-epdms-tlc-prep`, currently rebased
+     on PR #428 branch `feat/planning-data-analyzer-epdms-ddc-prep-stacked`.
+   - After PR #428 merges, rebase this branch onto updated `upstream/main`, confirm the diff
+     remains TLC-only, rerun required checks, then open the TLC PR against `main`.
    - Port stop-line based traffic-light compliance logic.
    - Include signal-group association and movement selection.
    - Preserve right/left arrow handling and turn-indicator movement inference.
+   - Validation recorded:
+     - Takanawa cumulative run with `['nc','dac','ddc','tlc']`:
+       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_012118`.
+     - Evaluated trajectories: `8695`.
+     - TLC exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
+       `68` non-1, `0` unavailable, reason counts `available_no_relevant_traffic_lights: 7570`,
+       `available: 1057`, `red_light_stop_line_crossed: 68`, changed TLC timestamp count `0`.
+     - DAC exact match remained `396` non-1, `0` unavailable.
+     - DDC exact match remained `81` non-1, `0` unavailable.
+     - NC differs from the old baseline only by the accepted PR #426 de-dup delta:
+       `74 -> 87` non-1.
+     - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
+       patch restored before push.
+     - Changed-file `pre-commit`: passed.
 
 3. TTC.
    - Port NAVSIM-style recorded-object TTC logic.
