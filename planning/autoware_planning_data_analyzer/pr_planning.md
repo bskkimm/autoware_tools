@@ -256,6 +256,9 @@ Recommended order after merged PR #421:
   `build_depends.repos`, even when a reviewer recommends a utility. The current
   `autoware_lanelet2_utils` dependency exposes lanelet conversion helpers as
   `autoware::experimental::lanelet2_utils::*`, not `autoware::lanelet2_utils::*`.
+- CI lesson from PR #427: do not chase a reviewer-suggested helper if the symbol is not stable in
+  the pinned dependency. For simple marker point construction, prefer the already-declared
+  `autoware_utils_geometry::create_point` path over version-sensitive lanelet conversion helpers.
 - Reviewer lesson from PR #427: unavailable results must not contain partial debug payload. Run
   all availability/validity checks before filling debug info.
   - Reviewer lesson from PR #427: changing only reason values still changes the output contract
