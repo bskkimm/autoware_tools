@@ -208,11 +208,26 @@ Recommended order after merged PR #421:
      beyond horizon, single-point trajectory, and exact-horizon point.
 
 4. DAC.
+   - Status: opened as PR #427 from
+     `bskkimm:feat/planning-data-analyzer-epdms-dac-prep`.
    - Port semantic drivable-area logic using road lanelets, road shoulder lanelets,
      `intersection_area`, `hatched_road_markings`, and `parking_lot`.
-   - Do not include the experimental road-border fallback unless it is explicitly revalidated
-     and accepted for upstream.
+   - The PR activates the existing conservative road-border fallback already present in the shared
+     ego-footprint context. Call this out explicitly in the PR description and review notes.
    - Document exactly which road-space categories are admitted/excluded.
+   - Validation recorded:
+     - Takanawa full run: `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260519_165136`
+       was compared, then deleted after recording the summary.
+     - Evaluated trajectories: `8695`.
+     - DAC exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
+       `396` non-1, `0` unavailable, reason counts
+       `compliant: 8299`, `non_compliant_corner_outside_drivable_area: 396`.
+     - NC differs from the old baseline only by the accepted PR #426 de-dup delta:
+       `74 -> 87` non-1.
+     - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
+       patch restored before push.
+     - Direct gtests passed: `test_metrics` `56/56`, `test_offline_evaluation` `20/20`.
+     - `pre-commit run --all-files`: passed.
 
 5. DDC.
    - Port wrong-way/oncoming progress logic.
