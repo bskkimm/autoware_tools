@@ -474,6 +474,9 @@ and must be disabled by default unless `open_loop.debug_topics_enabled:=true`.
 ## PR Description Format
 
 Use the upstream PR template headings, filled with the concise analyzer-specific content below.
+For score-logic migration PRs, include a pipeline-style `Logic Change` section. This is required
+even when the code diff is large because reusable helper infrastructure is introduced. The goal is
+to make the data flow understandable without reading the full implementation diff.
 
 ```markdown
 ## Description
@@ -500,6 +503,28 @@ Use the upstream PR template headings, filled with the concise analyzer-specific
 - Expected no score change / expected score change:
 - Expected topic change:
 - Known intentional deltas:
+
+### Logic Change
+
+As-is pipeline:
+
+1. <Current data source / synchronized input>
+2. <Current preprocessing>
+3. <Current comparison/check>
+4. <Current score decision>
+
+To-be pipeline:
+
+1. <New or migrated data source>
+2. <New reusable helper/context construction>
+3. <Per-sample/per-horizon computation>
+4. <Shared geometry/object/lanelet/comfort helper reuse>
+5. <Final score decision>
+
+Line-count note:
+
+- If additions are larger than deletions, explain whether this PR introduces reusable helper
+  infrastructure that later EPDMS PRs will reuse instead of duplicating logic.
 
 ## How was this PR tested?
 
