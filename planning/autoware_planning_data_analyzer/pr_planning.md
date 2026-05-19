@@ -122,6 +122,10 @@ During the audit, search specifically for these introduced patterns:
 - Repeated topic-prefix, topic-suffix, or alias-list construction.
 - Repeated lanelet, polygon, footprint, object-track, or comfort-signal helper expressions.
 - Repeated comments that explain the same behavior in multiple places.
+- Local helper functions that duplicate existing Autoware utilities. Before adding a helper,
+  search for an existing utility in the relevant dependency, especially conversion and geometry
+  helpers such as ROS point conversion, lanelet-to-ROS conversion, angle normalization, and
+  footprint conversion.
 
 Required action:
 
@@ -130,6 +134,9 @@ Required action:
 - Replace repeated suffix/prefix handling with a helper, constant, or descriptor table.
 - Replace repeated geometry/metric expressions with an existing shared helper before adding a new
   local helper.
+- If an existing upstream utility is used but the `pilot-auto.x2` validation underlay lacks it,
+  validate with a temporary compatibility patch and restore the upstream-intended code before
+  committing.
 - Keep behavior and review scope more important than abstraction. Do not introduce a broad
   cross-file framework only to remove one harmless two-line repeat.
 - If repetition remains because abstraction would hide metric semantics or make the PR larger,
@@ -144,6 +151,10 @@ The PR description must include this line:
 
 Do not push the PR branch until this duplication audit line is true. `pre-commit` passing is not a
 substitute for this audit.
+
+Reason strings are part of the output contract even when topic names and JSON keys are unchanged.
+If a PR changes any `reason` value, explicitly state that in the PR description and include reason
+counts in validation.
 
 ## Remaining PR Order
 
@@ -226,12 +237,20 @@ Recommended order after merged PR #421:
        `74 -> 87` non-1.
      - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
        patch restored before push.
-     - Direct gtests passed: `test_metrics` `56/56`, `test_offline_evaluation` `20/20`.
+     - Direct gtests passed after reviewer-update patch: `test_metrics` `61/61`,
+       `test_offline_evaluation` `20/20`.
      - `pre-commit run --all-files`: passed.
    - CI lesson from PR #427: Jazzy treats deprecated declarations as build errors. Test-only
      helpers using compatibility APIs such as `lanelet::utils::conversion::toBinMsg` need either
      the newer upstream API when available in both validation underlays, or a narrow diagnostic
      suppression around only that compatibility call.
+   - Reviewer lesson from PR #427: include paths must use project-source-relative form
+     (`metrics/...`), not relative traversal (`../../...`), and local conversion helpers must be
+     deleted when an Autoware utility already exists.
+   - Reviewer lesson from PR #427: unavailable results must not contain partial debug payload. Run
+     all availability/validity checks before filling debug info.
+   - Reviewer lesson from PR #427: changing only reason values still changes the output contract
+     and must be documented in the PR description.
 
 5. DDC.
    - Port wrong-way/oncoming progress logic.
@@ -408,9 +427,8 @@ The lanelet dependency mismatch is a known validation-only issue:
 - Never commit the temporary `pilot-auto.x2` compatibility patch unless the PR explicitly targets
   that dependency compatibility.
 - If a reviewer requests use of a newer utility form, validate both the upstream-intended form and
-  the `pilot-auto.x2` validation form. If they differ, document the compile result in the PR thread
-  and keep the pushed code compatible with the required validation underlay unless the PR
-  explicitly changes dependency requirements.
+  the `pilot-auto.x2` validation form. If they differ, use a temporary local compatibility patch
+  for the validation run, then restore the upstream-intended code before commit/push.
 - Before pushing, confirm with `git diff upstream/main..HEAD` and `git status --short` that no
   validation-only lanelet dependency edits remain.
 
