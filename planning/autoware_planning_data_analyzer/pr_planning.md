@@ -252,6 +252,10 @@ Recommended order after merged PR #421:
   that declares it. Do not rely on transitive includes; CI may fail even if pre-commit passes.
   Example: `autoware_utils_geometry::create_point` requires
   `<autoware_utils_geometry/geometry.hpp>`.
+- CI lesson from PR #427: verify the namespace and symbol against the upstream dependency pinned in
+  `build_depends.repos`, even when a reviewer recommends a utility. The current
+  `autoware_lanelet2_utils` dependency exposes lanelet conversion helpers as
+  `autoware::experimental::lanelet2_utils::*`, not `autoware::lanelet2_utils::*`.
 - Reviewer lesson from PR #427: unavailable results must not contain partial debug payload. Run
   all availability/validity checks before filling debug info.
   - Reviewer lesson from PR #427: changing only reason values still changes the output contract
