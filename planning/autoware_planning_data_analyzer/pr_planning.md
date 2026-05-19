@@ -244,54 +244,59 @@ Recommended order after merged PR #421:
      helpers using compatibility APIs such as `lanelet::utils::conversion::toBinMsg` need either
      the newer upstream API when available in both validation underlays, or a narrow diagnostic
      suppression around only that compatibility call.
-   - Reviewer lesson from PR #427: include paths must use project-source-relative form
-     (`metrics/...`), not relative traversal (`../../...`), and local conversion helpers must be
-     deleted when an Autoware utility already exists.
-   - Reviewer lesson from PR #427: unavailable results must not contain partial debug payload. Run
-     all availability/validity checks before filling debug info.
-   - Reviewer lesson from PR #427: changing only reason values still changes the output contract
-     and must be documented in the PR description.
 
-5. DDC.
+- Reviewer lesson from PR #427: include paths must use project-source-relative form
+  (`metrics/...`), not relative traversal (`../../...`), and local conversion helpers must be
+  deleted when an Autoware utility already exists.
+- Reviewer/CI lesson from PR #427: when adding calls to an existing utility, add the direct header
+  that declares it. Do not rely on transitive includes; CI may fail even if pre-commit passes.
+  Example: `autoware_utils_geometry::create_point` requires
+  `<autoware_utils_geometry/geometry.hpp>`.
+- Reviewer lesson from PR #427: unavailable results must not contain partial debug payload. Run
+  all availability/validity checks before filling debug info.
+  - Reviewer lesson from PR #427: changing only reason values still changes the output contract
+    and must be documented in the PR description.
+
+1. DDC.
    - Port wrong-way/oncoming progress logic.
    - Keep DAC-style generic non-drivable intrusion separate from DDC oncoming progress.
    - Reuse route/lanelet context where semantics match.
 
-6. TLC.
+2. TLC.
    - Port stop-line based traffic-light compliance logic.
    - Include signal-group association and movement selection.
    - Preserve right/left arrow handling and turn-indicator movement inference.
 
-7. TTC.
+3. TTC.
    - Port NAVSIM-style recorded-object TTC logic.
    - Reuse object-track preprocessing where possible.
    - Preserve `BadOrIntersection = MultipleLanes OR NonDrivableArea OR Intersection` semantics.
 
-8. LK.
+4. LK.
    - Port sample-wise centerline deviation logic.
    - Keep Autoware centerline selection as the intentional NAVSIM deviation.
    - Use turn-indicator/hazard-based lane-change exemption only.
 
-9. HC and EC.
+5. HC and EC.
    - Port NAVSIM-style history comfort using past human states plus planned horizon.
    - Port two-frame extended comfort.
    - Keep comfort signal computation in shared `metrics/geometry/comfort_signal.*`.
    - Split HC and EC into separate PRs if the diff becomes hard to review.
 
-10. EP.
-    - Port NAVSIM-faithful ego progress logic using the current single selected trajectory topic.
-    - Leave the future multi-candidate trajectory source as a documented follow-up.
+6. EP.
+   - Port NAVSIM-faithful ego progress logic using the current single selected trajectory topic.
+   - Leave the future multi-candidate trajectory source as a documented follow-up.
 
-11. Aggregation and human-filtered EPDMS.
-    - Port NAVSIM-faithful synthetic EPDMS aggregation.
-    - Human filter applies to NC, DAC, DDC, TLC, EP, TTC, LK, and HC.
-    - Human filter does not apply to EC.
-    - Use GT/human reference metrics for filtering where available.
+7. Aggregation and human-filtered EPDMS.
+   - Port NAVSIM-faithful synthetic EPDMS aggregation.
+   - Human filter applies to NC, DAC, DDC, TLC, EP, TTC, LK, and HC.
+   - Human filter does not apply to EC.
+   - Use GT/human reference metrics for filtering where available.
 
-12. Documentation and cleanup.
-    - Align `implementation_report.md`.
-    - Align `debugging_explanation.md`.
-    - Remove stale topic names, stale labels, and obsolete transitional code.
+8. Documentation and cleanup.
+   - Align `implementation_report.md`.
+   - Align `debugging_explanation.md`.
+   - Remove stale topic names, stale labels, and obsolete transitional code.
 
 ## Preparatory Helper PR Policy
 
