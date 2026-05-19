@@ -162,7 +162,7 @@ Recommended order after merged PR #421:
    - This PR should mainly reduce duplication and create the safe shared helper layout.
 
 2. Runtime controls and output topic contract.
-   - Status: opened as PR #425 from
+   - Status: merged as PR #425 from
      `bskkimm:feat/planning-data-analyzer-epdms-runtime-topics`.
    - Validation recorded:
      - Takanawa full run: `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260515_215540`
@@ -175,12 +175,25 @@ Recommended order after merged PR #421:
    - Keep diagnostic arrays excluded from the EPDMS namespace.
 
 3. NC and shared object-track usage.
+   - Status: opened as PR #426 from
+     `bskkimm:feat/planning-data-analyzer-epdms-nc-prep`.
    - Port NAVSIM-faithful NC logic from the current reference branch.
    - Use recorded tracked objects from the selected object-track source.
    - Add `metrics/geometry/object_tracks.*` and `metrics/epdms/context/*` here, or in a
      immediately preceding object-track/context infrastructure PR, because those helpers depend on
      tracked-object data-type changes.
    - Preserve NC debug outputs behind `open_loop.debug_topics_enabled`.
+   - Reviewer lesson from PR #426: NC object de-duplication must record a collided object ID only
+     after the overlap is classified as at-fault. Ignored overlaps such as stopped ego, stopped
+     track, or rear collisions must not mask a later at-fault collision with the same tracked
+     object ID.
+   - Reviewer lesson from PR #426: production scorer code should consume prepared shared helper
+     outputs, e.g. `LoggedObjectTrack` and `TrajectoryFootprintEvaluation`; avoid optional pointer
+     plus local fallback patterns in the main scorer.
+   - Reviewer lesson from PR #426: if reviewer-requested bug fixes intentionally change a subscore
+     compared with the baseline, record the changed count and reason. Example: the NC de-dup fix
+     changed Takanawa NC non-1 count from 74 to 87 by exposing 13 previously masked at-fault
+     lateral collisions.
 
 4. DAC.
    - Port semantic drivable-area logic using road lanelets, road shoulder lanelets,
