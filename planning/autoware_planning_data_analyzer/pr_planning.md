@@ -291,10 +291,9 @@ Recommended order after merged PR #421:
      - `pre-commit run --all-files`: passed after opening PR #428.
 
 2. TLC.
-   - Status: prepared as `bskkimm:feat/planning-data-analyzer-epdms-tlc-prep`, currently rebased
-     on PR #428 branch `feat/planning-data-analyzer-epdms-ddc-prep-stacked`.
-   - After PR #428 merges, rebase this branch onto updated `upstream/main`, confirm the diff
-     remains TLC-only, rerun required checks, then open the TLC PR against `main`.
+   - Status: opened as PR #429 from `bskkimm:feat/planning-data-analyzer-epdms-tlc-prep`.
+   - After PR #428 merged, this branch was rebased onto updated `upstream/main`; already-merged DDC
+     commits were dropped from the branch history and the PR contains only TLC commits.
    - Port stop-line based traffic-light compliance logic.
    - Include signal-group association and movement selection.
    - Preserve right/left arrow handling and turn-indicator movement inference.
