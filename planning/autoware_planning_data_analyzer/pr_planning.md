@@ -258,9 +258,29 @@ Recommended order after merged PR #421:
     and must be documented in the PR description.
 
 1. DDC.
+   - Status: prepared but not opened as
+     `bskkimm:feat/planning-data-analyzer-epdms-ddc-prep-stacked`, stacked on DAC PR #427.
+   - After DAC merges, rebase this branch onto updated `upstream/main`, confirm the diff collapses
+     to DDC-only files, rerun required checks, then open the DDC PR against `main`.
    - Port wrong-way/oncoming progress logic.
    - Keep DAC-style generic non-drivable intrusion separate from DDC oncoming progress.
    - Reuse route/lanelet context where semantics match.
+   - Validation recorded:
+     - Takanawa full run:
+       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260519_195330` was compared, then
+       deleted after recording the summary.
+     - Evaluated trajectories: `8695`.
+     - DDC exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
+       `81` non-1, `0` unavailable, reason counts `available: 8614`,
+       `major_oncoming_progress: 63`, `minor_oncoming_progress: 18`, changed DDC timestamp count
+       `0`.
+     - DAC exact match remained `396` non-1, `0` unavailable.
+     - NC differs from the old baseline only by the accepted PR #426 de-dup delta:
+       `74 -> 87` non-1.
+     - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
+       patch restored before push.
+     - Direct gtests passed: `test_metrics` `61/61`, `test_offline_evaluation` `20/20`.
+     - Changed-file `pre-commit`: passed.
 
 2. TLC.
    - Port stop-line based traffic-light compliance logic.
