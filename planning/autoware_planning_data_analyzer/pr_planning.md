@@ -265,10 +265,10 @@ Recommended order after merged PR #421:
     and must be documented in the PR description.
 
 1. DDC.
-   - Status: prepared but not opened as
-     `bskkimm:feat/planning-data-analyzer-epdms-ddc-prep-stacked`, stacked on DAC PR #427.
-   - After DAC merges, rebase this branch onto updated `upstream/main`, confirm the diff collapses
-     to DDC-only files, rerun required checks, then open the DDC PR against `main`.
+   - Status: opened as PR #428 from
+     `bskkimm:feat/planning-data-analyzer-epdms-ddc-prep-stacked`.
+   - After DAC PR #427 merged, this branch was rebased onto updated `upstream/main`; already-merged
+     DAC commits were skipped and the PR diff collapsed to DDC-only files.
    - Port wrong-way/oncoming progress logic.
    - Keep DAC-style generic non-drivable intrusion separate from DDC oncoming progress.
    - Reuse route/lanelet context where semantics match.
@@ -288,6 +288,7 @@ Recommended order after merged PR #421:
        patch restored before push.
      - Direct gtests passed: `test_metrics` `61/61`, `test_offline_evaluation` `20/20`.
      - Changed-file `pre-commit`: passed.
+     - `pre-commit run --all-files`: passed after opening PR #428.
 
 2. TLC.
    - Port stop-line based traffic-light compliance logic.
