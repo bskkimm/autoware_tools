@@ -194,6 +194,18 @@ Recommended order after merged PR #421:
      compared with the baseline, record the changed count and reason. Example: the NC de-dup fix
      changed Takanawa NC non-1 count from 74 to 87 by exposing 13 previously masked at-fault
      lateral collisions.
+   - Reviewer lesson from PR #426: before adding local hash/key helpers for common message types,
+     search Autoware utilities first. For UUIDs, prefer the existing UUID conversion/hash path over
+     custom byte-array keys.
+   - Reviewer lesson from PR #426: avoid trivial local wrappers around existing Autoware utilities
+     such as angle normalization or distance calculation. Use the existing utility directly when
+     semantics match.
+   - Reviewer lesson from PR #426: when slicing a sorted timeline, prefer standard algorithms
+     (`lower_bound`/`upper_bound` plus `assign`) over manual loop-and-break code.
+   - Reviewer lesson from PR #426: threshold constants must encode the measured quantity and unit,
+     e.g. `VelocityThresholdMps`, and strict NAVSIM-style thresholds need a short rationale comment.
+   - Reviewer lesson from PR #426: horizon/truncation helpers need edge-case tests for first point
+     beyond horizon, single-point trajectory, and exact-horizon point.
 
 4. DAC.
    - Port semantic drivable-area logic using road lanelets, road shoulder lanelets,
@@ -278,6 +290,9 @@ follow these rules:
   duplicated local functions.
 - Prefer existing Autoware utility functions over local reimplementations when semantics match, for
   example angle normalization and squared-distance helpers.
+- Before adding a local hash, key conversion, normalization, distance, or slicing helper, search the
+  existing Autoware utility headers and standard library algorithms. Reviewer feedback has repeatedly
+  preferred established utilities over locally reimplemented equivalents.
 - If an existing Autoware utility appears to accept the desired type, try the direct utility call
   first. If the required validation underlay fails to compile that direct form, keep the adapter
   minimal and add a short comment explaining the compatibility reason.
