@@ -228,6 +228,10 @@ Recommended order after merged PR #421:
        patch restored before push.
      - Direct gtests passed: `test_metrics` `56/56`, `test_offline_evaluation` `20/20`.
      - `pre-commit run --all-files`: passed.
+   - CI lesson from PR #427: Jazzy treats deprecated declarations as build errors. Test-only
+     helpers using compatibility APIs such as `lanelet::utils::conversion::toBinMsg` need either
+     the newer upstream API when available in both validation underlays, or a narrow diagnostic
+     suppression around only that compatibility call.
 
 5. DDC.
    - Port wrong-way/oncoming progress logic.
@@ -666,6 +670,7 @@ Common local failure risks:
 - missing `Signed-off-by`
 - `clang-format` drift
 - cpplint include-order or line-length failures
+- Jazzy `-Werror=deprecated-declarations`, especially for test-only lanelet map conversion helpers
 - markdownlint failures in planning docs
 - stale package dependencies if new dependencies are added
 - missing differential build/test label
