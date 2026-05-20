@@ -346,7 +346,7 @@ Recommended order after merged PR #421:
      separate lanelet-query or signal-window logic in the scorer.
    - Validation recorded:
      - Takanawa cumulative run through LK:
-       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_192453` was compared, then
+       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_203441` was compared, then
        deleted after recording the summary.
      - Evaluated trajectories: `8695`.
      - LK exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
@@ -358,6 +358,14 @@ Recommended order after merged PR #421:
        patch restored before push.
      - Direct gtests passed: `test_metrics`.
      - `pre-commit run --all-files`: passed.
+   - Reviewer lesson from PR #432: queue progress windows must subtract from the earliest
+     in-window sample, not the point before it. Add a regression test when fixing this because the
+     total LK count may stay unchanged.
+   - Reviewer lesson from PR #432: if signal-grace parameters exist in the scorer struct, expose
+     them in YAML/node loading and use them at the signal-window call site. Avoid hardcoded grace
+     literals.
+   - Reviewer lesson from PR #432: do not introduce subscore result/debug structs unless a caller
+     consumes them or tests assert the new fields. Prefer score-only helpers in score-migration PRs.
 
 5. HC and EC.
    - Port NAVSIM-style history comfort using past human states plus planned horizon.
