@@ -346,6 +346,21 @@ Recommended order after merged PR #421:
    - Align `debugging_explanation.md`.
    - Remove stale topic names, stale labels, and obsolete transitional code.
 
+9. EPDMS equation-detail documentation.
+   - Add
+     `planning/autoware_planning_data_analyzer/docs/metrics/EPDMS_equation_detail.md`.
+   - Write this after the eventual migrated branch is complete, so the equations reflect the final
+     accepted Autoware implementation rather than an intermediate PR state.
+   - Base the migrated Autoware subscore sections on each "Migrated Autoware ..." item in
+     `implementation_report.md` from the full reference branch, including:
+     `https://github.com/bskkimm/autoware_tools/blob/feat/dac-navsim-drivable-areas/planning/autoware_planning_data_analyzer/implementation_report.md?plain=1`.
+   - Cover the final subscore equations and aggregation/human-filter equations together:
+     NC, DAC, DDC, TLC, TTC, LK, HC, EC, EP, synthetic EPDMS aggregation, and human-filtered EPDMS.
+   - Use only GitHub-renderable LaTeX math syntax. Prefer display math blocks with `$$ ... $$`
+     and avoid LaTeX environments or macros that GitHub markdown does not render reliably.
+   - Keep the document implementation-faithful and concise: equations first, short prose only where
+     needed to define variables or Autoware-specific deviations from NAVSIM.
+
 ## Preparatory Helper PR Policy
 
 For infrastructure PRs that introduce shared helpers before the first subscore caller exists,
