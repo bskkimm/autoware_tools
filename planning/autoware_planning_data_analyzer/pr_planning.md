@@ -316,14 +316,48 @@ Recommended order after merged PR #421:
      - Changed-file `pre-commit`: passed.
 
 3. TTC.
+   - Status: merged as PR #431 from
+     `bskkimm:feat/planning-data-analyzer-epdms-ttc-prep`.
+   - After PR #429 merged, this branch was rebased onto updated `upstream/main`; already-merged TLC
+     commits were dropped from the branch history and the PR contains only TTC commits.
    - Port NAVSIM-style recorded-object TTC logic.
    - Reuse object-track preprocessing where possible.
    - Preserve `BadOrIntersection = MultipleLanes OR NonDrivableArea OR Intersection` semantics.
+   - Validation recorded:
+     - Takanawa cumulative run through TTC:
+       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_122947` was compared, then
+       deleted after recording the summary.
+     - Evaluated trajectories: `8695`.
+     - TTC exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
+       `102` non-1, `0` unavailable.
+     - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
+       patch restored before push.
+     - Changed-file and full `pre-commit`: passed after reviewer-update patches.
 
 4. LK.
+   - Status: opened as PR #432 from
+     `bskkimm:feat/planning-data-analyzer-epdms-lk-prep`.
+   - After PR #431 merged, this branch was rebased onto updated `upstream/main`; already-merged TTC
+     commits were skipped and the PR diff collapsed to LK-only files.
    - Port sample-wise centerline deviation logic.
    - Keep Autoware centerline selection as the intentional NAVSIM deviation.
    - Use turn-indicator/hazard-based lane-change exemption only.
+   - Reuse shared local intersection context and local signal-window helpers; do not duplicate
+     separate lanelet-query or signal-window logic in the scorer.
+   - Validation recorded:
+     - Takanawa cumulative run through LK:
+       `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260520_192453` was compared, then
+       deleted after recording the summary.
+     - Evaluated trajectories: `8695`.
+     - LK exact match against `/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345`:
+       `367` non-1, `0` unavailable, reason counts `available: 8695`.
+     - TTC exact match remained `102` non-1, `0` unavailable.
+     - NC differs from the old baseline only by the accepted PR #426 de-dup delta:
+       `74 -> 87` non-1.
+     - Local build passed with temporary validation-only `pilot-auto.x2` lanelet API compatibility
+       patch restored before push.
+     - Direct gtests passed: `test_metrics`.
+     - `pre-commit run --all-files`: passed.
 
 5. HC and EC.
    - Port NAVSIM-style history comfort using past human states plus planned horizon.
