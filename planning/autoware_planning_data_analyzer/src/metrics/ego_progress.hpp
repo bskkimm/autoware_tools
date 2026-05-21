@@ -37,18 +37,28 @@ struct EgoProgressResult
   double best_raw_progress_m{0.0};
   double multiplicative_mask{0.0};
   double denominator_m{0.0};
+  // Debug/visualization fields consumed by the open_loop debug topics.
   geometry_msgs::msg::Point start_point;
   geometry_msgs::msg::Point end_point;
   std::vector<geometry_msgs::msg::Point> route_reference_points;
 };
 
+struct EgoProgressMultiplicativeInputs
+{
+  double no_at_fault_collision{0.0};
+  bool no_at_fault_collision_available{false};
+  double drivable_area_compliance{0.0};
+  bool drivable_area_compliance_available{false};
+  double driving_direction_compliance{0.0};
+  bool driving_direction_compliance_available{false};
+  double traffic_light_compliance{0.0};
+  bool traffic_light_compliance_available{false};
+};
+
 EgoProgressResult calculate_ego_progress(
   const std::shared_ptr<Trajectory> & selected_trajectory,
-  const std::shared_ptr<RouteHandler> & route_handler, double no_at_fault_collision,
-  bool no_at_fault_collision_available, double drivable_area_compliance,
-  bool drivable_area_compliance_available, double driving_direction_compliance,
-  bool driving_direction_compliance_available, double traffic_light_compliance,
-  bool traffic_light_compliance_available);
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const EgoProgressMultiplicativeInputs & multiplicative_inputs);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

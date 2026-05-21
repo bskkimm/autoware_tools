@@ -25,8 +25,10 @@ autoware::planning_data_analyzer::metrics::EgoProgressResult calculate_with_vali
   const std::shared_ptr<autoware::planning_data_analyzer::Trajectory> & trajectory,
   const std::shared_ptr<autoware::route_handler::RouteHandler> & route_handler)
 {
+  const autoware::planning_data_analyzer::metrics::EgoProgressMultiplicativeInputs inputs{
+    1.0, true, 1.0, true, 1.0, true, 1.0, true};
   return autoware::planning_data_analyzer::metrics::calculate_ego_progress(
-    trajectory, route_handler, 1.0, true, 1.0, true, 1.0, true, 1.0, true);
+    trajectory, route_handler, inputs);
 }
 
 }  // namespace

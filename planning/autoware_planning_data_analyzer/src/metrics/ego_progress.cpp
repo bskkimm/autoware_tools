@@ -75,11 +75,8 @@ std::optional<double> calculate_raw_progress_m(
 
 EgoProgressResult calculate_ego_progress(
   const std::shared_ptr<Trajectory> & selected_trajectory,
-  const std::shared_ptr<RouteHandler> & route_handler, const double no_at_fault_collision,
-  const bool no_at_fault_collision_available, const double drivable_area_compliance,
-  const bool drivable_area_compliance_available, const double driving_direction_compliance,
-  const bool driving_direction_compliance_available, const double traffic_light_compliance,
-  const bool traffic_light_compliance_available)
+  const std::shared_ptr<RouteHandler> & route_handler,
+  const EgoProgressMultiplicativeInputs & multiplicative_inputs)
 {
   EgoProgressResult result;
 
@@ -100,8 +97,10 @@ EgoProgressResult calculate_ego_progress(
     return result;
   }
   if (
-    !no_at_fault_collision_available || !drivable_area_compliance_available ||
-    !driving_direction_compliance_available || !traffic_light_compliance_available) {
+    !multiplicative_inputs.no_at_fault_collision_available ||
+    !multiplicative_inputs.drivable_area_compliance_available ||
+    !multiplicative_inputs.driving_direction_compliance_available ||
+    !multiplicative_inputs.traffic_light_compliance_available) {
     result.reason = "unavailable_missing_multiplicative_metric";
     return result;
   }
@@ -115,20 +114,18 @@ EgoProgressResult calculate_ego_progress(
     return result;
   }
   result.raw_progress_m = selected_raw_progress.value();
-  result.multiplicative_mask = no_at_fault_collision * drivable_area_compliance *
-                               driving_direction_compliance * traffic_light_compliance;
+  result.multiplicative_mask = multiplicative_inputs.no_at_fault_collision *
+                               multiplicative_inputs.drivable_area_compliance *
+                               multiplicative_inputs.driving_direction_compliance *
+                               multiplicative_inputs.traffic_light_compliance;
   result.denominator_m = result.raw_progress_m * result.multiplicative_mask;
-  result.best_raw_progress_m = result.denominator_m;
+  result.best_raw_progress_m = result.raw_progress_m;
   result.available = true;
 
-  constexpr double kProgressDistanceThresholdM = 5.0;
-  if (result.denominator_m > kProgressDistanceThresholdM) {
-    result.score = std::clamp(result.raw_progress_m / result.denominator_m, 0.0, 1.0);
-    result.reason = "available_single_proposal_navsim_ratio";
-  } else {
-    result.score = 1.0;
-    result.reason = "available_single_proposal_navsim_fallback";
-  }
+  // Single-proposal EP is intentionally saturated at 1.0 in this NAVSIM-faithful branch.
+  // The debug fields above keep the raw progress and masked denominator available for review.
+  result.score = 1.0;
+  result.reason = "available_single_proposal_navsim_single_candidate";
 
   return result;
 }
