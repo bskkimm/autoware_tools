@@ -16,6 +16,7 @@
 
 #include "metric_utils.hpp"
 
+#include <autoware/universe_utils/geometry/geometry.hpp>
 #include <autoware_lanelet2_extension/utility/utilities.hpp>
 
 #include <algorithm>
@@ -54,11 +55,8 @@ std::optional<double> calculate_raw_progress_m(
     route_reference_points->clear();
     for (const auto & lanelet : route_lanelets) {
       for (const auto & point : lanelet.centerline()) {
-        geometry_msgs::msg::Point msg_point;
-        msg_point.x = point.x();
-        msg_point.y = point.y();
-        msg_point.z = point.z();
-        route_reference_points->push_back(msg_point);
+        route_reference_points->push_back(
+          autoware::universe_utils::createPoint(point.x(), point.y(), point.z()));
       }
     }
   }
