@@ -543,8 +543,7 @@ TrajectoryPointMetrics calculate_trajectory_point_metrics(
             -1});
       } else {
         metrics.lateral_deviations[i] =
-          autoware::experimental::lanelet2_utils::get_lateral_distance_to_centerline(
-            reference_lanelet.value(), point.pose);
+          get_lateral_distance_to_centerline(reference_lanelet.value(), point.pose);
         const auto local_context =
           compute_driving_direction_local_context(point.pose, route_handler);
         lane_keeping_evaluation_points.push_back(

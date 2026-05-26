@@ -100,13 +100,12 @@ lanelet::ConstLanelets collect_local_route_consistent_lanelets(
     return local_lanelets;
   }
 
-  const double reference_yaw = autoware::experimental::lanelet2_utils::get_lanelet_angle(
-    seed_lanelets.front(), to_basic_point3d(pose.position));
+  const double reference_yaw =
+    get_lanelet_angle(seed_lanelets.front(), to_basic_point3d(pose.position));
   std::unordered_set<lanelet::Id> local_lanelet_ids;
   for (const auto & lanelet : nearby_road_lanelets) {
     const bool on_route = route_handler->isRouteLanelet(lanelet);
-    const double lanelet_yaw = autoware::experimental::lanelet2_utils::get_lanelet_angle(
-      lanelet, to_basic_point3d(pose.position));
+    const double lanelet_yaw = get_lanelet_angle(lanelet, to_basic_point3d(pose.position));
     const bool same_direction =
       std::abs(autoware_utils_math::normalize_radian(lanelet_yaw - reference_yaw)) <=
       kDirectionSimilarityThresholdRad;
@@ -117,8 +116,8 @@ lanelet::ConstLanelets collect_local_route_consistent_lanelets(
   }
 
   for (const auto & shoulder_lanelet : nearby_shoulder_lanelets) {
-    const double shoulder_yaw = autoware::experimental::lanelet2_utils::get_lanelet_angle(
-      shoulder_lanelet, to_basic_point3d(pose.position));
+    const double shoulder_yaw =
+      get_lanelet_angle(shoulder_lanelet, to_basic_point3d(pose.position));
     const bool same_direction =
       std::abs(autoware_utils_math::normalize_radian(shoulder_yaw - reference_yaw)) <=
       kDirectionSimilarityThresholdRad;

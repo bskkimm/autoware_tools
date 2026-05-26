@@ -17,6 +17,9 @@
 
 #include <autoware_utils_geometry/boost_geometry.hpp>
 
+#include <geometry_msgs/msg/pose.hpp>
+
+#include <lanelet2_core/geometry/Lanelet.h>
 #include <lanelet2_core/primitives/CompoundPolygon.h>
 #include <lanelet2_core/primitives/Lanelet.h>
 #include <lanelet2_core/primitives/LineString.h>
@@ -51,6 +54,15 @@ bool point_in_polygon(
 
 lanelet::BoundingBox2d make_bounding_box(
   double min_x, double min_y, double max_x, double max_y, double margin_m);
+
+double get_lanelet_angle(
+  const lanelet::ConstLanelet & lanelet, const lanelet::BasicPoint3d & point);
+
+double get_lateral_distance_to_centerline(
+  const lanelet::ConstLanelet & lanelet, const geometry_msgs::msg::Pose & pose);
+
+double get_arc_length(
+  const lanelet::ConstLanelets & lanelets, const geometry_msgs::msg::Pose & pose);
 
 }  // namespace autoware::planning_data_analyzer::metrics
 

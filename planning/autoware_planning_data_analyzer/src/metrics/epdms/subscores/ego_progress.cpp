@@ -14,6 +14,7 @@
 
 #include "ego_progress.hpp"
 
+#include "metrics/geometry/lanelet_geometry.hpp"
 #include "metrics/geometry/lanelet_queries.hpp"
 #include "metrics/geometry/metric_utils.hpp"
 
@@ -65,14 +66,10 @@ std::optional<double> calculate_raw_progress_m(
     }
   }
 
-  const auto start_arc =
-    autoware::experimental::lanelet2_utils::get_arc_coordinates_on_ego_centerline(
-      route_lanelets, trajectory.points.front().pose, lanelet_map_ptr);
-  const auto end_arc =
-    autoware::experimental::lanelet2_utils::get_arc_coordinates_on_ego_centerline(
-      route_lanelets, trajectory.points.back().pose, lanelet_map_ptr);
+  const auto start_arc_length = get_arc_length(route_lanelets, trajectory.points.front().pose);
+  const auto end_arc_length = get_arc_length(route_lanelets, trajectory.points.back().pose);
 
-  return std::max(end_arc.length - start_arc.length, 0.0);
+  return std::max(end_arc_length - start_arc_length, 0.0);
 }
 
 }  // namespace
