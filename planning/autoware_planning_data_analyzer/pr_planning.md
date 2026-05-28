@@ -156,6 +156,36 @@ Reason strings are part of the output contract even when topic names and JSON ke
 If a PR changes any `reason` value, explicitly state that in the PR description and include reason
 counts in validation.
 
+## Known Deferred Score Drift
+
+The current migrated/debug implementation is not a pure debug-only delta against the fixed
+Takanawa baseline artifact:
+
+```text
+/home/beomseokkim2/rosbag/x2_takanawa/run_logs/20260506_155345
+```
+
+Analyzer-only comparison on that same fixed `eval_bag` showed these score-relevant differences:
+
+```text
+NC:  0.991489 / 74 non-1  -> 0.995515 / 39 non-1
+DAC: 0.954457 / 396 non-1 -> 0.967798 / 280 non-1
+TTC: 0.988269 / 102 non-1 -> 0.994825 / 45 non-1
+DDC, TLC, LK, HC, EC, EP: unchanged
+Raw EPDMS:            0.932827 -> 0.949664
+Human-filtered EPDMS: 0.933891 -> 0.951288
+```
+
+The debug flag is not the cause: `open_loop.debug_topics_enabled:=false` and `true` produced the
+same migrated scores on the fixed baseline `eval_bag`. The score drift is most likely from migrated
+shared scoring inputs, especially `evaluate_trajectory_footprints()` /
+`compute_ego_area_evaluation()` and their downstream use by DAC, NC, and TTC.
+
+This drift is intentionally deferred for a later fix/investigation PR. Until that PR is handled,
+do not describe the current debug-topic branch as score-preserving against the 20260506 baseline.
+For any PR that depends on the current migrated/debug state, explicitly state that NC/DAC/TTC drift
+is a known deferred issue rather than a debug-topic behavior change.
+
 ## Remaining PR Order
 
 Recommended order after merged PR #421:
