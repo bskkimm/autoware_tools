@@ -22,8 +22,11 @@
 #include <lanelet2_core/utility/Utilities.h>
 #include <tf2/utils.h>
 
+#include <cmath>
+#include <limits>
 #include <memory>
 #include <unordered_set>
+#include <vector>
 
 namespace autoware::planning_data_analyzer::metrics
 {
@@ -40,6 +43,30 @@ void append_unique_lanelet(
   if (seen_ids.insert(lanelet.id()).second) {
     lanelets.push_back(lanelet);
   }
+}
+
+struct CenterlinePoint
+{
+  double x{0.0};
+  double y{0.0};
+};
+
+std::vector<CenterlinePoint> build_centerline_points(const lanelet::ConstLanelets & lanelets)
+{
+  std::vector<CenterlinePoint> points;
+  for (const auto & lanelet : lanelets) {
+    for (const auto & point : lanelet.centerline()) {
+      const CenterlinePoint centerline_point{point.x(), point.y()};
+      if (
+        !points.empty() &&
+        std::hypot(points.back().x - centerline_point.x, points.back().y - centerline_point.y) <
+          1.0e-6) {
+        continue;
+      }
+      points.push_back(centerline_point);
+    }
+  }
+  return points;
 }
 
 }  // namespace
@@ -116,6 +143,64 @@ autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineSt
     line_2d.push_back({point.x(), point.y()});
   }
   return line_2d;
+}
+
+std::optional<CenterlineArcCoordinate> get_centerline_arc_coordinate(
+  const lanelet::ConstLanelets & lanelets, const geometry_msgs::msg::Pose & pose)
+{
+  const auto points = build_centerline_points(lanelets);
+  if (points.size() < 2U) {
+    return std::nullopt;
+  }
+
+  const double px = pose.position.x;
+  const double py = pose.position.y;
+  double cumulative_length = 0.0;
+  double best_squared_distance = std::numeric_limits<double>::max();
+  CenterlineArcCoordinate best_coordinate;
+
+  for (std::size_t i = 1U; i < points.size(); ++i) {
+    const auto & start = points.at(i - 1U);
+    const auto & end = points.at(i);
+    const double vx = end.x - start.x;
+    const double vy = end.y - start.y;
+    const double segment_length = std::hypot(vx, vy);
+    if (segment_length < 1.0e-6) {
+      continue;
+    }
+
+    const double wx = px - start.x;
+    const double wy = py - start.y;
+    const double t = std::clamp((wx * vx + wy * vy) / (segment_length * segment_length), 0.0, 1.0);
+    const double projected_x = start.x + t * vx;
+    const double projected_y = start.y + t * vy;
+    const double dx = px - projected_x;
+    const double dy = py - projected_y;
+    const double squared_distance = dx * dx + dy * dy;
+
+    if (squared_distance < best_squared_distance) {
+      best_squared_distance = squared_distance;
+      best_coordinate.length = cumulative_length + t * segment_length;
+      best_coordinate.distance = (vx * (py - start.y) - vy * (px - start.x)) / segment_length;
+    }
+
+    cumulative_length += segment_length;
+  }
+
+  if (best_squared_distance == std::numeric_limits<double>::max()) {
+    return std::nullopt;
+  }
+  return best_coordinate;
+}
+
+std::optional<double> get_lateral_distance_to_centerline(
+  const lanelet::ConstLanelet & lanelet, const geometry_msgs::msg::Pose & pose)
+{
+  const auto coordinate = get_centerline_arc_coordinate(lanelet::ConstLanelets{lanelet}, pose);
+  if (!coordinate.has_value()) {
+    return std::nullopt;
+  }
+  return coordinate->distance;
 }
 
 bool is_pose_in_intersection(

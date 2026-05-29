@@ -51,6 +51,18 @@ lanelet::ConstLanelets collect_route_relevant_lanelets(
 
 autoware_utils_geometry::LineString2d to_linestring2d(const lanelet::ConstLineString3d & line);
 
+struct CenterlineArcCoordinate
+{
+  double length{0.0};
+  double distance{0.0};
+};
+
+std::optional<CenterlineArcCoordinate> get_centerline_arc_coordinate(
+  const lanelet::ConstLanelets & lanelets, const geometry_msgs::msg::Pose & pose);
+
+std::optional<double> get_lateral_distance_to_centerline(
+  const lanelet::ConstLanelet & lanelet, const geometry_msgs::msg::Pose & pose);
+
 bool is_pose_in_intersection(
   const geometry_msgs::msg::Pose & pose, const std::shared_ptr<RouteHandler> & route_handler);
 
